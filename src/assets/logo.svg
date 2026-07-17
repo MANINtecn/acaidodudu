@@ -1,0 +1,31 @@
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Stylized Road Runner Mascot - Minimalist Speed Concept -->
+  <defs>
+    <linearGradient id="speedGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#FF6B00;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FF9E00;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Speed lines -->
+  <path d="M10 40 L30 40 M5 50 L25 50 M10 60 L30 60" stroke="#001F3F" stroke-width="2" stroke-linecap="round" />
+  
+  <!-- Body / Head (Dynamic Lean) -->
+  <path d="M40 55 Q50 35 75 45 Q85 50 80 60 Q75 70 60 65 Q45 60 40 55" fill="#001F3F" />
+  
+  <!-- Beak -->
+  <path d="M78 48 L92 52 L78 55 Z" fill="#FFD700" />
+  
+  <!-- Crest (Speed feathers) -->
+  <path d="M50 38 L40 28 Q45 35 52 38 Z" fill="#FF6B00" />
+  <path d="M55 36 L48 24 Q52 33 57 36 Z" fill="#FF6B00" />
+  
+  <!-- Eye -->
+  <circle cx="72" cy="50" r="2" fill="white" />
+  
+  <!-- Tail (Abstract speed blur) -->
+  <path d="M42 56 Q30 70 15 65 Q25 60 40 55" fill="url(#speedGrad)" />
+  
+  <!-- Leg (Simplified movement) -->
+  <path d="M55 65 L45 80 L55 80" stroke="#FF6B00" stroke-width="3" fill="none" stroke-linejoin="round" />
+</svg>

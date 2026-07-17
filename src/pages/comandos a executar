@@ -1,0 +1,12 @@
+4° notificação nao funcionou eu adicionei a url nos ajustes para esse botao de 'no portao', verifica por favor.
+os pedidos nao estao entrando no caixa, vamos criar historico de vendas no caixa independente do pagamento. da forma de pagamento, precisamos conferir todos os pedidos.
+foto da logo foi escolhida, e mensagem de salva foi exibida, mas nao foi redenrizada na pagina do cardapio.
+o botao 'enviar entrega' é desnecessario.
+quando um pedido for de mesa tem que ter outro tratamento, modelo de comanda que vamos adicionando mais produtos naquela comanda.
+selecionamos o card da mesa no espaco de balcao e editamos livrimente o pedido, o nomero da mesa se estiver em uso nao poderá ser usado ate o botao "finalizar" seja acionado
+vamos criar um modelo de comanda que vai ter um numero de comanda e o numero da mesa para o balcão.
+sistema de entregas estao fabuloso nao pode ser alterado.
+os cards estao de um tamanho perfeito nao pode ser alterado.
+esconder a barrinha do scroll no menu para ficar mais bonito.
+trocar a fraze 'agilize seu pedido'
+vamos atualizar o github.

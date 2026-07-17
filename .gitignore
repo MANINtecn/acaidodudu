@@ -1,0 +1,71 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-electron
+dist-ssr
+*.local
+.env
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build, Binaries and Errors
+*.txt
+*.exe
+*.js.map
+servidor.js
+servidor.cjs
+servidor_test.js
+dist_v141/
+Papaleguas_Final_141/
+resources/
+scratch/
+build/
+bin/
+local-printer/
+creativos para insta/
+Conteudos para publi/
+
+# Backups and Temp Data
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!tsconfig.node.json
+!firebase.json
+!vercel.json
+!metadata.json
+*.json.bak
+backup_*.json
+ultimo chat
+chaves
+chaves_api.txt
+
+# SQL and DB Scripts (ignore local copies if they are just for reference)
+*.sql
+scripts/
+test_rpc.cjs
+test_supabase.cjs
+apply_fix.js
+check_db_v3.js
+check_history.js
+setup_db_cleanup.js
+setup_db_cleanup_esm.js
+setup_db_final.ts
+test_rpc_customer.ts

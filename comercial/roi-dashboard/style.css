@@ -1,0 +1,226 @@
+:root {
+    --bg-color: #0d0d12;
+    --card-bg: rgba(255, 255, 255, 0.05);
+    --primary: #8a2be2;
+    --secondary: #00f2fe;
+    --text: #ffffff;
+    --text-dim: #a0a0b8;
+    --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Outfit', sans-serif;
+    background-color: var(--bg-color);
+    background-image: 
+        radial-gradient(circle at 10% 20%, rgba(138, 43, 226, 0.15) 0%, transparent 40%),
+        radial-gradient(circle at 90% 80%, rgba(0, 242, 254, 0.15) 0%, transparent 40%);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow-x: hidden;
+}
+
+.glass-container {
+    width: 95%;
+    max-width: 1200px;
+    background: rgba(13, 13, 18, 0.8);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--glass-border);
+    border-radius: 30px;
+    padding: 40px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+header {
+    text-align: center;
+    margin-bottom: 40px;
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
+.logo-emoji {
+    font-size: 2.5rem;
+}
+
+h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+.gradient-text {
+    background: linear-gradient(90deg, var(--primary), var(--secondary));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+    color: var(--text-dim);
+    font-size: 1.1rem;
+}
+
+main {
+    display: grid;
+    gap: 30px;
+}
+
+/* Inputs Section */
+.inputs-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 20px;
+}
+
+.input-card {
+    background: var(--card-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 20px;
+    transition: transform 0.3s ease;
+}
+
+.input-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--primary);
+}
+
+label {
+    display: block;
+    font-size: 0.9rem;
+    color: var(--text-dim);
+    margin-bottom: 15px;
+}
+
+.range-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+input[type="range"] {
+    -webkit-appearance: none;
+    width: 100%;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 5px;
+    outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px;
+    height: 18px;
+    background: var(--secondary);
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 0 10px var(--secondary);
+}
+
+.value-display {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--secondary);
+    text-align: right;
+}
+
+/* Results Section */
+.results-grid {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 20px;
+}
+
+@media (max-width: 900px) {
+    .results-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.result-card {
+    background: linear-gradient(135deg, rgba(138, 43, 226, 0.1), rgba(0, 242, 254, 0.1));
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 30px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+}
+
+.big-number {
+    font-size: 3rem;
+    font-weight: 800;
+    margin: 15px 0;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(0, 242, 254, 0.3);
+}
+
+.badge {
+    background: rgba(0, 242, 254, 0.1);
+    border: 1px solid var(--secondary);
+    color: var(--secondary);
+    padding: 5px 15px;
+    border-radius: 100px;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.chart-container {
+    background: var(--card-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 20px;
+    padding: 20px;
+    min-height: 300px;
+}
+
+/* Investment Summary */
+.investment-summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+    padding-top: 20px;
+    border-top: 1px solid var(--glass-border);
+}
+
+.invest-item {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.invest-item span {
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}
+
+.invest-item strong {
+    font-size: 1.1rem;
+    color: #fff;
+}
+
+.invest-item.highlight strong {
+    color: var(--secondary);
+    font-size: 1.5rem;
+}
+
+footer {
+    margin-top: 40px;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-dim);
+}

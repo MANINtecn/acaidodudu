@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora de ROI - Scarllet AI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="glass-container">
+        <header>
+            <div class="logo">
+                <span class="logo-emoji">🍔</span>
+                <h1>ROI Dashboard <span class="gradient-text">Scarllet AI</span></h1>
+            </div>
+            <p class="subtitle">A ferramenta definitiva para provar o lucro da IA no atendimento.</p>
+        </header>
+
+        <main>
+            <section class="inputs-grid">
+                <div class="input-card">
+                    <label>Volume Mensal de Pedidos</label>
+                    <div class="range-container">
+                        <input type="range" id="orderVolume" min="100" max="5000" value="800">
+                        <span class="value-display" id="orderVolumeVal">800</span>
+                    </div>
+                </div>
+
+                <div class="input-card">
+                    <label>Ticket Médio (R$)</label>
+                    <div class="range-container">
+                        <input type="range" id="avgTicket" min="10" max="200" value="45">
+                        <span class="value-display" id="avgTicketVal">45</span>
+                    </div>
+                </div>
+
+                <div class="input-card">
+                    <label>Custo do Atendimento Humano (Mensal R$)</label>
+                    <div class="range-container">
+                        <input type="range" id="laborCost" min="0" max="10000" value="2500">
+                        <span class="value-display" id="laborCostVal">2500</span>
+                    </div>
+                </div>
+
+                <div class="input-card">
+                    <label>Aumento em Vendas Mensais (%)</label>
+                    <div class="range-container">
+                        <input type="range" id="upsellRate" min="0" max="30" value="10">
+                        <span class="value-display" id="upsellRateVal">10</span>
+                    </div>
+                </div>
+            </section>
+
+            <section class="results-grid">
+                <div class="result-card main-result">
+                    <h3>Economia + Lucro Extra (Anual)</h3>
+                    <div class="big-number" id="annualProfit">R$ 0,00</div>
+                    <div class="badge">ROI: <span id="roiPercentage">0</span>%</div>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="roiChart"></canvas>
+                </div>
+            </section>
+
+            <section class="investment-summary">
+                <div class="invest-item">
+                    <span>Investimento Inicial (Setup)</span>
+                    <strong id="setupInvest">R$ 2.000,00</strong>
+                </div>
+                <div class="invest-item">
+                    <span>Mensalidade Scarllet AI</span>
+                    <strong id="monthlyFee">R$ 450,00</strong>
+                </div>
+                <div class="invest-item highlight">
+                    <span>Payback (Meses)</span>
+                    <strong id="paybackTime">1.5</strong>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>&copy; 2026 Scarllet AI - Tecnologia para Delivery Humano</p>
+        </footer>
+    </div>
+    <script src="script.js"></script>
+</body>
+</html>
