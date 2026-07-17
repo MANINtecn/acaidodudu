@@ -69,3 +69,6 @@ setup_db_cleanup.js
 setup_db_cleanup_esm.js
 setup_db_final.ts
 test_rpc_customer.ts
+
+# Supabase CLI local cache (contains project refs/pooler URLs)
+supabase/.temp/
