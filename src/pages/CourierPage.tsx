@@ -43,7 +43,7 @@ const CourierPage: React.FC = () => {
     // Redirect if not logged in
     useEffect(() => {
         if (!authLoading && !courier) {
-            navigate(`/${currentStore?.slug || 'papaleguastocmg'}/entregador/login`);
+            navigate(`/${currentStore?.slug || 'acaidodudu'}/entregador/login`);
         }
     }, [authLoading, courier, currentStore, navigate]);
 

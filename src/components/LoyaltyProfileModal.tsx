@@ -668,7 +668,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                         )}
 
                         <h3 className="text-xl font-display text-white mb-1 flex items-center gap-2">
-                            <span className="text-yellow-500 text-2xl">🎟️</span> Fidelidade Papaléguas
+                            <span className="text-yellow-500 text-2xl">🎟️</span> Fidelidade Açaí do Dudu
                         </h3>
                         <p className="text-xs text-gray-400 mb-6">Junte 10 selos e ganhe R$ 20,00 ou um X-Tudo!</p>
 

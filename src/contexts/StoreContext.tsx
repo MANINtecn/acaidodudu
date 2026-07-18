@@ -38,10 +38,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
         // 0. Detect Electron (file protocol)
         if (protocol === 'file:') {
-            slug = 'papaleguastocmg';
+            slug = 'acaidodudu';
             // console.log("StoreContext: Electron/File protocol detected, using default slug:", slug);
         } else if (hostname === 'localhost' || hostname === '127.0.0.1') {
-            slug = 'papaleguastocmg';
+            slug = 'acaidodudu';
             // console.log("StoreContext: Localhost detected, using default slug:", slug);
         }
 

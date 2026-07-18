@@ -25,7 +25,7 @@ async function debugPrinter() {
 
     } catch (error) {
         console.error(`\nERRO CRÍTICO: Não foi possível conectar ao servidor de impressão.`);
-        console.error(`Certifique-se de que o App Papaléguas (Electron) está aberto.`);
+        console.error(`Certifique-se de que o App Açaí do Dudu (Electron) está aberto.`);
         console.error(`Detalhes:`, error.message);
     }
 }

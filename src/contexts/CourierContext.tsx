@@ -20,7 +20,7 @@ export const CourierProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     useEffect(() => {
         // Load from LocalStorage on mount
-        const stored = localStorage.getItem('papaleguas_courier_session');
+        const stored = localStorage.getItem('acaidodudu_courier_session');
         if (stored) {
             try {
                 const parsed = JSON.parse(stored);
@@ -35,7 +35,7 @@ export const CourierProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 }
             } catch (e) {
                 console.error("Invalid courier session", e);
-                localStorage.removeItem('papaleguas_courier_session');
+                localStorage.removeItem('acaidodudu_courier_session');
             }
         }
         setLoading(false);
@@ -49,7 +49,7 @@ export const CourierProvider: React.FC<{ children: React.ReactNode }> = ({ child
             if (data) {
                 const courierData: Courier = data;
                 setCourier(courierData);
-                localStorage.setItem('papaleguas_courier_session', JSON.stringify(courierData));
+                localStorage.setItem('acaidodudu_courier_session', JSON.stringify(courierData));
                 return true;
             }
         } catch (error) {
@@ -60,7 +60,7 @@ export const CourierProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const logout = () => {
         setCourier(null);
-        localStorage.removeItem('papaleguas_courier_session');
+        localStorage.removeItem('acaidodudu_courier_session');
     };
 
     const firstName = courier?.name.split(' ')[0] || '';

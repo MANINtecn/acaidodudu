@@ -242,7 +242,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    title: "Papaleguas PDV",
+    title: "Açaí do Dudu PDV",
     icon: app.isPackaged 
       ? path.join(__dirname, "dist", "icon.png")
       : path.join(__dirname, "public", "icon.png"),
@@ -316,7 +316,7 @@ if (!GH_TOKEN) {
 autoUpdater.setFeedURL({
   provider: "github",
   owner: "manintecn",
-  repo: "papaleguastocmg",
+  repo: "acaidodudu",
   private: true,
   token: GH_TOKEN
 });
@@ -501,7 +501,7 @@ app.whenReady().then(() => {
         
         const trayMenu = Menu.buildFromTemplate([
           { 
-            label: 'Abrir Papaleguas', 
+            label: 'Abrir Açaí do Dudu',
             click: () => {
               mainWindow.show();
               mainWindow.focus();
@@ -517,7 +517,7 @@ app.whenReady().then(() => {
           }
         ]);
         
-        tray.setToolTip('Papaleguas PDV - Monitorando Pedidos');
+        tray.setToolTip('Açaí do Dudu PDV - Monitorando Pedidos');
         tray.setContextMenu(trayMenu);
         
         tray.on('double-click', () => {
@@ -691,7 +691,7 @@ app.whenReady().then(() => {
       return;
     }
 
-    const authPath = path.join(os.homedir(), ".papaleguas_bot_auth");
+    const authPath = path.join(os.homedir(), ".acaidodudu_bot_auth");
     if (!fs.existsSync(authPath)) {
         fs.mkdirSync(authPath, { recursive: true });
     }
@@ -707,6 +707,7 @@ app.whenReady().then(() => {
         BTZAP_TOKEN: config.btzapToken || process.env.BTZAP_TOKEN || "",
         INSTANCE_NUMBER: config.instanceNumber || process.env.INSTANCE_NUMBER,
         BOT_PROMPT: config.botPrompt || "",
+        APP_URL: config.appUrl || process.env.APP_URL || "",
         IS_BOT_ENABLED: isBotEnabled ? "true" : "false",
         BYPASS_NUMBER: bypassNumber
     };
@@ -825,7 +826,7 @@ app.whenReady().then(() => {
     
     stopBotServer();
     
-    const authPath = path.join(os.homedir(), ".papaleguas_bot_auth");
+    const authPath = path.join(os.homedir(), ".acaidodudu_bot_auth");
     const config = getStoredConfig();
     const supabaseUrl = config.supabaseUrl || process.env.SUPABASE_URL || "";
     const supabaseKey = config.supabaseKey || process.env.SUPABASE_SERVICE_ROLE_KEY;

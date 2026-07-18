@@ -44,7 +44,7 @@ public class RawPrinterHelper {
         DOCINFOW di = new DOCINFOW();
         bool bSuccess = false;
 
-        di.pDocName = "Papaleguas RAW Print";
+        di.pDocName = "AcaiDoDudu RAW Print";
         di.pDataType = "RAW";
 
         if (OpenPrinter(szPrinterName, out hPrinter, IntPtr.Zero)) {

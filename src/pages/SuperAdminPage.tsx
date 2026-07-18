@@ -176,11 +176,11 @@ const SuperAdminPage: React.FC = () => {
                         <div className="space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-400 mb-1">Nome da Loja</label>
-                                <input type="text" value={newStore.name} onChange={e => setNewStore({ ...newStore, name: e.target.value })} className="w-full bg-gray-700 border-gray-600 rounded-lg p-2 text-white focus:ring-2 focus:ring-blue-500" placeholder="Ex: Papaléguas Lanches" />
+                                <input type="text" value={newStore.name} onChange={e => setNewStore({ ...newStore, name: e.target.value })} className="w-full bg-gray-700 border-gray-600 rounded-lg p-2 text-white focus:ring-2 focus:ring-blue-500" placeholder="Ex: Açaí do Dudu" />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-400 mb-1">Slug (URL)</label>
-                                <input type="text" value={newStore.slug} onChange={e => setNewStore({ ...newStore, slug: e.target.value })} className="w-full bg-gray-700 border-gray-600 rounded-lg p-2 text-white focus:ring-2 focus:ring-blue-500" placeholder="Ex: papaleguas" />
+                                <input type="text" value={newStore.slug} onChange={e => setNewStore({ ...newStore, slug: e.target.value })} className="w-full bg-gray-700 border-gray-600 rounded-lg p-2 text-white focus:ring-2 focus:ring-blue-500" placeholder="Ex: acaidodudu" />
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-gray-400 mb-1">Email do Dono</label>

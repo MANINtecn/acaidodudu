@@ -40,11 +40,11 @@ const runTest = async () => {
         allStores?.forEach(store => console.log(`- ${store.name} (${store.slug})`));
     }
 
-    console.log(`\nFetching specific store 'papaleguastocmg'...`);
+    console.log(`\nFetching specific store 'acaidodudu'...`);
     const { data: specificStore, error: specificError } = await supabase
         .from('stores')
         .select('*')
-        .eq('slug', 'papaleguastocmg')
+        .eq('slug', 'acaidodudu')
         .limit(1);
 
     if (specificError) {

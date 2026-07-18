@@ -9,7 +9,7 @@ const StaffSelectionPage: React.FC = () => {
     const { currentStore } = useStore();
 
     // Prioritize the slug from the URL, then context, then default
-    const slug = storeSlug || currentStore?.slug || 'papaleguastocmg';
+    const slug = storeSlug || currentStore?.slug || 'acaidodudu';
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-6">
@@ -19,7 +19,7 @@ const StaffSelectionPage: React.FC = () => {
                         ACESSO EQUIPE
                     </h1>
                     <p className="text-red-600 dark:text-red-500 font-bold uppercase tracking-widest text-sm">
-                        {currentStore?.name || 'PAPALEGUAS'}
+                        {currentStore?.name || 'AÇAÍ DO DUDU'}
                     </p>
                 </div>
 
@@ -46,7 +46,7 @@ const StaffSelectionPage: React.FC = () => {
                 </div>
 
                 <p className="text-gray-500 dark:text-gray-400 text-[10px] uppercase font-bold tracking-widest">
-                    Papaleguas PDV • Tecx Sistemas
+                    Açaí do Dudu PDV • Tecx Sistemas
                 </p>
             </div>
         </div>

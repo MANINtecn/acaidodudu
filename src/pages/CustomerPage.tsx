@@ -374,7 +374,7 @@ const Header: React.FC<{ onAdminClick: () => void; onMotoboyClick: () => void; o
                     )}
                 </div>
                 <div className="flex flex-col min-w-0 overflow-hidden">
-                    <h1 className="text-base md:text-lg font-display font-bold text-primary tracking-tight leading-none truncate">Papaléguas</h1>
+                    <h1 className="text-base md:text-lg font-display font-bold text-primary tracking-tight leading-none truncate">Açaí do Dudu</h1>
                     <p className="text-[9px] text-text-light font-medium mt-0.5 truncate">Lanches & Açaí</p>
                 </div>
             </div>
@@ -1844,7 +1844,7 @@ const CustomerPage: React.FC = () => {
                         steps: [
                             {
                                 title: 'Bem-vindo! 👋',
-                                intro: 'Bem-vindo ao Papaléguas! Vamos te mostrar como fazer seu pedido rapidinho.'
+                                intro: 'Bem-vindo ao Açaí do Dudu! Vamos te mostrar como fazer seu pedido rapidinho.'
                             },
                             {
                                 element: '#tour-fidelity',

@@ -103,7 +103,7 @@ const TvOverlayPage: React.FC = () => {
       if (url.includes('twitch.tv')) {
         const parts = url.split('twitch.tv/');
         const channel = parts.length > 1 ? (parts[1].split('?')[0] || '') : '';
-        return `https://player.twitch.tv/?channel=${channel}&parent=papaleguastocmg.vercel.app&autoplay=true&muted=false`;
+        return `https://player.twitch.tv/?channel=${channel}&parent=${window.location.hostname}&autoplay=true&muted=false`;
       }
       return url;
     } catch (err) {

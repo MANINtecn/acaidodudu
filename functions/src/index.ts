@@ -11,7 +11,7 @@ admin.initializeApp();
 setGlobalOptions({ region: "us-central1" });
 
 // ID da Loja Fixo
-const STORE_ID = 'ea802c0f-4b61-4dc5-8325-cf3d23a0a392';
+const STORE_ID = process.env.STORE_ID || '';
 
 export const whatsappBot = onRequest({
   secrets: [
@@ -36,6 +36,7 @@ export const whatsappBot = onRequest({
     const EVOLUTION_API_URL = (process.env.BTZAP_API_URL || "").trim();
     const EVOLUTION_API_KEY = (process.env.BTZAP_API_KEY || "").trim();
     const OPENAI_API_KEY = (process.env.OPENAI_API_KEY || "").trim();
+    const APP_URL = (process.env.APP_URL || "nosso site (em breve)").trim();
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
@@ -104,7 +105,7 @@ export const whatsappBot = onRequest({
       return;
     }
 
-    const instanceName = data.instanceName || data.data?.instanceName || process.env.BTZAP_INSTANCE_NAME || 'PapaleguasTOC';
+    const instanceName = data.instanceName || data.data?.instanceName || process.env.BTZAP_INSTANCE_NAME || 'AcaiDoDudu';
 
     // --- MASTER OVERRIDE / TESTERS ---
     // Adicionando o telefone do usuário (3299651644) aos testadores para bypassar o status "Offline"
@@ -210,7 +211,7 @@ export const whatsappBot = onRequest({
 
     // 5. Build OpenAI Prompt and Tools
     const systemPrompt = `
- Você é o Papaléguas Mascote, o atendente oficial da lanchonete "Papaléguas Lanches". 🏃‍♂️💨🍔
+ Você é o atendente oficial da sorveteria "Açaí do Dudu". 🍨🍧
 
 REGRA DE MISSÃO: Sua missão é guiar o cliente até o fechamento do pedido com agilidade, mas de forma **humana, natural e sem parecer um robô**. 
 
@@ -227,12 +228,12 @@ REGRA DE MISSÃO: Sua missão é guiar o cliente até o fechamento do pedido com
 
 ### REGRAS DE OURO (COMPORTAMENTO HUMANO):
 1. **SAUDAÇÃO INICIAL (RESTRITA)**: Você SÓ deve dar as boas-vindas se o histórico abaixo estiver VAZIO ou se o cliente apenas disse algo como "Oi", "Bom dia", "Olá". Se o cliente já pediu algo ou o histórico tem mensagens recentes, pule a saudação e vá direto ao ponto.
-2. **OUÇA E CONFIRME**: Quando o cliente pedir algo ou mudar um item (ex: "sem alface"), confirme de forma natural: "Beleza, já anotei aqui: 1 X-Tudo sem alface! 🍔✅ Quer aproveitar e levar uma Coca gelada?"
+2. **OUÇA E CONFIRME**: Quando o cliente pedir algo ou mudar um item (ex: "sem granola"), confirme de forma natural: "Beleza, já anotei aqui: 1 Açaí 500ml sem granola! 🍨✅ Quer aproveitar e levar um copo de sorvete também?"
 3. **CONTEXTO SEMPRE**: Use o histórico para saber que mensagens curtas como "Sim", "Não", "Tira o ovo" se referem ao que foi falado imediatamente antes.
 4. **PEDIDO ATIVO**: Se já existe um pedido ('hasActiveOrder' TRUE), inicie oferecendo: A) Acompanhar, B) Atualizar/Novo, C) Pedir Mais.
 5. **DADOS FINAIS**: Só finalize (create_order) após coletar: Nome, Endereço Completo, Referência e Pagamento (Dinheiro, Cartão ou Pix). Peça confirmação final antes de lançar.
 
-6. **PROMOÇÕES E COMBOS**: Sempre que o cliente perguntar por promoções ou combos, descreva as que estão no cardápio abaixo e mencione que ele pode ver as imagens e pedir direto pelo App: https://papaleguastocmg.vercel.app
+6. **PROMOÇÕES E COMBOS**: Sempre que o cliente perguntar por promoções ou combos, descreva as que estão no cardápio abaixo e mencione que ele pode ver as imagens e pedir direto pelo App: ${APP_URL}
 
 ### CARDÁPIO E PREÇOS:
 ${menuData}
@@ -392,7 +393,7 @@ Personalidade: Divertido, direto e muito prestativo. Use emojis adequados.
     }
 
     let rawResponseText = await callOpenAI(messages);
-    let responseText = rawResponseText.replace(/^(IA|Bot|Atendente|Papaléguas):\s*/i, '').trim();
+    let responseText = rawResponseText.replace(/^(IA|Bot|Atendente|Açaí do Dudu):\s*/i, '').trim();
 
     // Salva a resposta da IA no banco
     await supabase.rpc('add_chat_msg', { p_phone: phone, p_role: 'ai', p_content: responseText });

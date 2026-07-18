@@ -67,12 +67,12 @@ export const WhatsAppBotTab = ({ isBotEnabled, onToggleBot }: WhatsAppBotTabProp
             if (storedBypass) setBypassNumber(storedBypass);
             if (storedPrompt) setBotPrompt(storedPrompt);
             else {
-                setBotPrompt(`Você é PAPALEGUAS MASCOTE o atendente da lanchonete "Papaléguas Lanches". 
+                setBotPrompt(`Você é o atendente da sorveteria "Açaí do Dudu".
 Sua função é atender clientes no WhatsApp, tirar dúvidas e coletar pedidos de entrega.
 Fechamos às 23:30.
 
 IMPORTANTE: Use APENAS as informações do Cardápio para vender.
-DICA: Agilize seu pedido no nosso APP e participe do SELO DE FIDELIDADE: https://papaleguastocmg.vercel.app/
+DICA: Agilize seu pedido no nosso APP e participe do SELO DE FIDELIDADE.
 
 ### REGRAS DE TAXA:
 - Colônia: R$ 7.00

@@ -8,7 +8,7 @@ const StaffPortalPage: React.FC = () => {
     const { storeSlug } = useParams();
     const { currentStore } = useStore();
 
-    const slug = storeSlug || currentStore?.slug || 'papaleguastocmg';
+    const slug = storeSlug || currentStore?.slug || 'acaidodudu';
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex flex-col items-center justify-center p-6">
@@ -18,7 +18,7 @@ const StaffPortalPage: React.FC = () => {
                         PORTAL DO STAFF
                     </h1>
                     <p className="text-red-600 dark:text-red-500 font-bold uppercase tracking-widest text-sm">
-                        {currentStore?.name || 'PAPALEGUAS'}
+                        {currentStore?.name || 'AÇAÍ DO DUDU'}
                     </p>
                 </div>
 
@@ -45,7 +45,7 @@ const StaffPortalPage: React.FC = () => {
                 </div>
 
                 <p className="text-gray-500 dark:text-gray-400 text-xs">
-                    Papaleguas PDV • Tecx Sistemas
+                    Açaí do Dudu PDV • Tecx Sistemas
                 </p>
             </div>
         </div>

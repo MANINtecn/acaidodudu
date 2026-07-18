@@ -1,8 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const EVOLUTION_API_URL = Deno.env.get('BTZAP_API_URL') || "https://server.btzap.com.br";
-const BTZAP_TOKEN = Deno.env.get('BTZAP_TOKEN') || "3b7275ac-c71c-4f5c-902e-2b5be10e293c";
-const INSTANCE_NAME = Deno.env.get('BTZAP_INSTANCE_NAME') || 'PapaleguasTOC';
+const BTZAP_TOKEN = Deno.env.get('BTZAP_TOKEN') || "";
+const INSTANCE_NAME = Deno.env.get('BTZAP_INSTANCE_NAME') || 'AcaiDoDudu';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

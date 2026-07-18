@@ -13,7 +13,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 const openai = new OpenAI({ apiKey: OPENAI_API_KEY })
 
 // Store ID (Fixed for this instance)
-const STORE_ID = 'ea802c0f-4b61-4dc5-8325-cf3d23a0a392'
+const STORE_ID = Deno.env.get('STORE_ID') || ''
 
 Deno.serve(async (req) => {
   try {
@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
         return new Response('Admin Msg Saved & Bot Paused', { status: 200 });
     }
 
-    const instanceName = data.instanceName || data.data?.instanceName || Deno.env.get('BTZAP_INSTANCE_NAME') || 'PapaleguasTOC';
+    const instanceName = data.instanceName || data.data?.instanceName || Deno.env.get('BTZAP_INSTANCE_NAME') || 'AcaiDoDudu';
     
     // --- MASTER OVERRIDE / TESTERS ---
     const ADMIN_TESTER_PHONES = ['32920007226', '32998540648'];
@@ -221,7 +221,7 @@ Deno.serve(async (req) => {
       - DADOS CADASTRAIS: ${typeof customerData === 'string' ? customerData : JSON.stringify(customerData || {})}
 
       ### REGRAS DE OURO:
-      1. INÍCIO DE CONVERSA: Se o cliente disse "Oi", Responda: "Olá! 😃 Para agilizar, peça pelo nosso App: https://papaleguastocmg.vercel.app Ou me fale o que deseja aqui."
+      1. INÍCIO DE CONVERSA: Se o cliente disse "Oi", Responda: "Olá! 😃 Para agilizar, peça pelo nosso App: ${Deno.env.get('APP_URL') || 'nosso site (em breve)'} Ou me fale o que deseja aqui."
       2. NUNCA pergunte o telefone da pessoa.
       3. CARRINHO DE COMPRAS: Você DEVE SEMPRE ler o histórico da conversa para lembrar dos itens que o cliente pediu. Nunca esqueça os itens mesmo se o cliente apenas mandar o endereço agora.
       4. ESTRATÉGIA DE VENDAS: Se pediu comida mas não bebida, sugira uma bebida uma única vez.
@@ -390,7 +390,7 @@ Deno.serve(async (req) => {
     }
 
     let rawResponseText = await callOpenAI(messages);
-    let responseText = rawResponseText.replace(/^(IA|Bot|Atendente|Papaléguas):\s*/i, '').trim();
+    let responseText = rawResponseText.replace(/^(IA|Bot|Atendente|Açaí do Dudu):\s*/i, '').trim();
     
     console.log("Saving AI Response to history...");
     await supabase.rpc('add_chat_msg', { p_phone: phone, p_role: 'ai', p_content: responseText });

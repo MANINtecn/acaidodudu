@@ -68,7 +68,7 @@ const LoginPage: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="max-w-md w-full bg-surface p-8 rounded-lg shadow-lg">
         <div className="flex justify-center mb-6">
-          <img src="file:///C:/Users/icaro/.gemini/antigravity/brain/0fce70ac-0a53-42b4-852f-d72b7809b058/papaleguas_logo_mascot_1768403002040.png" alt="Papaleguas Mascot" className="w-24 h-24 rounded-full border-4 border-primary" />
+          <img src="/src/assets/logo.svg" alt="Açaí do Dudu" className="w-24 h-24 rounded-full border-4 border-primary" />
         </div>
         <h2 className="text-3xl font-display text-center text-primary mb-6">Painel Administrativo</h2>
         <form onSubmit={handleLogin} className="space-y-6">

@@ -22,7 +22,7 @@ const CourierLoginPage: React.FC = () => {
 
         const success = await login(phone, password);
         if (success) {
-            navigate(`/${currentStore?.slug || 'papaleguastocmg'}/entregador/dashboard`);
+            navigate(`/${currentStore?.slug || 'acaidodudu'}/entregador/dashboard`);
         } else {
             setError('Credenciais inválidas. Verifique telefone e senha.');
         }
@@ -97,7 +97,7 @@ const CourierLoginPage: React.FC = () => {
                             <p className="text-gray-500 text-sm mb-3">Não tem cadastro?</p>
                             <button
                                 type="button" 
-                                onClick={() => navigate(`/${currentStore?.slug || 'papaleguastocmg'}/entregador/registro`)}
+                                onClick={() => navigate(`/${currentStore?.slug || 'acaidodudu'}/entregador/registro`)}
                                 className="w-full py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
                             >
                                 Criar Conta <ChevronRight size={16} />
@@ -106,7 +106,7 @@ const CourierLoginPage: React.FC = () => {
                     </form>
                 </div>
             </div>
-            <p className="mt-8 text-gray-400 text-xs">Sistema Papaléguas &copy; 2026</p>
+            <p className="mt-8 text-gray-400 text-xs">Sistema Açaí do Dudu &copy; 2026</p>
         </div>
     );
 };

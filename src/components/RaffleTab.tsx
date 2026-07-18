@@ -105,7 +105,7 @@ const RaffleTab: React.FC<RaffleTabProps> = ({ storeId, settings, onUpdate }) =>
 
     const handleNotificarVencedor = () => {
         if (!bolaoWinner) return;
-        const message = `🎉 🏆 GOLAAÇOOOO! Parabéns, ${bolaoWinner.customerName}!\nVocê foi o PRIMEIRO cliente a acertar na mosca o placar de Brasil ${bolaoResult.brazil} x ${bolaoResult.opponent} Marrocos no nosso Bolão da Copa!\n\nVocê acaba de ganhar uma *Batata Grande com Cheddar e Bacon*! 🍟🥓\n\nPara resgatar, basta apresentar esta mensagem no balcão juntamente com o número do seu celular. O nosso atendente vai verificar no sistema para validar seu prêmio.\n\n⚠️ *IMPORTANTE*: O prêmio é EXCLUSIVO para consumo no local (na mesa). Não é válido para retirada nem para entrega.\n\nObrigado por participar e ser um cliente fiel do Papaléguas!`;
+        const message = `🎉 🏆 GOLAAÇOOOO! Parabéns, ${bolaoWinner.customerName}!\nVocê foi o PRIMEIRO cliente a acertar na mosca o placar de Brasil ${bolaoResult.brazil} x ${bolaoResult.opponent} Marrocos no nosso Bolão da Copa!\n\nVocê acaba de ganhar um *Açaí 500ml com 2 Acompanhamentos*! 🍨🍓\n\nPara resgatar, basta apresentar esta mensagem no balcão juntamente com o número do seu celular. O nosso atendente vai verificar no sistema para validar seu prêmio.\n\n⚠️ *IMPORTANTE*: O prêmio é EXCLUSIVO para consumo no local (na mesa). Não é válido para retirada nem para entrega.\n\nObrigado por participar e ser um cliente fiel do Açaí do Dudu!`;
         const phone = bolaoWinner.phone.replace(/\D/g, '');
         const whatsappUrl = `https://wa.me/55${phone}?text=${encodeURIComponent(message)}`;
         window.open(whatsappUrl, '_blank');

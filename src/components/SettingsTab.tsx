@@ -157,7 +157,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, onSave, inst
                             <div>
                                 <h3 className="text-xl font-bold">Instalar Aplicativo</h3>
                                 <p className="text-white/80 text-sm max-w-sm">
-                                    Adicione o Papaleguas à sua tela de início para acesso rápido e uma experiência em tela cheia (estilo App).
+                                    Adicione o Açaí do Dudu à sua tela de início para acesso rápido e uma experiência em tela cheia (estilo App).
                                 </p>
                             </div>
                         </div>

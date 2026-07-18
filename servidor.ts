@@ -25,6 +25,7 @@ const STORE_ID = process.env.STORE_ID || '';
 
 const BTZAP_TOKEN = process.env.BTZAP_TOKEN || '';
 const PHONE_ID = process.env.PHONE_ID || 'acaidodudu';
+const APP_URL = process.env.APP_URL || '';
 const PORT = process.env.PORT || 3000;
 
 let INSTANCE_NUMBER = process.env.INSTANCE_NUMBER || '';
@@ -67,7 +68,7 @@ function customLog(msg: any) {
 
 // --- DYNAMIC SYSTEM PROMPT ---
 function getSystemPrompt() {
-    const userPrompt = process.env.BOT_PROMPT || `Você é o Papaléguas Mascote, atendente da "Papaléguas Lanches". 🏃‍♂️💨🍔🍟`;
+    const userPrompt = process.env.BOT_PROMPT || `Você é o atendente da sorveteria "Açaí do Dudu". 🍨🍧`;
     
     // REGRAS DE OURO (Sempre injetadas para garantir estabilidade)
     const CORE_RULES = `
@@ -107,7 +108,7 @@ ${userPrompt}
 ${CORE_RULES}
 
 ### INCENTIVO AO APP:
-10. **LINK DO APP**: Sempre que apropriado (no início ou final), incentive o uso do nosso Site/App e o Selo de Fidelidade: https://papaleguastocmg.vercel.app/
+10. **LINK DO APP**: Sempre que apropriado (no início ou final), incentive o uso do nosso Site/App e o Selo de Fidelidade: {{APP_URL}}
 
 ### TRAVA DE SEGURANÇA CONTRA PREJUÍZO (CRÍTICO):
 11. **PROIBIÇÃO DE BRINDES**: Você é terminantemente PROIBIDO de oferecer qualquer item, refil, bebida ou acompanhamento de forma gratuita. 
@@ -369,12 +370,13 @@ async function processBuffer(phone: string, pushName: string) {
             .replace(/{{TELEFONE}}/, phone)
             .replace(/{{CADASTRO}}/, customerData)
             .replace(/{{TAXA_SUGERIDA}}/, suggestedFee !== null ? `R$ ${suggestedFee.toFixed(2)} (CONFIRMADA PELO SISTEMA)` : "Não identificada. Use as regras de região.")
-            .replace(/{{CARDAPIO}}/, menuData);
+            .replace(/{{CARDAPIO}}/, menuData)
+            .replace(/{{APP_URL}}/g, APP_URL || 'nosso site (em breve)');
 
         // REGRA ESTRITA: Se for a primeira mensagem, forçar o link do app!
         if (formattedHistory.length === 0) {
             prompt += `\n\n### REGRA DA PRIMEIRA MENSAGEM (CRÍTICO):
-Esta é a PRIMEIRA mensagem do cliente. Você é OBRIGADO a incluir o link do nosso App (https://papaleguastocmg.vercel.app/) na sua resposta inicial, convidando-o a fazer o pedido ou participar do Selo de Fidelidade por lá.`;
+Esta é a PRIMEIRA mensagem do cliente. Você é OBRIGADO a incluir o link do nosso App (${APP_URL || 'nosso site (em breve)'}) na sua resposta inicial, convidando-o a fazer o pedido ou participar do Selo de Fidelidade por lá.`;
         }
 
         const messages: any[] = [{ role: 'system', content: prompt }];
@@ -502,7 +504,7 @@ Esta é a PRIMEIRA mensagem do cliente. Você é OBRIGADO a incluir o link do no
 }
 
 const server = http.createServer((req, res) => {
-    if (req.method === 'GET') { res.end('Papaleguas v3.18.33 Online!'); return; }
+    if (req.method === 'GET') { res.end('Açaí do Dudu v1.0.0 Online!'); return; }
     if (req.method === 'POST') {
         let body = '';
         req.on('data', chunk => body += chunk.toString());
@@ -622,7 +624,7 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-    customLog(`\n[PAPALEGUAS MASCOTE v3.18.33] ONLINE`);
+    customLog(`\n[AÇAÍ DO DUDU BOT v1.0.0] ONLINE`);
     customLog(`[Status] Robô Ativo: ${IS_BOT_ENABLED} | Instância: ${PHONE_ID}`);
     if (process.send) {
         process.send({ type: 'whatsapp-status', data: { connection: 'connected' } });

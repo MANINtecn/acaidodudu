@@ -1007,7 +1007,7 @@ const AdminPage = () => {
                     {/* QR Code Staff Portal - Larger and Centered */}
                     <div className="w-full flex justify-center py-2">
                          <img 
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`https://papaleguastocmg.vercel.app/portal-equipe`)}`} 
+                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}/portal-equipe`)}`} 
                             alt="Staff Portal QR" 
                             className="w-32 h-32 rounded-xl border-2 border-gray-100 dark:border-gray-700 shadow-lg bg-white p-2"
                             title="Acesso Staff (Aponte a Câmera)"

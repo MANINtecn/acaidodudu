@@ -1,6 +1,6 @@
 {
-  "name": "papaleguas_toc",
-  "description": "Um sistema de gestão completo para a lanchonete PAPALEGUAS LANCHES, apresentando um cardápio digital para clientes e um painel administrativo para gerenciamento de pedidos, configurações e controle de caixa em tempo real.",
+  "name": "acai_do_dudu",
+  "description": "Um sistema de gestão completo para a sorveteria AÇAÍ DO DUDU, apresentando um cardápio digital para clientes e um painel administrativo para gerenciamento de pedidos, configurações e controle de caixa em tempo real.",
   "requestFramePermissions": [
     "usb"
   ]

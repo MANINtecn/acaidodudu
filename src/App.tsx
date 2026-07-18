@@ -107,9 +107,9 @@ const App: React.FC = () => {
             <Suspense fallback={loadingSpinner}>
               <Routes>
                 {/* 
-                  If accessed via subdomain (e.g. papaleguas.domain.com), the store is loaded in context.
+                  If accessed via subdomain (e.g. acaidodudu.domain.com), the store is loaded in context.
                   We render CustomerPage at root '/'.
-                  If accessed via path (e.g. domain.com/papaleguas), we render CustomerPage at '/:storeSlug'.
+                  If accessed via path (e.g. domain.com/acaidodudu), we render CustomerPage at '/:storeSlug'.
                 */}
                 <Route path="/" element={<RootRoute />} />
                 <Route path="/super-admin" element={<SuperAdminPage />} />
@@ -160,7 +160,7 @@ const RootRoute: React.FC = () => {
 
   // If in Electron, always redirect to admin login
   if (isElectron) {
-    return <Navigate to="/papaleguastocmg/login" replace />;
+    return <Navigate to="/acaidodudu/login" replace />;
   }
 
   // If store is loaded (via subdomain), show CustomerPage
@@ -170,7 +170,7 @@ const RootRoute: React.FC = () => {
 
   // If no store loaded at root, redirect to default path-based store
   // In a real SaaS, this would be the Landing Page
-  return <Navigate to="/papaleguastocmg" replace />;
+  return <Navigate to="/acaidodudu" replace />;
 };
 
 export default App;

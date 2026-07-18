@@ -110,7 +110,7 @@ class PrinterService {
     if (titleOverride) {
       content += center(BOLD + `--- ${titleOverride} ---` + RESET) + "\n";
     }
-    content += center("PAPALEGUAS LANCHES") + "\n";
+    content += center("AÇAÍ DO DUDU") + "\n";
     content += line() + "\n";
 
     // Sequence Number and Type (PROMINENT)
@@ -272,7 +272,7 @@ class PrinterService {
       </head>
       <body>
         <div class="header">
-          <h1>PAPALEGUAS LANCHES</h1>
+          <h1>AÇAÍ DO DUDU</h1>
           <p>Relatório de Fechamento de Caixa</p>
           <p>${new Date().toLocaleString('pt-BR')}</p>
         </div>
