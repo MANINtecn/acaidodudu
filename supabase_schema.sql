@@ -359,4 +359,33 @@ CREATE POLICY "Permite modificacao para cash_transactions" ON public.cash_transa
 CREATE POLICY "Permite leitura publica para promotions" ON public.promotions FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para promotions" ON public.promotions FOR ALL USING (true);
 
+-- ------------------------------------------------------------
+-- INSERÇÃO DA LOJA PADRÃO E CONFIGURAÇÕES INICIAIS
+-- ------------------------------------------------------------
+DO $$ 
+DECLARE
+    new_store_id UUID;
+BEGIN
+    -- Insere a loja padrão se não existir
+    INSERT INTO public.stores (name, slug, logo_url, theme_colors, is_active)
+    VALUES (
+        'Açaí do Dudu',
+        'acaidodudu',
+        'https://firebasestorage.googleapis.com/v0/b/papaleguastoc.firebasestorage.app/o/menu-images%2Fstore_ea802c0f-4b61-4dc5-8325-cf3d23a0a392_1764413325339.png?alt=media&token=a40a2741-98a7-47fd-a213-d25d27a42693',
+        '{"primary": "#800080", "secondary": "#4B0082", "background": "#121212", "surface": "#1E1E1E"}'::jsonb,
+        true
+    )
+    ON CONFLICT (slug) DO NOTHING;
+
+    -- Obtém o ID da loja
+    SELECT id INTO new_store_id FROM public.stores WHERE slug = 'acaidodudu';
+
+    -- Insere as configurações padrões se não existirem
+    IF new_store_id IS NOT NULL THEN
+        INSERT INTO public.settings (store_id, opening_time, closing_time, manual_status, delivery_fee, courier_access_code)
+        VALUES (new_store_id, '18:00:00', '23:30:00', 'auto', 2.00, '012026')
+        ON CONFLICT (store_id) DO NOTHING;
+    END IF;
+END $$;
+
 NOTIFY pgrst, 'reload schema';
