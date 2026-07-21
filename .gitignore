@@ -59,6 +59,7 @@ chaves_api.txt
 
 # SQL and DB Scripts (ignore local copies if they are just for reference)
 *.sql
+!supabase_schema.sql
 scripts/
 test_rpc.cjs
 test_supabase.cjs
