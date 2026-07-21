@@ -326,36 +326,58 @@ ALTER TABLE public.cash_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.promotions ENABLE ROW LEVEL SECURITY;
 
 -- Permite acesso geral via chave do cliente
+DROP POLICY IF EXISTS "Permite leitura publica para stores" ON public.stores;
+DROP POLICY IF EXISTS "Permite modificacao para stores" ON public.stores;
 CREATE POLICY "Permite leitura publica para stores" ON public.stores FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para stores" ON public.stores FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para categories" ON public.categories;
+DROP POLICY IF EXISTS "Permite modificacao para categories" ON public.categories;
 CREATE POLICY "Permite leitura publica para categories" ON public.categories FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para categories" ON public.categories FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para menu_items" ON public.menu_items;
+DROP POLICY IF EXISTS "Permite modificacao para menu_items" ON public.menu_items;
 CREATE POLICY "Permite leitura publica para menu_items" ON public.menu_items FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para menu_items" ON public.menu_items FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para addons" ON public.addons;
+DROP POLICY IF EXISTS "Permite modificacao para addons" ON public.addons;
 CREATE POLICY "Permite leitura publica para addons" ON public.addons FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para addons" ON public.addons FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para settings" ON public.settings;
+DROP POLICY IF EXISTS "Permite modificacao para settings" ON public.settings;
 CREATE POLICY "Permite leitura publica para settings" ON public.settings FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para settings" ON public.settings FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para customers" ON public.customers;
+DROP POLICY IF EXISTS "Permite modificacao para customers" ON public.customers;
 CREATE POLICY "Permite leitura publica para customers" ON public.customers FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para customers" ON public.customers FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para couriers" ON public.couriers;
+DROP POLICY IF EXISTS "Permite modificacao para couriers" ON public.couriers;
 CREATE POLICY "Permite leitura publica para couriers" ON public.couriers FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para couriers" ON public.couriers FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para orders" ON public.orders;
+DROP POLICY IF EXISTS "Permite modificacao para orders" ON public.orders;
 CREATE POLICY "Permite leitura publica para orders" ON public.orders FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para orders" ON public.orders FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para cash_sessions" ON public.cash_sessions;
+DROP POLICY IF EXISTS "Permite modificacao para cash_sessions" ON public.cash_sessions;
 CREATE POLICY "Permite leitura publica para cash_sessions" ON public.cash_sessions FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para cash_sessions" ON public.cash_sessions FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para cash_transactions" ON public.cash_transactions;
+DROP POLICY IF EXISTS "Permite modificacao para cash_transactions" ON public.cash_transactions;
 CREATE POLICY "Permite leitura publica para cash_transactions" ON public.cash_transactions FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para cash_transactions" ON public.cash_transactions FOR ALL USING (true);
 
+DROP POLICY IF EXISTS "Permite leitura publica para promotions" ON public.promotions;
+DROP POLICY IF EXISTS "Permite modificacao para promotions" ON public.promotions;
 CREATE POLICY "Permite leitura publica para promotions" ON public.promotions FOR SELECT USING (true);
 CREATE POLICY "Permite modificacao para promotions" ON public.promotions FOR ALL USING (true);
 
