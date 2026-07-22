@@ -2,9 +2,9 @@
 -- TEMPLATE DEFINITIVO DE BANCO DE DADOS SUPABASE (TECX PDV)
 -- Este script cria toda a estrutura de tabelas, índices, RLS, 
 -- triggers e funções necessárias para rodar um novo cliente PDV.
+-- Cada tabela ativa e cria suas próprias regras de RLS imediatamente.
 -- ============================================================
 
--- Habilita extensão para UUIDs se não estiver habilitada
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- ------------------------------------------------------------
@@ -23,6 +23,11 @@ CREATE TABLE IF NOT EXISTS public.stores (
     plan_value NUMERIC DEFAULT 0,
     subscription_end_date TIMESTAMP WITH TIME ZONE
 );
+ALTER TABLE public.stores ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para stores" ON public.stores;
+DROP POLICY IF EXISTS "Permite modificacao para stores" ON public.stores;
+CREATE POLICY "Permite leitura publica para stores" ON public.stores FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para stores" ON public.stores FOR ALL USING (true);
 
 -- ------------------------------------------------------------
 -- 2. CATEGORIES (Categorias do Cardápio)
@@ -33,6 +38,11 @@ CREATE TABLE IF NOT EXISTS public.categories (
     name TEXT NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para categories" ON public.categories;
+DROP POLICY IF EXISTS "Permite modificacao para categories" ON public.categories;
+CREATE POLICY "Permite leitura publica para categories" ON public.categories FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para categories" ON public.categories FOR ALL USING (true);
 
 -- ------------------------------------------------------------
 -- 3. MENU ITEMS (Itens / Produtos do Cardápio)
@@ -53,6 +63,11 @@ CREATE TABLE IF NOT EXISTS public.menu_items (
     "addonCategoryIds" JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE public.menu_items ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para menu_items" ON public.menu_items;
+DROP POLICY IF EXISTS "Permite modificacao para menu_items" ON public.menu_items;
+CREATE POLICY "Permite leitura publica para menu_items" ON public.menu_items FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para menu_items" ON public.menu_items FOR ALL USING (true);
 
 -- ------------------------------------------------------------
 -- 4. ADDONS (Adicionais e Complementos)
@@ -66,6 +81,11 @@ CREATE TABLE IF NOT EXISTS public.addons (
     is_available BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE public.addons ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para addons" ON public.addons;
+DROP POLICY IF EXISTS "Permite modificacao para addons" ON public.addons;
+CREATE POLICY "Permite leitura publica para addons" ON public.addons FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para addons" ON public.addons FOR ALL USING (true);
 
 -- ------------------------------------------------------------
 -- 5. SETTINGS (Configurações da Loja)
@@ -104,6 +124,11 @@ CREATE TABLE IF NOT EXISTS public.settings (
     bolao_start_time TIMESTAMP WITH TIME ZONE,
     bolao_end_time TIMESTAMP WITH TIME ZONE
 );
+ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para settings" ON public.settings;
+DROP POLICY IF EXISTS "Permite modificacao para settings" ON public.settings;
+CREATE POLICY "Permite leitura publica para settings" ON public.settings FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para settings" ON public.settings FOR ALL USING (true);
 
 -- ------------------------------------------------------------
 -- 6. CUSTOMERS (Base de Clientes)
@@ -121,6 +146,11 @@ CREATE TABLE IF NOT EXISTS public.customers (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     CONSTRAINT unique_store_customer_phone UNIQUE (store_id, phone)
 );
+ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para customers" ON public.customers;
+DROP POLICY IF EXISTS "Permite modificacao para customers" ON public.customers;
+CREATE POLICY "Permite leitura publica para customers" ON public.customers FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para customers" ON public.customers FOR ALL USING (true);
 
 -- ------------------------------------------------------------
 -- 7. COURIERS (Entregadores / Motoboys)
@@ -134,6 +164,11 @@ CREATE TABLE IF NOT EXISTS public.couriers (
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE public.couriers ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para couriers" ON public.couriers;
+DROP POLICY IF EXISTS "Permite modificacao para couriers" ON public.couriers;
+CREATE POLICY "Permite leitura publica para couriers" ON public.couriers FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para couriers" ON public.couriers FOR ALL USING (true);
 
 -- ------------------------------------------------------------
 -- 8. ORDERS (Pedidos do Sistema)
@@ -170,6 +205,11 @@ CREATE TABLE IF NOT EXISTS public.orders (
     loyalty_redeemed_at TIMESTAMP WITH TIME ZONE,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para orders" ON public.orders;
+DROP POLICY IF EXISTS "Permite modificacao para orders" ON public.orders;
+CREATE POLICY "Permite leitura publica para orders" ON public.orders FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para orders" ON public.orders FOR ALL USING (true);
 
 -- ------------------------------------------------------------
 -- 9. CASH SESSIONS & TRANSACTIONS (Controle de Caixa)
@@ -184,6 +224,11 @@ CREATE TABLE IF NOT EXISTS public.cash_sessions (
     closing_float NUMERIC DEFAULT 0,
     summary JSONB
 );
+ALTER TABLE public.cash_sessions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para cash_sessions" ON public.cash_sessions;
+DROP POLICY IF EXISTS "Permite modificacao para cash_sessions" ON public.cash_sessions;
+CREATE POLICY "Permite leitura publica para cash_sessions" ON public.cash_sessions FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para cash_sessions" ON public.cash_sessions FOR ALL USING (true);
 
 CREATE TABLE IF NOT EXISTS public.cash_transactions (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -194,6 +239,11 @@ CREATE TABLE IF NOT EXISTS public.cash_transactions (
     justification TEXT,
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+ALTER TABLE public.cash_transactions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para cash_transactions" ON public.cash_transactions;
+DROP POLICY IF EXISTS "Permite modificacao para cash_transactions" ON public.cash_transactions;
+CREATE POLICY "Permite leitura publica para cash_transactions" ON public.cash_transactions FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para cash_transactions" ON public.cash_transactions FOR ALL USING (true);
 
 -- ------------------------------------------------------------
 -- 10. PROMOTIONS (Promoções Ativas)
@@ -206,6 +256,11 @@ CREATE TABLE IF NOT EXISTS public.promotions (
     price NUMERIC NOT NULL,
     is_active BOOLEAN DEFAULT true
 );
+ALTER TABLE public.promotions ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Permite leitura publica para promotions" ON public.promotions;
+DROP POLICY IF EXISTS "Permite modificacao para promotions" ON public.promotions;
+CREATE POLICY "Permite leitura publica para promotions" ON public.promotions FOR SELECT USING (true);
+CREATE POLICY "Permite modificacao para promotions" ON public.promotions FOR ALL USING (true);
 
 -- ============================================================
 -- FUNÇÕES E TRIGGERS AUTOMÁTICOS
@@ -310,77 +365,6 @@ EXCEPTION WHEN OTHERS THEN
 END;
 $$;
 
--- ============================================================
--- POLÍTICAS DE SEGURANÇA (RLS - Row Level Security)
--- ============================================================
-ALTER TABLE public.stores ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.categories ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.menu_items ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.addons ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.settings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.couriers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cash_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.cash_transactions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.promotions ENABLE ROW LEVEL SECURITY;
-
--- Permite acesso geral via chave do cliente
-DROP POLICY IF EXISTS "Permite leitura publica para stores" ON public.stores;
-DROP POLICY IF EXISTS "Permite modificacao para stores" ON public.stores;
-CREATE POLICY "Permite leitura publica para stores" ON public.stores FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para stores" ON public.stores FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para categories" ON public.categories;
-DROP POLICY IF EXISTS "Permite modificacao para categories" ON public.categories;
-CREATE POLICY "Permite leitura publica para categories" ON public.categories FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para categories" ON public.categories FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para menu_items" ON public.menu_items;
-DROP POLICY IF EXISTS "Permite modificacao para menu_items" ON public.menu_items;
-CREATE POLICY "Permite leitura publica para menu_items" ON public.menu_items FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para menu_items" ON public.menu_items FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para addons" ON public.addons;
-DROP POLICY IF EXISTS "Permite modificacao para addons" ON public.addons;
-CREATE POLICY "Permite leitura publica para addons" ON public.addons FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para addons" ON public.addons FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para settings" ON public.settings;
-DROP POLICY IF EXISTS "Permite modificacao para settings" ON public.settings;
-CREATE POLICY "Permite leitura publica para settings" ON public.settings FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para settings" ON public.settings FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para customers" ON public.customers;
-DROP POLICY IF EXISTS "Permite modificacao para customers" ON public.customers;
-CREATE POLICY "Permite leitura publica para customers" ON public.customers FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para customers" ON public.customers FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para couriers" ON public.couriers;
-DROP POLICY IF EXISTS "Permite modificacao para couriers" ON public.couriers;
-CREATE POLICY "Permite leitura publica para couriers" ON public.couriers FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para couriers" ON public.couriers FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para orders" ON public.orders;
-DROP POLICY IF EXISTS "Permite modificacao para orders" ON public.orders;
-CREATE POLICY "Permite leitura publica para orders" ON public.orders FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para orders" ON public.orders FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para cash_sessions" ON public.cash_sessions;
-DROP POLICY IF EXISTS "Permite modificacao para cash_sessions" ON public.cash_sessions;
-CREATE POLICY "Permite leitura publica para cash_sessions" ON public.cash_sessions FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para cash_sessions" ON public.cash_sessions FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para cash_transactions" ON public.cash_transactions;
-DROP POLICY IF EXISTS "Permite modificacao para cash_transactions" ON public.cash_transactions;
-CREATE POLICY "Permite leitura publica para cash_transactions" ON public.cash_transactions FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para cash_transactions" ON public.cash_transactions FOR ALL USING (true);
-
-DROP POLICY IF EXISTS "Permite leitura publica para promotions" ON public.promotions;
-DROP POLICY IF EXISTS "Permite modificacao para promotions" ON public.promotions;
-CREATE POLICY "Permite leitura publica para promotions" ON public.promotions FOR SELECT USING (true);
-CREATE POLICY "Permite modificacao para promotions" ON public.promotions FOR ALL USING (true);
-
 -- ------------------------------------------------------------
 -- INSERÇÃO DA LOJA PADRÃO E CONFIGURAÇÕES INICIAIS
 -- ------------------------------------------------------------
@@ -388,7 +372,6 @@ DO $$
 DECLARE
     new_store_id UUID;
 BEGIN
-    -- Insere a loja padrão se não existir
     INSERT INTO public.stores (name, slug, logo_url, theme_colors, is_active)
     VALUES (
         'Açaí do Dudu',
@@ -399,10 +382,8 @@ BEGIN
     )
     ON CONFLICT (slug) DO NOTHING;
 
-    -- Obtém o ID da loja
     SELECT id INTO new_store_id FROM public.stores WHERE slug = 'acaidodudu';
 
-    -- Insere as configurações padrões se não existirem
     IF new_store_id IS NOT NULL THEN
         INSERT INTO public.settings (store_id, opening_time, closing_time, manual_status, delivery_fee, courier_access_code)
         VALUES (new_store_id, '18:00:00', '23:30:00', 'auto', 2.00, '012026')
