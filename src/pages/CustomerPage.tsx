@@ -459,11 +459,11 @@ const MenuItemCard: React.FC<{ item: MenuItem; onAddItem: (item: MenuItem) => vo
             className={`group bg-surface rounded-2xl overflow-hidden shadow-lg flex flex-col h-full border border-text-light/5 hover:border-primary/50 transition-all duration-300 transform hover:-translate-y-1 hover:shadow-2xl cursor-pointer ${isSoldOut ? 'opacity-75 cursor-not-allowed' : ''}`}
         >
             {item.image && (
-                <div className="h-32 md:h-40 overflow-hidden relative">
+                <div className="h-36 md:h-44 overflow-hidden relative bg-black/20 p-2 flex items-center justify-center rounded-t-2xl">
                     <img 
                         src={item.image} 
                         alt={item.name} 
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" 
+                        className="max-h-full max-w-full object-contain transition-transform duration-500 group-hover:scale-105 drop-shadow-md" 
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3">
                          <span className="text-white text-[10px] font-bold uppercase tracking-wider">Ver Detalhes</span>
