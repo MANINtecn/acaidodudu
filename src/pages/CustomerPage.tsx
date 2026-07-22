@@ -375,7 +375,7 @@ const Header: React.FC<{ onAdminClick: () => void; onMotoboyClick: () => void; o
                 </div>
                 <div className="flex flex-col min-w-0 overflow-hidden">
                     <h1 className="text-base md:text-lg font-display font-bold text-primary tracking-tight leading-none truncate">Açaí do Dudu</h1>
-                    <p className="text-[9px] text-text-light font-medium mt-0.5 truncate">Lanches & Açaí</p>
+                    <p className="text-[9px] text-text-light font-medium mt-0.5 truncate">Açaís, Sorvetes & Sobremesas</p>
                 </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
@@ -431,7 +431,7 @@ const ProductSearchBar: React.FC<{ value: string; onChange: (val: string) => voi
                 type="text"
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
-                placeholder="Buscar produtos (ex: agua, x tudo)..."
+                placeholder="Buscar no cardápio (ex: açaí, milk shake, sorvete)..."
                 className="w-full bg-surface border border-text-light/10 rounded-full pl-10 pr-4 py-2 text-sm text-text-light focus:outline-none focus:border-primary transition-colors placeholder-text-dark"
             />
         </div>
