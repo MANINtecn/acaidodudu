@@ -1431,13 +1431,13 @@ const CustomerRecognitionBar: React.FC<{ onPhoneSubmit: (phone: string) => void;
             <div className="relative z-10 py-4 px-4 flex flex-col sm:flex-row items-center justify-between gap-3 w-full max-w-5xl mx-auto">
                 <div className="flex flex-col items-center sm:items-start justify-center w-full sm:w-auto">
                     <div className="flex items-center gap-2">
-                        <span className="text-xl md:text-2xl animate-bounce drop-shadow-[0_0_8px_rgba(255,215,0,0.8)]">🏆</span>
-                        <h2 className="font-black text-base md:text-xl text-transparent bg-clip-text bg-gradient-to-r from-[#ffd700] to-[#fff3a1] uppercase tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-none">
-                            Bolão da Copa
+                        <span className="text-xl md:text-2xl drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]">🍧</span>
+                        <h2 className="font-black text-base md:text-xl text-transparent bg-clip-text bg-gradient-to-r from-purple-300 via-purple-100 to-white uppercase tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-none">
+                            Açaí do Dudu
                         </h2>
                     </div>
-                    <p className="text-[10px] md:text-xs font-black text-white uppercase tracking-widest mt-1 text-center sm:text-left w-full drop-shadow-md">
-                        Dê seu palpite e concorra!
+                    <p className="text-[10px] md:text-xs font-black text-purple-100 uppercase tracking-widest mt-1 text-center sm:text-left w-full drop-shadow-md">
+                        O Melhor Açaí da Cidade • Peça Já!
                     </p>
                 </div>
 
