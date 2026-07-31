@@ -159,6 +159,7 @@ export interface CashSummary {
 export interface Settings {
   id?: string;
   store_id: string;
+  storefrontTheme?: 'classic' | 'modern';
   openingTime: string;
   closingTime: string;
   manualStatus: 'open' | 'closed' | 'auto';

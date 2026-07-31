@@ -629,6 +629,7 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
     return {
         ...fullData,
         // Map snake_case or camelCase DB columns to camelCase app properties
+        storefrontTheme: dbData?.storefront_theme ?? dbData?.storefrontTheme ?? 'classic',
         openingTime: dbData?.opening_time ?? dbData?.openingTime ?? defaultSettings.openingTime,
         closingTime: dbData?.closing_time ?? dbData?.closingTime ?? defaultSettings.closingTime,
         manualStatus: dbData?.manual_status ?? dbData?.manualStatus ?? defaultSettings.manualStatus,
@@ -751,6 +752,10 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
     // because the database schema currently has a mix of both.
     
     // Core fields
+    if (settings.storefrontTheme !== undefined) {
+        dbSettings.storefront_theme = settings.storefrontTheme;
+        dbSettings.storefrontTheme = settings.storefrontTheme;
+    }
     if (settings.openingTime !== undefined) {
         dbSettings.opening_time = settings.openingTime;
         dbSettings.openingTime = settings.openingTime;
