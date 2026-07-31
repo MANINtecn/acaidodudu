@@ -322,7 +322,7 @@ export const mapOrderFromDB = (dbOrder: any): Order => {
         comandaNumber: dbOrder.comanda_number || dbOrder.comandaNumber,
         discount: Number(dbOrder.discount) || 0,
         tax: Number(dbOrder.tax) || 0,
-        rating: dbOrder.rating ? Number(dbOrder.rating) : null,
+        rating: dbOrder.rating ? Number(dbOrder.rating) : undefined,
         feedback: dbOrder.feedback,
 
         deliveryFee: Number(dbOrder.delivery_fee || dbOrder.deliveryFee) || 0,
@@ -741,10 +741,8 @@ export const fetchPublicSettings = async (storeId: string): Promise<Pick<Setting
 };
 
 export const updateSettings = async (storeId: string, settings: Partial<Omit<Settings, 'id'>>) => {
-    const { logoUrl, ...rest } = settings;
-
-    if (logoUrl !== undefined) {
-        await supabase.from('stores').update({ logo_url: logoUrl }).eq('id', storeId);
+    if (settings.logoUrl !== undefined) {
+        await supabase.from('stores').update({ logo_url: settings.logoUrl }).eq('id', storeId);
     }
 
     const dbSettings: any = {};
@@ -870,7 +868,7 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
             .select();
 
         if (error) throw error;
-        return mapSettingsDBToApp(data?.[0], { logo_url: logoUrl });
+        return mapSettingsDBToApp(data?.[0], { logo_url: settings.logoUrl });
     } catch (error: any) {
         console.warn('[updateSettings] Multi-field update failed. Retrying field by field...', error);
         
@@ -894,7 +892,7 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
             .eq('store_id', storeId)
             .single();
             
-        return mapSettingsDBToApp(finalData, { logo_url: logoUrl });
+        return mapSettingsDBToApp(finalData, { logo_url: settings.logoUrl });
     }
 };
 

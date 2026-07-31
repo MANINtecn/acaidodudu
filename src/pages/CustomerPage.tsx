@@ -621,23 +621,26 @@ const PromotionsCoverflow: React.FC<{ promotions: Promotion[], onAddToCart: (ite
             onMouseLeave={handleTouchEnd}
         >
              {promotions.map((promo, index) => {
-                 let bgImage = '/promo_burger.png'; // default
-                 const nameLower = promo.name.toLowerCase();
-                 
-                 if (nameLower.includes('batata') && nameLower.includes('refri')) {
-                     bgImage = '/promo_combo.png'; // Combo completo
-                 } else if (nameLower.includes('salgado')) {
-                     bgImage = '/promo_salgados.png'; // Salgados (Coxinhas, etc)
-                 } else if (nameLower.includes('frita') || (nameLower.includes('batata') && !nameLower.includes('burguer'))) {
-                     bgImage = '/promo_fries.png'; // Fritas
-                 } else if (nameLower.includes('x-tudo') || nameLower.includes('burguer') || nameLower.includes('hamb')) {
-                     bgImage = '/promo_burger.png'; // Hambúrguer
+                 // Extract image from promo.image field OR from description |||IMG: marker
+                 let bgImage: string | undefined = promo.image || undefined;
+                 if (!bgImage && promo.description?.includes('|||IMG:')) {
+                     bgImage = promo.description.split('|||IMG:')[1]?.trim();
                  }
-                 
+                 // Clean display description (remove the |||IMG: marker part)
+                 const displayDesc = promo.description?.includes('|||IMG:')
+                     ? promo.description.split('|||IMG:')[0].trim()
+                     : promo.description;
+
                  return (
                  <div 
                     key={promo.id}
-                    style={{...getStyles(index), backgroundImage: `url(${bgImage})`, backgroundSize: 'cover', backgroundPosition: 'center'}}
+                    style={{
+                        ...getStyles(index),
+                        ...(bgImage
+                            ? { backgroundImage: `url(${bgImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+                            : { background: 'linear-gradient(135deg, #1a0a2e 0%, #2d1a4a 100%)' }
+                        )
+                    }}
                     className="bg-surface rounded-2xl shadow-2xl border border-primary/50 overflow-hidden"
                     onClick={() => setActiveIndex(index)}
                  >
@@ -649,7 +652,7 @@ const PromotionsCoverflow: React.FC<{ promotions: Promotion[], onAddToCart: (ite
                         </div>
                         
                         <h3 className="text-base font-black text-white leading-tight mb-0.5 pr-14 drop-shadow-md line-clamp-3">{promo.name}</h3>
-                        <p className="text-gray-200 text-[10px] leading-tight line-clamp-2 mb-1.5 drop-shadow-md">{promo.description}</p>
+                        <p className="text-gray-200 text-[10px] leading-tight line-clamp-2 mb-1.5 drop-shadow-md">{displayDesc}</p>
                         
                         <div className="mt-auto flex items-end justify-between border-t border-white/20 pt-2 relative z-20">
                              <div>
@@ -671,8 +674,8 @@ const PromotionsCoverflow: React.FC<{ promotions: Promotion[], onAddToCart: (ite
                                         isAvailable: true,
                                         categoryId: -1,
                                         store_id: promo.store_id || '', 
-                                        description: promo.description || '',
-                                        image: promo.image || bgImage,
+                                        description: displayDesc || '',
+                                        image: bgImage || '',
                                         selectedAddons: [],
                                         allowedAddons: [],
                                         addons: [],
@@ -1963,7 +1966,7 @@ const CustomerPage: React.FC = () => {
             
             let finalDeliveryFee = 0;
             if (lastOrder.orderType === 'Entrega' || orderType === 'Entrega') {
-                const fetchedFee = await fetchDynamicDeliveryFee(address, currentStore.id);
+                const fetchedFee = await fetchDynamicDeliveryFee(address);
                 finalDeliveryFee = fetchedFee !== null ? fetchedFee : (dynamicDeliveryFee ?? settings?.deliveryFee ?? 0);
             }
 
@@ -2025,9 +2028,9 @@ const CustomerPage: React.FC = () => {
                 setRepeatOrderId(createdOrder.id);
                 setShowRecognitionModal(false);
                 
-                if (settings?.webhookUrl) {
+                if (settings?.webhookNewOrderUrl) {
                     try {
-                        await triggerWebhook(settings.webhookUrl, createdOrder);
+                        await triggerWebhook(settings.webhookNewOrderUrl, createdOrder);
                     } catch (e) {}
                 }
             } else {

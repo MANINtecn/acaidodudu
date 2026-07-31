@@ -38,7 +38,7 @@ export const UpdateNotification: React.FC = () => {
             setVisible(true);
         });
 
-        electron.onUpdateError((err: string) => {
+        electron.onUpdateError((_err: string) => {
             setStatus('error');
             setMessage('Erro na atualização');
             // Silenced to prevent console pollution

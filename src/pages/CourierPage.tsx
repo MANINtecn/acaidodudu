@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useCourier } from '../contexts/CourierContext';
 import { useStore } from '../contexts/StoreContext';
-import { fetchReadyOrdersForCourier, fetchCourierActiveDeliveries, assignOrderToCourier, updateOrderDeliveryStatus, supabase } from '../services/supabaseService';
+import { fetchReadyOrdersForCourier, fetchCourierActiveDeliveries, assignOrderToCourier, updateOrderDeliveryStatus } from '../services/supabaseService';
 import { Order } from '../types';
 import { Bike, MapPin, Package, ArrowRight, RefreshCw, Phone, Home, CheckCheck, User, LogOut, Calendar, Search, Sun, Moon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -126,10 +126,7 @@ const CourierPage: React.FC = () => {
         if (!courier || !selectedOrderId) return;
         setConfirmModalOpen(false);
         
-        // Find order data for notification
-        const orderToNotify = modalAction === 'take' 
-            ? readyOrders.find(o => o.id === selectedOrderId)
-            : myDeliveries.find(o => o.id === selectedOrderId);
+        // (order data was previously used for notification - reserved for future use)
 
         try {
             if (modalAction === 'take') {

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../contexts/StoreContext';
-import { fetchMenuForCustomer, createOrder, fetchOccupiedTables, fetchAllOpenOrdersForTable, batchUpdateTableOrders, updateOrder, fetchActiveOrders, fetchSettings, supabase } from '../services/supabaseService';
+import { fetchMenuForCustomer, createOrder, fetchAllOpenOrdersForTable, batchUpdateTableOrders, updateOrder, fetchActiveOrders, fetchSettings, supabase } from '../services/supabaseService';
 import { Category, MenuItem, CartItem, Order, PaymentMethod, Settings, Addon } from '../types';
 import { Search, Plus, Minus, X, ChevronRight, Bike, User, LogOut, Sun, Moon, DollarSign } from 'lucide-react';
 import { normalizeString } from '../utils/searchUtils';
@@ -711,6 +711,7 @@ export default function WaiterPage() {
 
             {notification.show && (
                 <Notification 
+                    show={notification.show}
                     message={notification.message}
                     type={notification.type}
                     onClose={() => setNotification(prev => ({ ...prev, show: false }))}

@@ -65,7 +65,7 @@ import OrderCard from '../components/OrderCard';
 import TableGroupCard from '../components/TableGroupCard';
 import { printOrder } from '../services/printerService';
 import type { Category, MenuItem, Order, Settings as SettingsType, Promotion, Addon, OrderStatus } from '../types';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useStore } from '../contexts/StoreContext';
 import { CategoryModal as CategoryModalComponent } from '../components/CategoryModal';
 import { MenuItemModal as MenuItemModalComponent } from '../components/MenuItemModal';
@@ -112,6 +112,7 @@ const AdminPage = () => {
     const [activeTab, setActiveTab] = useState<'orders' | 'kitchen' | 'menu' | 'settings' | 'promotions' | 'cash' | 'addons' | 'counter' | 'raffle' | 'ads' | 'reviews' | 'history' | 'couriers' | 'whatsapp-bot'>('orders');
     const [menuSubTab, setMenuSubTab] = useState<'items' | 'addons'>('items');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    const [showUtilityMenu, setShowUtilityMenu] = useState(false);
     const [orders, setOrders] = useState<Order[]>([]);
     const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
     const [categories, setCategories] = useState<Category[]>([]);
@@ -243,8 +244,8 @@ const AdminPage = () => {
                 const unprinted = ordersData.filter(o => 
                     !o.printed && 
                     (o.dailyOrderNumber > 0 || o.origin === 'BALCÃO' || o.origin === 'WEB' || o.origin === 'AI') &&
-                    !currentlyPrintingIds.current.has(o.id) &&
-                    !printedOrderIds.current.has(o.id)
+                    !currentlyPrintingIds.current.has(o.id!) &&
+                    !printedOrderIds.current.has(o.id!)
                 );
 
                 if (unprinted.length > 0) {
@@ -372,7 +373,7 @@ const AdminPage = () => {
                             // ROBUST FETCH: If items are STILL missing, fetch the full order from DB
                             if (!orderItems || orderItems.length === 0) {
                                 console.log(`[RealTime] Items missing for order #${updatedOrder.id}. Fetching full record...`);
-                                const fullOrder = await fetchOrderById(updatedOrder.id);
+                                const fullOrder = await fetchOrderById(updatedOrder.id!);
                                 if (fullOrder && fullOrder.items && fullOrder.items.length > 0) {
                                     finalOrder = { ...fullOrder, settings: settingsRef.current };
                                     orderItems = fullOrder.items;
@@ -1003,22 +1004,11 @@ const AdminPage = () => {
 
             {/* Sidebar */}
             <aside className={`fixed md:relative inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ${activeTab === 'kitchen' ? 'hidden' : 'flex'} md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex-col`}>
-                <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex flex-col items-center gap-4">
-                    {/* QR Code Staff Portal - Larger and Centered */}
-                    <div className="w-full flex justify-center py-2">
-                         <img 
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(`${window.location.origin}/portal-equipe`)}`} 
-                            alt="Staff Portal QR" 
-                            className="w-32 h-32 rounded-xl border-2 border-gray-100 dark:border-gray-700 shadow-lg bg-white p-2"
-                            title="Acesso Staff (Aponte a Câmera)"
-                         />
-                    </div>
-                    <div className="flex w-full justify-between items-center md:hidden">
-                        <h1 className="text-lg font-black text-gray-900 dark:text-white leading-tight underline decoration-red-600 decoration-4">ADMIN</h1>
-                        <button onClick={() => setIsSidebarOpen(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                            <LucideX size={24} />
-                        </button>
-                    </div>
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+                    <h1 className="text-base font-black text-gray-900 dark:text-white leading-tight underline decoration-red-600 decoration-4">ADMIN</h1>
+                    <button onClick={() => setIsSidebarOpen(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 md:hidden">
+                        <LucideX size={24} />
+                    </button>
                 </div>
                 
                 {/* BOT TOGGLE - SIDECAR */}
@@ -1089,69 +1079,82 @@ const AdminPage = () => {
                         <Bike size={20} /> Área do Entregador
                     </button>
                 </nav>
-                <div className="w-full p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0">
-                    <button
-                        onClick={() => {
-                            if (window.confirm("Disparar GOLEADA do Brasil na TV?")) {
-                                if (tvChannelRef.current) {
-                                    tvChannelRef.current.send({
-                                        type: 'broadcast',
-                                        event: 'brazil_goal',
-                                    });
-                                    alert("Goleada disparada! Sorteio iniciado na TV.");
-                                } else {
-                                    alert("Falha: Canal da TV não conectado.");
-                                }
-                            }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 text-green-600 dark:text-green-400 font-bold hover:text-green-700 dark:hover:text-green-500 transition-colors mb-3 bg-green-50 dark:bg-green-900/20 py-2 rounded-lg"
-                    >
-                        ⚽ GOL DA TV
-                    </button>
-                    <button
-                        onClick={() => {
-                            if (window.confirm("Forçar a TV a recarregar a página remotamente?")) {
-                                if (tvChannelRef.current) {
-                                    tvChannelRef.current.send({
-                                        type: 'broadcast',
-                                        event: 'reload_tv',
-                                    });
-                                    alert("Comando de atualização enviado para a TV.");
-                                } else {
-                                    alert("Falha: Canal da TV não conectado.");
-                                }
-                            }
-                        }}
-                        className="w-full flex items-center justify-center gap-2 text-blue-600 dark:text-blue-400 font-bold hover:text-blue-700 dark:hover:text-blue-500 transition-colors mb-3 bg-blue-50 dark:bg-blue-900/20 py-2 rounded-lg"
-                    >
-                        🔄 RECARREGAR TV
-                    </button>
-                    {!(window as any).electron && (
-                        <button
-                            onClick={() => {
-                                supabase.channel('tv_overlay_events').send({
-                                    type: 'broadcast',
-                                    event: 'test_ad_trigger',
-                                });
-                            }}
-                            className="w-full flex items-center justify-center gap-2 text-blue-600 dark:blue-400 font-bold hover:text-blue-700 dark:hover:text-blue-500 transition-colors mb-3 bg-blue-50 dark:bg-blue-900/20 py-2 rounded-lg"
-                        >
-                            📢 TESTAR PROPAGANDA
-                        </button>
+                {/* Bottom Utility Bar - Gear Popover */}
+                <div className="w-full p-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 relative">
+                    {/* Gear Popover Menu - opens upward */}
+                    {showUtilityMenu && (
+                        <div className="absolute bottom-full left-0 right-0 mb-1 mx-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-2xl overflow-hidden z-50 animate-fade-in">
+                            <button
+                                onClick={() => {
+                                    setShowUtilityMenu(false);
+                                    if (window.confirm("Disparar GOLEADA do Brasil na TV?")) {
+                                        if (tvChannelRef.current) {
+                                            tvChannelRef.current.send({ type: 'broadcast', event: 'brazil_goal' });
+                                            alert("Goleada disparada! Sorteio iniciado na TV.");
+                                        } else { alert("Falha: Canal da TV não conectado."); }
+                                    }
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-green-600 dark:text-green-400 font-bold hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors text-sm border-b border-gray-100 dark:border-gray-700"
+                            >
+                                ⚽ GOL DA TV
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowUtilityMenu(false);
+                                    if (window.confirm("Forçar a TV a recarregar remotamente?")) {
+                                        if (tvChannelRef.current) {
+                                            tvChannelRef.current.send({ type: 'broadcast', event: 'reload_tv' });
+                                            alert("Comando enviado para a TV.");
+                                        } else { alert("Falha: Canal da TV não conectado."); }
+                                    }
+                                }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-blue-600 dark:text-blue-400 font-bold hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-sm border-b border-gray-100 dark:border-gray-700"
+                            >
+                                🔄 RECARREGAR TV
+                            </button>
+                            {!(window as any).electron && (
+                                <button
+                                    onClick={() => {
+                                        setShowUtilityMenu(false);
+                                        supabase.channel('tv_overlay_events').send({ type: 'broadcast', event: 'test_ad_trigger' });
+                                    }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-purple-600 dark:text-purple-400 font-bold hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors text-sm border-b border-gray-100 dark:border-gray-700"
+                                >
+                                    📢 TESTAR PROPAGANDA
+                                </button>
+                            )}
+                            <button
+                                onClick={() => { setShowUtilityMenu(false); setDarkMode(!darkMode); }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-gray-600 dark:text-gray-400 font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm border-b border-gray-100 dark:border-gray-700"
+                            >
+                                {darkMode ? <Sun size={16} /> : <Moon size={16} />}
+                                {darkMode ? 'Modo Claro' : 'Modo Escuro'}
+                            </button>
+                            <button
+                                onClick={() => { setShowUtilityMenu(false); navigate(`/${currentStore.slug}`); }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-gray-600 dark:text-gray-400 font-semibold hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-sm border-b border-gray-100 dark:border-gray-700"
+                            >
+                                <ExternalLink size={16} /> Ver Loja
+                            </button>
+                            <button
+                                onClick={() => { setShowUtilityMenu(false); handleLogout(); }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-red-500 font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-sm"
+                            >
+                                <LogOut size={16} /> Sair
+                            </button>
+                        </div>
                     )}
-                    <button
-                        onClick={() => setDarkMode(!darkMode)}
-                        className="w-full flex items-center justify-center gap-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors mb-3"
-                    >
-                        {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-                        {darkMode ? 'Modo Claro' : 'Modo Escuro'}
-                    </button>
-                    <button onClick={() => navigate(`/${currentStore.slug}`)} className="w-full flex items-center justify-center gap-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors mb-2">
-                        <ExternalLink size={18} /> Ver Loja
-                    </button>
-                    <button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400 transition-colors">
-                        <LogOut size={18} /> Sair
-                    </button>
+                    {/* Gear icon trigger row */}
+                    <div className="flex items-center justify-between">
+                        <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{currentStore.name}</span>
+                        <button
+                            onClick={() => setShowUtilityMenu(prev => !prev)}
+                            className={`p-2 rounded-lg transition-colors ${showUtilityMenu ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                            title="Ferramentas e configurações rápidas"
+                        >
+                            <Settings size={20} />
+                        </button>
+                    </div>
                 </div>
             </aside>
 
