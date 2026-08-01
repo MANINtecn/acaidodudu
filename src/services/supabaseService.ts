@@ -746,15 +746,7 @@ export const fetchSettings = async (storeId: string): Promise<Settings> => {
 export const fetchPublicSettings = async (storeId: string): Promise<Pick<Settings, 'modernGroups' | 'storefrontTheme' | 'openingTime' | 'closingTime' | 'manualStatus' | 'comboPrice' | 'webhookNewOrderUrl' | 'webhookInProductionUrl' | 'webhookOutForDeliveryUrl' | 'webhookArrivedAtDoorUrl' | 'isAppDiscountEnabled' | 'appDiscountPercentage' | 'logoUrl' | 'isRaffleEnabled' | 'rafflePrizeValue' | 'raffleDrawDate' | 'lastRaffleWinner' | 'isRatingEnabled' | 'deliveryFee' | 'courier_access_code' | 'defaultDDD' | 'isBotEnabled' | 'printerCompatibilityMode' | 'kitchenPrinter' | 'kitchenPrinterPaperWidth' | 'barPrinter' | 'barPrinterPaperWidth' | 'courierPrinter' | 'courierPrinterPaperWidth'>> => {
     const { data, error } = await supabase
         .from('settings')
-        .select(`
-            storefront_theme, modern_groups,
-            opening_time, closing_time, manual_status, combo_price, 
-            webhook_new_order_url, webhook_in_production_url, webhook_out_for_delivery_url, webhook_arrived_at_door_url,
-            is_app_discount_enabled, app_discount_percentage, is_rating_enabled,
-            delivery_fee, courier_access_code, default_ddd, is_bot_enabled,
-            printer_compatibility_mode, kitchen_printer, kitchen_printer_paper_width,
-            bar_printer, bar_printer_paper_width, courier_printer, courier_printer_paper_width
-        `)
+        .select('*')
         .eq('store_id', storeId)
         .single();
 
