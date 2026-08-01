@@ -14,13 +14,14 @@ import {
     Upload,
     CheckCheck
 } from 'lucide-react';
-import { Settings } from '../types';
-import { uploadMenuImage } from '../services/supabaseService';
+import { Settings, Category } from '../types';
+import { uploadLogoToStorage } from '../services/supabaseService';
 import { printOrder, generateReceiptText } from '../services/printerService';
 import { UpdateManager } from './UpdateManager';
 
 interface SettingsTabProps {
     settings: Settings;
+    categories: Category[];
     onSave: (s: Partial<Settings>) => Promise<void>;
     installPrompt: any;
     onInstall: () => void;
@@ -28,7 +29,7 @@ interface SettingsTabProps {
 
 
 
-export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, onSave, installPrompt, onInstall }) => {
+export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, onSave, installPrompt, onInstall }) => {
     const [formData, setFormData] = useState(settings);
     const [loading, setLoading] = useState(false);
 
@@ -133,7 +134,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, onSave, inst
                                     if (e.target.files && e.target.files[0]) {
                                         setLoading(true);
                                         try {
-                                            const url = await uploadMenuImage(e.target.files[0], settings.store_id || 'general');
+                                            const url = await uploadLogoToStorage(settings.store_id || 'general', e.target.files[0]);
                                             if (url) setFormData(prev => ({ ...prev, logoUrl: url }));
                                         } catch (error) {
                                             console.error(error);
@@ -227,6 +228,95 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, onSave, inst
                             </button>
                         </div>
                     </div>
+                    
+                    {formData.storefrontTheme === 'modern' && (
+                        <div className="mb-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wider text-[10px] font-black">Grupos da Tela Inicial</label>
+                            <p className="text-xs text-gray-500 mb-4">Personalize os 3 botões principais que aparecem na tela inicial moderna. Você pode trocar o nome, a imagem e vincular as categorias do seu cardápio que aparecerão em cada botão.</p>
+                            
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                                {(formData.modernGroups || []).map((group, index) => (
+                                    <div key={group.id} className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                                        <div className="font-bold text-gray-500 text-xs mb-3 uppercase">Botão {index + 1}</div>
+                                        
+                                        {/* Name */}
+                                        <div className="mb-3">
+                                            <label className="block text-xs text-gray-500 mb-1">Nome</label>
+                                            <input 
+                                                type="text" 
+                                                value={group.name}
+                                                onChange={(e) => {
+                                                    const newGroups = [...(formData.modernGroups || [])];
+                                                    newGroups[index].name = e.target.value;
+                                                    setFormData({...formData, modernGroups: newGroups});
+                                                }}
+                                                className="w-full p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+
+                                        {/* Image */}
+                                        <div className="mb-3">
+                                            <label className="block text-xs text-gray-500 mb-1">Imagem de Fundo</label>
+                                            <div className="flex flex-col gap-2">
+                                                {group.image && (
+                                                    <div className="relative w-full h-24 rounded overflow-hidden">
+                                                        <img src={group.image} alt={group.name} className="w-full h-full object-cover" />
+                                                    </div>
+                                                )}
+                                                <label className="cursor-pointer bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 hover:bg-gray-50 text-gray-600 dark:text-gray-300 text-xs text-center px-3 py-2 rounded transition-colors">
+                                                    {loading ? 'Enviando...' : (group.image ? 'Trocar Imagem' : 'Enviar Imagem')}
+                                                    <input type="file" accept="image/*" onChange={async (e) => {
+                                                        if (e.target.files && e.target.files[0]) {
+                                                            setLoading(true);
+                                                            try {
+                                                                const url = await uploadLogoToStorage(settings.store_id || 'general', e.target.files[0]);
+                                                                if (url) {
+                                                                    const newGroups = [...(formData.modernGroups || [])];
+                                                                    newGroups[index].image = url;
+                                                                    setFormData({...formData, modernGroups: newGroups});
+                                                                }
+                                                            } catch (error) {
+                                                                console.error(error);
+                                                                alert('Erro ao enviar imagem');
+                                                            } finally {
+                                                                setLoading(false);
+                                                            }
+                                                        }
+                                                    }} className="hidden" disabled={loading} />
+                                                </label>
+                                            </div>
+                                        </div>
+
+                                        {/* Categories */}
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Categorias Vinculadas</label>
+                                            <div className="max-h-32 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded p-2 bg-white dark:bg-gray-900 flex flex-col gap-1">
+                                                {categories.map(cat => (
+                                                    <label key={cat.id} className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 cursor-pointer p-1 hover:bg-gray-50 dark:hover:bg-gray-800 rounded">
+                                                        <input 
+                                                            type="checkbox"
+                                                            checked={group.categories.includes(cat.id!)}
+                                                            onChange={(e) => {
+                                                                const newGroups = [...(formData.modernGroups || [])];
+                                                                if (e.target.checked) {
+                                                                    newGroups[index].categories = [...newGroups[index].categories, cat.id!];
+                                                                } else {
+                                                                    newGroups[index].categories = newGroups[index].categories.filter(id => id !== cat.id);
+                                                                }
+                                                                setFormData({...formData, modernGroups: newGroups});
+                                                            }}
+                                                            className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                                                        />
+                                                        {cat.name}
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">

@@ -585,6 +585,24 @@ export const fetchLastOrderByPhone = async (phone: string, storeId: string): Pro
 };
 
 // --- Settings Functions ---
+export const uploadLogoToStorage = async (storeId: string, file: File): Promise<string> => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `logo_${Date.now()}.${fileExt}`;
+    const filePath = `${storeId}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+        .from('assets')
+        .upload(filePath, file, { upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage
+        .from('assets')
+        .getPublicUrl(filePath);
+
+    return data.publicUrl;
+};
+
 const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     openingTime: '18:00',
     closingTime: '23:59',
@@ -597,6 +615,12 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     isAppDiscountEnabled: false,
     appDiscountPercentage: 0,
     logoUrl: '',
+    storefrontTheme: 'classic',
+    modernGroups: [
+        { id: 1, name: 'AÇAÍ', image: '', categories: [] },
+        { id: 2, name: 'PORÇÕES', image: '', categories: [] },
+        { id: 3, name: 'BEBIDAS', image: '', categories: [] }
+    ],
     isRaffleEnabled: false,
     rafflePrizeValue: 0,
     raffleDrawDate: undefined,
@@ -629,7 +653,8 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
     return {
         ...fullData,
         // Map snake_case or camelCase DB columns to camelCase app properties
-        storefrontTheme: dbData?.storefront_theme ?? dbData?.storefrontTheme ?? 'classic',
+        storefrontTheme: dbData?.storefront_theme ?? dbData?.storefrontTheme ?? defaultSettings.storefrontTheme,
+        modernGroups: dbData?.modern_groups ?? dbData?.modernGroups ?? defaultSettings.modernGroups,
         openingTime: dbData?.opening_time ?? dbData?.openingTime ?? defaultSettings.openingTime,
         closingTime: dbData?.closing_time ?? dbData?.closingTime ?? defaultSettings.closingTime,
         manualStatus: dbData?.manual_status ?? dbData?.manualStatus ?? defaultSettings.manualStatus,
@@ -718,10 +743,18 @@ export const fetchSettings = async (storeId: string): Promise<Settings> => {
     return result;
 };
 
-export const fetchPublicSettings = async (storeId: string): Promise<Pick<Settings, 'openingTime' | 'closingTime' | 'manualStatus' | 'comboPrice' | 'webhookNewOrderUrl' | 'webhookInProductionUrl' | 'webhookOutForDeliveryUrl' | 'webhookArrivedAtDoorUrl' | 'isAppDiscountEnabled' | 'appDiscountPercentage' | 'logoUrl' | 'isRaffleEnabled' | 'rafflePrizeValue' | 'raffleDrawDate' | 'lastRaffleWinner' | 'isRatingEnabled' | 'deliveryFee' | 'courier_access_code' | 'defaultDDD' | 'isBotEnabled' | 'printerCompatibilityMode' | 'kitchenPrinter' | 'kitchenPrinterPaperWidth' | 'barPrinter' | 'barPrinterPaperWidth' | 'courierPrinter' | 'courierPrinterPaperWidth'>> => {
+export const fetchPublicSettings = async (storeId: string): Promise<Pick<Settings, 'modernGroups' | 'storefrontTheme' | 'openingTime' | 'closingTime' | 'manualStatus' | 'comboPrice' | 'webhookNewOrderUrl' | 'webhookInProductionUrl' | 'webhookOutForDeliveryUrl' | 'webhookArrivedAtDoorUrl' | 'isAppDiscountEnabled' | 'appDiscountPercentage' | 'logoUrl' | 'isRaffleEnabled' | 'rafflePrizeValue' | 'raffleDrawDate' | 'lastRaffleWinner' | 'isRatingEnabled' | 'deliveryFee' | 'courier_access_code' | 'defaultDDD' | 'isBotEnabled' | 'printerCompatibilityMode' | 'kitchenPrinter' | 'kitchenPrinterPaperWidth' | 'barPrinter' | 'barPrinterPaperWidth' | 'courierPrinter' | 'courierPrinterPaperWidth'>> => {
     const { data, error } = await supabase
         .from('settings')
-        .select('*')
+        .select(`
+            storefront_theme, modern_groups,
+            opening_time, closing_time, manual_status, combo_price, 
+            webhook_new_order_url, webhook_in_production_url, webhook_out_for_delivery_url, webhook_arrived_at_door_url,
+            is_app_discount_enabled, app_discount_percentage, is_rating_enabled,
+            delivery_fee, courier_access_code, default_ddd, is_bot_enabled,
+            printer_compatibility_mode, kitchen_printer, kitchen_printer_paper_width,
+            bar_printer, bar_printer_paper_width, courier_printer, courier_printer_paper_width
+        `)
         .eq('store_id', storeId)
         .single();
 
@@ -754,6 +787,9 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
     // Core fields
     if (settings.storefrontTheme !== undefined) {
         dbSettings.storefront_theme = settings.storefrontTheme;
+    }
+    if (settings.modernGroups !== undefined) {
+        dbSettings.modern_groups = settings.modernGroups;
     }
     if (settings.openingTime !== undefined) {
         dbSettings.opening_time = settings.openingTime;

@@ -265,7 +265,7 @@ const DiscountBanner: React.FC<{ settings: Partial<Settings> | null }> = ({ sett
     );
 };
 
-const PWAInstallBanner: React.FC<{ onInstall: () => void; isIOS: boolean }> = ({ onInstall, isIOS }) => {
+const : React.FC<{ onInstall: () => void; isIOS: boolean }> = ({ onInstall, isIOS }) => {
     const [dismissed, setDismissed] = useState(false);
     if (dismissed) return null;
 
@@ -362,7 +362,7 @@ const RaffleBanner: React.FC<{ settings: Partial<Settings> | null }> = ({ settin
     return null;
 };
 
-const Header: React.FC<{ onAdminClick: () => void; onMotoboyClick: () => void; onWaiterClick: () => void; settings: Partial<Settings> | null; onToggleTheme: () => void; currentTheme: string }> = ({ onAdminClick, onMotoboyClick, onWaiterClick, settings, onToggleTheme, currentTheme }) => (
+const : React.FC<{ onAdminClick: () => void; onMotoboyClick: () => void; onWaiterClick: () => void; settings: Partial<Settings> | null; onToggleTheme: () => void; currentTheme: string }> = ({ onAdminClick, onMotoboyClick, onWaiterClick, settings, onToggleTheme, currentTheme }) => (
     <header className="bg-surface shadow-sm transition-all duration-300 w-full overflow-hidden shrink-0">
         <div className="flex justify-between items-center gap-2 px-3 py-1">
             <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -398,7 +398,7 @@ const Header: React.FC<{ onAdminClick: () => void; onMotoboyClick: () => void; o
     </header>
 );
 
-const CategoryNav: React.FC<{ categories: Category[] }> = ({ categories }) => {
+const : React.FC<{ categories: Category[] }> = ({ categories }) => {
     const scrollToCategory = (categoryId: number) => {
         const element = document.getElementById(`category-${categoryId}`);
         if (element) {
@@ -423,7 +423,7 @@ const CategoryNav: React.FC<{ categories: Category[] }> = ({ categories }) => {
     );
 };
 
-const ProductSearchBar: React.FC<{ value: string; onChange: (val: string) => void }> = ({ value, onChange }) => (
+const : React.FC<{ value: string; onChange: (val: string) => void }> = ({ value, onChange }) => (
     <div id="tour-search" className="bg-background px-3 py-1 border-b border-text-light/10 z-30 w-full overflow-hidden shrink-0 transition-colors duration-300">
         <div className="relative w-full">
             <LucideSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-text-dark" size={16} />
@@ -500,7 +500,7 @@ const MenuItemCard: React.FC<{ item: MenuItem; onAddItem: (item: MenuItem) => vo
     );
 };
 
-const MenuSection: React.FC<{ category: Category; items: MenuItem[]; onAddItem: (item: MenuItem) => void; isFirst?: boolean }> = ({ category, items, onAddItem, isFirst }) => {
+const : React.FC<{ category: Category; items: MenuItem[]; onAddItem: (item: MenuItem) => void; isFirst?: boolean }> = ({ category, items, onAddItem, isFirst }) => {
     if (items.length === 0) return null;
     return (
         <section id={`category-${category.id}`} className="container mx-auto px-4 py-4 border-b border-surface last:border-0 scroll-mt-64 md:scroll-mt-48">
@@ -1386,16 +1386,16 @@ const ItemDetailModal: React.FC<{
     );
 };
 
-const CustomerRecognitionBar: React.FC<{ onPhoneSubmit: (phone: string) => void; isLoading: boolean }> = ({ onPhoneSubmit, isLoading }) => {
+const : React.FC<{ onPhoneSubmit: (phone: string) => void; isLoading: boolean }> = ({ onPhoneSubmit, isLoading }) => {
     const [phone, setPhone] = useState('');
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        console.log("CustomerRecognitionBar: Submit clicked with phone:", phone);
+        console.log(": Submit clicked with phone:", phone);
         if (phone.replace(/\D/g, '').length >= 8) {
             onPhoneSubmit(phone);
         } else {
-            console.warn("CustomerRecognitionBar: Phone too short:", phone);
+            console.warn(": Phone too short:", phone);
         }
     };
 
@@ -1575,7 +1575,7 @@ const CustomerPage: React.FC = () => {
         localStorage.setItem('theme', theme);
     }, [theme]);
 
-    const toggleTheme = () => {
+    const = () => {
         setTheme(prev => prev === 'light' ? 'dark' : 'light');
     };
 
@@ -1592,19 +1592,19 @@ const CustomerPage: React.FC = () => {
     const [selectedItem, setSelectedItem] = useState<MenuItem | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const [isCartAnimating, setIsCartAnimating] = useState(false);
+    const [setIsCartAnimating] = useState(false);
 
     // Customer Recognition State
     const [recognizedCustomer, setRecognizedCustomer] = useState<Customer | null>(null);
     const [lastOrder, setLastOrder] = useState<Order | null>(null);
     const [showRecognitionModal, setShowRecognitionModal] = useState(false);
     const [showNewCustomerModal, setShowNewCustomerModal] = useState(false); // New state
-    const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
+    const [setIsSearchingCustomer] = useState(false);
     const [isRepeatingOrder, setIsRepeatingOrder] = useState(false);
     
     // Modern Landing Page State
-    const [showLanding, setShowLanding] = useState(true);
-
+    const [viewMode, setViewMode] = useState<'landing' | 'filtered' | 'all'>('landing');
+    const [selectedGroup, setSelectedGroup] = useState<any>(null);
     // Reward Celebration State
     const [showRewardCelebration, setShowRewardCelebration] = useState(false);
     const prevStampsRef = useRef(0);
@@ -1722,7 +1722,7 @@ const CustomerPage: React.FC = () => {
 
         const updateStatus = async () => {
             try {
-                // Ensure phone is sanitized if needed, but handleHeroPhoneSubmit already does this
+                // Ensure phone is sanitized if needed, but already does this
                 const order = await fetchLastOrderByPhone(phone, currentStore.id);
                 if (order) {
                     // Only update the status and essential fields, don't overwrite the whole object 
@@ -1748,10 +1748,10 @@ const CustomerPage: React.FC = () => {
     const [showRepeatSuccess, setShowRepeatSuccess] = useState(false);
     const [repeatOrderId, setRepeatOrderId] = useState<string | undefined>(undefined);
 
-    const handleHeroPhoneSubmit = async (phoneInput: string) => {
-        console.log("handleHeroPhoneSubmit called with:", phoneInput);
+    const = async (phoneInput: string) => {
+        console.log("called with:", phoneInput);
         if (!currentStore) {
-            console.error("handleHeroPhoneSubmit: No currentStore found!");
+            console.error(": No currentStore found!");
             return;
         }
         setIsSearchingCustomer(true);
@@ -1761,7 +1761,7 @@ const CustomerPage: React.FC = () => {
         if (sanitizedPhone.length === 8 || sanitizedPhone.length === 9) {
             sanitizedPhone = '32' + sanitizedPhone;
         }
-        console.log("handleHeroPhoneSubmit: Sanitized phone:", sanitizedPhone);
+        console.log(": Sanitized phone:", sanitizedPhone);
 
         // Update state with normalized phone
         setPhone(sanitizedPhone);
@@ -2255,7 +2255,7 @@ const CustomerPage: React.FC = () => {
         }
     };
 
-    const cartItemCount = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
+    const = useMemo(() => cart.reduce((sum, item) => sum + item.quantity, 0), [cart]);
 
 
 
@@ -2288,126 +2288,186 @@ const CustomerPage: React.FC = () => {
         return <div className="flex items-center justify-center h-screen bg-background text-center text-red-400 p-4"><div><h2 className="text-2xl mb-4">Ocorreu um Erro</h2><p>{error}</p></div></div>;
     }
 
-    if (showLanding) {
+    const filteredCategories = useMemo(() => {
+        if (viewMode === 'all') return menu.categories;
+        if (viewMode === 'filtered' && selectedGroup) {
+            return menu.categories.filter(c => selectedGroup.categories.includes(c.id));
+        }
+        return menu.categories;
+    }, [viewMode, selectedGroup, menu.categories]);
+
+    if (viewMode === 'landing') {
         return (
-            <div className="bg-[#111111] min-h-screen text-white font-sans flex flex-col relative">
-                {/* Header Logo */}
-                <div className="absolute top-8 left-0 right-0 z-20 flex justify-center pointer-events-none">
-                    {currentStore.logo_url ? (
-                        <img src={currentStore.logo_url} alt="Logo" className="h-32 w-auto object-contain drop-shadow-[0_0_15px_rgba(0,0,0,0.8)]" />
+            <div className="bg-[#0f0f11] min-h-screen text-white font-sans flex flex-col relative overflow-y-auto">
+                {/* Logo & Actions */}
+                <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-start pointer-events-none">
+                    {currentStore?.logo_url ? (
+                        <div className="bg-black/40 backdrop-blur-md p-2 rounded-2xl border border-white/10 shadow-2xl">
+                            <img src={currentStore.logo_url} alt="Logo" className="w-20 h-20 object-contain drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]" />
+                        </div>
                     ) : (
-                        <h1 className="text-3xl font-black italic drop-shadow-lg text-white">Açaí do Dudu</h1>
+                        <div className="bg-black/40 backdrop-blur-md p-3 rounded-2xl border border-white/10 shadow-2xl">
+                            <h1 className="text-xl font-black italic drop-shadow-lg text-white">Açaí do Dudu</h1>
+                        </div>
                     )}
+                    <div className="flex gap-2 pointer-events-auto">
+                        <button onClick={() => navigate('admin')} className="bg-black/40 backdrop-blur-md p-3 rounded-full border border-white/10 text-white hover:bg-white/20 transition">
+                            <AdminIcon />
+                        </button>
+                    </div>
                 </div>
 
                 {/* Hero Image */}
-                <div className="relative h-[55vh] w-full bg-black rounded-b-[40px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.8)]">
+                <div className="relative h-[65vh] w-full bg-black rounded-b-[40px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.8)]">
                     <img 
                         src="/acai_boat_hero.jpg" 
                         alt="Açaí Hero" 
-                        className="w-full h-full object-cover opacity-90 scale-105"
+                        className="w-full h-full object-cover opacity-80"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#111111] via-transparent to-black/70"></div>
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-transparent"></div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11]/60 to-black/30"></div>
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent"></div>
+                    
+                    {/* Welcome Text overlay */}
+                    <div className="absolute bottom-12 left-0 right-0 flex flex-col items-center justify-center px-6 text-center z-10">
+                        <h2 className="text-4xl font-black tracking-tight mb-2 drop-shadow-[0_4px_10px_rgba(0,0,0,1)]">
+                            O QUE VAMOS PEDIR <span className="text-amber-400">HOJE?</span>
+                        </h2>
+                        <p className="text-gray-300 text-sm font-medium drop-shadow-md max-w-sm">
+                            Navegue pelas nossas opções e monte seu pedido do seu jeito.
+                        </p>
+                    </div>
                 </div>
 
-                {/* Categories */}
-                <div className="flex-1 flex flex-col items-center justify-center px-6 -mt-16 z-10 relative">
-                    <div className="grid grid-cols-3 gap-5 w-full max-w-md mb-12">
-                        {['AÇAÍ', 'PORÇÕES', 'BEBIDAS'].map((catName) => (
+                <div className="flex-1 flex flex-col items-center justify-start -mt-6 px-4 pb-24 z-10">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl mb-8">
+                        {(settings?.modernGroups || []).map((group: any) => (
                             <button
-                                key={catName}
+                                key={group.id}
                                 onClick={() => {
-                                    setShowLanding(false);
-                                    setTimeout(() => {
-                                        const search = normalizeString(catName);
-                                        const targetCat = menu.categories.find(c => 
-                                            search.includes('bebida') 
-                                            ? !normalizeString(c.name).includes('acai') && !normalizeString(c.name).includes('porc')
-                                            : normalizeString(c.name).includes(search)
-                                        );
-                                        if (targetCat) {
-                                            document.getElementById(`category-${targetCat.id}`)?.scrollIntoView({ behavior: 'smooth' });
-                                        }
-                                    }, 100);
+                                    setSelectedGroup(group);
+                                    setViewMode('filtered');
                                 }}
-                                className="flex flex-col items-center gap-2 group transition-transform active:scale-95"
+                                className="relative flex items-center justify-center h-28 rounded-2xl overflow-hidden group transition-all active:scale-95 shadow-xl border border-white/5 bg-gray-900"
                             >
-                                <div className="w-[90px] h-[90px] bg-[#1a1a1a] border border-white/10 rounded-2xl flex items-center justify-center shadow-2xl group-hover:border-red-500/50 transition-colors">
-                                    {catName === 'AÇAÍ' && <span className="text-4xl filter drop-shadow-lg">🍇</span>}
-                                    {catName === 'PORÇÕES' && <span className="text-4xl filter drop-shadow-lg">🍟</span>}
-                                    {catName === 'BEBIDAS' && <span className="text-4xl filter drop-shadow-lg">🥤</span>}
-                                </div>
-                                <span className="text-[11px] font-black uppercase tracking-widest text-gray-300 drop-shadow-sm">
-                                    {catName}
+                                {group.image && (
+                                    <img src={group.image} alt={group.name} className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:opacity-70 transition-opacity" />
+                                )}
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
+                                <span className="relative z-10 text-xl font-black uppercase tracking-widest text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)]">
+                                    {group.name}
                                 </span>
                             </button>
                         ))}
                     </div>
 
                     <button 
-                        onClick={() => setShowLanding(false)}
-                        className="w-full max-w-sm bg-gradient-to-r from-amber-500 to-yellow-400 text-black font-black text-xl py-4 rounded-full shadow-[0_8px_30px_rgba(245,158,11,0.3)] active:scale-95 transition-transform"
+                        onClick={() => setViewMode('all')}
+                        className="w-full max-w-sm bg-white/5 hover:bg-white/10 text-white font-bold text-sm py-4 rounded-xl border border-white/10 transition-colors shadow-lg"
                     >
-                        FAÇA SEU PEDIDO
+                        Ver Cardápio Completo
                     </button>
                 </div>
+
+                <DraggableCart onClick={() => setIsCartOpen(true)} itemCount={cart.length} isAnimating={false} />
+                
+                <SideCart
+                    isOpen={isCartOpen}
+                    onClose={() => setIsCartOpen(false)}
+                    cart={cart}
+                    onUpdateCart={handleUpdateCart}
+                    onRemoveFromCart={handleRemoveFromCart}
+                    onClearCart={handleClearCart}
+                    isStoreOpen={isStoreOpen}
+                    settings={settings}
+                    storeId={currentStore?.id || ''}
+                    customerName={customerName}
+                    setCustomerName={setCustomerName}
+                    phone={phone}
+                    setPhone={setPhone}
+                    address={address}
+                    setAddress={setAddress}
+                    houseNumber={houseNumber}
+                    setHouseNumber={setHouseNumber}
+                    referencePoint={referencePoint}
+                    setReferencePoint={setReferencePoint}
+                    paymentMethod={paymentMethod}
+                    setPaymentMethod={setPaymentMethod}
+                    changeFor={changeFor}
+                    setChangeFor={setChangeFor}
+                    orderType={orderType}
+                    setOrderType={setOrderType}
+                    orderDiscount={orderDiscount}
+                    setOrderDiscount={setOrderDiscount}
+                    pendingReward={pendingReward}
+                    dynamicDeliveryFee={dynamicDeliveryFee}
+                />
             </div>
         );
     }
 
     return (
-        <div className="bg-background text-text-light min-h-screen">
+        <div className="bg-[#0a0a0c] text-gray-100 min-h-screen font-sans pb-24">
 
             <RewardCelebrationModal isOpen={showRewardCelebration} onClose={() => setShowRewardCelebration(false)} onRedeem={handleRedeemReward} />
-            <div className="fixed top-0 left-0 right-0 z-40 bg-background shadow-md overflow-hidden">
+            
+            <div className="fixed top-0 left-0 right-0 z-40 bg-[#0f0f11]/90 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] border-b border-white/5 overflow-hidden">
                 <StoreStatusBanner isOpen={isStoreOpen} message={statusMessage} />
-                <Header onAdminClick={() => navigate('admin')} onMotoboyClick={() => navigate('entregador')} onWaiterClick={() => navigate('garcom')} settings={settings} onToggleTheme={toggleTheme} currentTheme={theme} />
+                <div className="flex justify-between items-center px-4 py-3">
+                    <button onClick={() => setViewMode('landing')} className="text-gray-400 hover:text-white transition p-2 bg-white/5 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+                    </button>
+                    <h1 className="font-display text-xl font-bold tracking-tight text-white">
+                        {viewMode === 'filtered' ? selectedGroup?.name : 'Cardápio Completo'}
+                    </h1>
+                    <div className="w-10"></div> {/* Spacer for centering */}
+                </div>
+                
                 <DiscountBanner settings={settings} />
                 <RaffleBanner settings={settings} />
-                {(isInstallable || isIOS) && <PWAInstallBanner onInstall={install} isIOS={isIOS} />}
-                <CustomerRecognitionBar onPhoneSubmit={handleHeroPhoneSubmit} isLoading={isSearchingCustomer} />
-                <ProductSearchBar value={searchTerm} onChange={setSearchTerm} />
-                {!searchTerm && <CategoryNav categories={menu.categories} />}
+                
+                <div className="px-4 py-2 border-t border-white/5">
+                    <div className="relative w-full">
+                        <LucideSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
+                        <input
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder="Buscar no cardápio..."
+                            className="w-full bg-[#1a1a1f] border border-white/5 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors placeholder-gray-600"
+                        />
+                    </div>
+                </div>
+
+                <nav className="py-2 border-t border-white/5">
+                    <div className="container mx-auto px-4 flex space-x-2 overflow-x-auto scrollbar-hide">
+                        <style>{`.scrollbar-hide::-webkit-scrollbar { display: none; }`}</style>
+                        {filteredCategories.map(category => (
+                            <button key={category.id} onClick={() => {
+                                document.getElementById(`category-${category.id}`)?.scrollIntoView({ behavior: 'smooth' });
+                            }} className="px-4 py-1.5 bg-[#1a1a1f] text-gray-300 text-xs font-bold rounded-full whitespace-nowrap hover:bg-white/10 hover:text-white transition-all border border-white/5">
+                                {category.name}
+                            </button>
+                        ))}
+                    </div>
+                </nav>
             </div>
 
-            <DraggableCart 
-                onClick={() => setIsCartOpen(true)} 
-                itemCount={cartItemCount} 
-                isAnimating={isCartAnimating} 
-            />
-
-            {/* Fixed Height Spacer - Safest for mobile performance */}
-            <div className="h-[260px] md:h-[220px]"></div>
-            <main className="pb-32 px-4 relative z-0 overflow-x-hidden w-full max-w-full">
-                {promotions.length > 0 && !searchTerm && (
-                    <section id="category--1" className="w-full py-1 relative z-0 overflow-hidden">
-                         {/* 3D Carousel Component - Reduced height to minimize yellow gap */}
-                         <div className="relative h-48 w-full max-w-md mx-auto perspective-1000 overflow-hidden">
-                           <PromotionsCoverflow promotions={promotions} onAddToCart={handleAddToCart} />
-                         </div>
+            <main className="pt-[220px] pb-6 px-2 min-h-screen">
+                {/* Promotions Section */}
+                {viewMode === 'all' && matchingPromotions.length > 0 && (
+                    <section className="container mx-auto px-2 py-4 mb-4">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-2xl animate-pulse">🔥</span>
+                            <h2 className="text-xl font-black text-white italic tracking-wider">PROMOÇÕES DO DIA</h2>
+                        </div>
+                        <PromotionsCoverflow promotions={matchingPromotions} onAddToCart={(item) => {
+                            handleAddToCart(item);
+                        }} />
                     </section>
                 )}
 
-                {/* Promoções encontradas na pesquisa */}
-                {searchTerm && matchingPromotions.length > 0 && (
-                    <MenuSection
-                        category={{ id: -1, name: 'Promoções Encontradas', store_id: currentStore?.id || '' }}
-                        items={matchingPromotions.map(p => ({
-                            ...p,
-                            categoryId: -1,
-                            eligibleForCombo: false,
-                            isCombo: false,
-                            selectedAddons: [],
-                            isAvailable: true,
-                            addons: [],
-                            description: p.description || ''
-                        })) as any}
-                        onAddItem={(item) => handleOpenItemModal(item as any)}
-                        isFirst={true}
-                    />
-                )}
-                {menu.categories.map((category, index) => {
+                {/* Categories */}
+                {filteredCategories.map((category, index) => {
                     const filteredItems = menu.menuItems.filter(item => {
                         const matchesCategory = item.categoryId === category.id;
                         if (!searchTerm) return matchesCategory;
@@ -2416,19 +2476,66 @@ const CustomerPage: React.FC = () => {
                         return matchesCategory && normalizeString(item.name).includes(normalizedSearch);
                     });
 
-                    if (filteredItems.length === 0 && searchTerm) return null;
+                    if (filteredItems.length === 0) return null;
 
                     return (
-                        <MenuSection
-                            key={category.id}
-                            category={category}
-                            items={filteredItems}
-                            onAddItem={handleOpenItemModal}
-                            isFirst={index === 0}
-                        />
+                        <section key={category.id} id={`category-${category.id}`} className="container mx-auto px-2 py-4 mb-4 scroll-mt-[220px]">
+                            <h2 className="text-2xl font-black text-white uppercase tracking-wider mb-4 border-l-4 border-amber-400 pl-3">{category.name}</h2>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                {filteredItems.map(item => (
+                                    <div key={item.id} 
+                                        onClick={() => item.isAvailable && handleOpenItemModal(item as any)}
+                                        className={`bg-[#131317] rounded-2xl overflow-hidden border border-white/5 shadow-lg flex cursor-pointer transition active:scale-95 ${!item.isAvailable ? 'opacity-50' : ''}`}
+                                    >
+                                        <div className="w-1/3 min-h-[120px] bg-black/40 relative">
+                                            {item.image ? (
+                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center opacity-20">
+                                                    <LucideShoppingCart size={32} />
+                                                </div>
+                                            )}
+                                            {!item.isAvailable && (
+                                                <div className="absolute inset-0 bg-black/80 flex items-center justify-center backdrop-blur-sm">
+                                                    <span className="text-white text-[10px] font-black px-2 py-1 border border-white/20 rounded uppercase -rotate-12">Esgotado</span>
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="w-2/3 p-3 flex flex-col justify-between">
+                                            <div>
+                                                <h3 className="font-bold text-white leading-tight mb-1">{item.name}</h3>
+                                                <p className="text-xs text-gray-400 line-clamp-2 leading-tight">{item.description}</p>
+                                            </div>
+                                            <div className="flex justify-between items-center mt-2">
+                                                <span className="font-black text-amber-400">R$ {item.price.toFixed(2)}</span>
+                                                <div className="bg-white/10 p-1.5 rounded-lg text-white">
+                                                    <LucidePlus size={16} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
                     );
                 })}
+                
+                {viewMode === 'filtered' && (
+                    <div className="flex justify-center mt-8">
+                         <button 
+                            onClick={() => {
+                                setViewMode('all');
+                                window.scrollTo({top: 0, behavior: 'smooth'});
+                            }}
+                            className="bg-white/10 hover:bg-white/20 text-white px-6 py-3 rounded-xl font-bold transition-colors"
+                        >
+                            Ver Cardápio Completo
+                        </button>
+                    </div>
+                )}
             </main>
+
+            <DraggableCart onClick={() => setIsCartOpen(true)} itemCount={cart.length} isAnimating={false} />
 
             <SideCart
                 isOpen={isCartOpen}

@@ -156,10 +156,18 @@ export interface CashSummary {
   difference: number;
 }
 
+export interface ModernGroup {
+  id: number;
+  name: string;
+  image: string;
+  categories: number[];
+}
+
 export interface Settings {
   id?: string;
   store_id: string;
   storefrontTheme?: 'classic' | 'modern';
+  modernGroups?: ModernGroup[];
   openingTime: string;
   closingTime: string;
   manualStatus: 'open' | 'closed' | 'auto';

@@ -1482,6 +1482,7 @@ const AdminPage = () => {
                     activeTab === 'settings' && settings && (
                         <SettingsTab
                             settings={settings}
+                            categories={categories}
                             onSave={handleSaveSettings}
                             installPrompt={installPrompt}
                             onInstall={handleInstallClick}
