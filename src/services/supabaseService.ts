@@ -754,67 +754,52 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
     // Core fields
     if (settings.storefrontTheme !== undefined) {
         dbSettings.storefront_theme = settings.storefrontTheme;
-        dbSettings.storefrontTheme = settings.storefrontTheme;
     }
     if (settings.openingTime !== undefined) {
         dbSettings.opening_time = settings.openingTime;
-        dbSettings.openingTime = settings.openingTime;
     }
     if (settings.closingTime !== undefined) {
         dbSettings.closing_time = settings.closingTime;
-        dbSettings.closingTime = settings.closingTime;
     }
     if (settings.manualStatus !== undefined) {
         dbSettings.manual_status = settings.manualStatus;
-        dbSettings.manualStatus = settings.manualStatus;
     }
     if (settings.comboPrice !== undefined) {
         dbSettings.combo_price = settings.comboPrice;
-        dbSettings.comboPrice = settings.comboPrice;
     }
     if (settings.deliveryFee !== undefined) {
         dbSettings.delivery_fee = settings.deliveryFee;
-        dbSettings.deliveryFee = settings.deliveryFee;
     }
     if (settings.daysOfWeek !== undefined) {
         dbSettings.days_of_week = settings.daysOfWeek;
-        dbSettings.daysOfWeek = settings.daysOfWeek;
     }
     
     // Webhooks
     if (settings.webhookNewOrderUrl !== undefined) {
         dbSettings.webhook_new_order_url = settings.webhookNewOrderUrl;
-        dbSettings.webhookNewOrderUrl = settings.webhookNewOrderUrl;
     }
     if (settings.webhookInProductionUrl !== undefined) {
         dbSettings.webhook_in_production_url = settings.webhookInProductionUrl;
-        dbSettings.webhookInProductionUrl = settings.webhookInProductionUrl;
     }
     if (settings.webhookOutForDeliveryUrl !== undefined) {
         dbSettings.webhook_out_for_delivery_url = settings.webhookOutForDeliveryUrl;
-        dbSettings.webhookOutForDeliveryUrl = settings.webhookOutForDeliveryUrl;
     }
     if (settings.webhookArrivedAtDoorUrl !== undefined) {
         dbSettings.webhook_arrived_at_door_url = settings.webhookArrivedAtDoorUrl;
-        dbSettings.webhookArrivedAtDoorUrl = settings.webhookArrivedAtDoorUrl;
     }
 
     // App/Fidelity
     if (settings.isAppDiscountEnabled !== undefined) {
         dbSettings.is_app_discount_enabled = settings.isAppDiscountEnabled;
-        dbSettings.isAppDiscountEnabled = settings.isAppDiscountEnabled;
     }
     if (settings.appDiscountPercentage !== undefined) {
         dbSettings.app_discount_percentage = settings.appDiscountPercentage;
-        dbSettings.appDiscountPercentage = settings.appDiscountPercentage;
     }
     if (settings.isRatingEnabled !== undefined) {
         dbSettings.is_rating_enabled = settings.isRatingEnabled;
-        dbSettings.isRatingEnabled = settings.isRatingEnabled;
     }
     if (settings.isBotEnabled !== undefined) {
         dbSettings.is_bot_enabled = settings.isBotEnabled;
-        dbSettings.isBotEnabled = settings.isBotEnabled;
     }
     if (settings.courier_access_code !== undefined) {
         dbSettings.courier_access_code = settings.courier_access_code;
@@ -823,27 +808,21 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
     // Raffle
     if (settings.isRaffleEnabled !== undefined) {
         dbSettings.is_raffle_enabled = settings.isRaffleEnabled;
-        dbSettings.isRaffleEnabled = settings.isRaffleEnabled;
     }
     if (settings.rafflePrizeValue !== undefined) {
         dbSettings.raffle_prize_value = settings.rafflePrizeValue;
-        dbSettings.rafflePrizeValue = settings.rafflePrizeValue;
     }
     if (settings.raffleDrawDate !== undefined) {
         dbSettings.raffle_draw_date = settings.raffleDrawDate;
-        dbSettings.raffleDrawDate = settings.raffleDrawDate;
     }
     if (settings.lastRaffleWinner !== undefined) {
         dbSettings.last_raffle_winner = settings.lastRaffleWinner;
-        dbSettings.lastRaffleWinner = settings.lastRaffleWinner;
     }
     if (settings.bolaoStartTime !== undefined) {
         dbSettings.bolao_start_time = settings.bolaoStartTime;
-        dbSettings.bolaoStartTime = settings.bolaoStartTime;
     }
     if (settings.bolaoEndTime !== undefined) {
         dbSettings.bolao_end_time = settings.bolaoEndTime;
-        dbSettings.bolaoEndTime = settings.bolaoEndTime;
     }
 
     // Printers
@@ -860,7 +839,6 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
             const snakeKey = field.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
             const val = (settings as any)[field];
             dbSettings[snakeKey] = val === "" ? null : val;
-            dbSettings[field] = val === "" ? null : val;
         }
     });
 
@@ -1689,3 +1667,4 @@ export const deleteTvAd = async (id: string) => {
     const { error } = await supabase.from('tv_ads').delete().eq('id', id);
     if (error) throw error;
 };
+
