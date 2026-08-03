@@ -2279,12 +2279,6 @@ const CustomerPage: React.FC = () => {
         return () => clearInterval(interval);
     }, [currentStore]);
 
-    if (storeLoading || isLoading) {
-        return <div className="flex items-center justify-center h-screen bg-background"><div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
-    }
-
-    if (!currentStore) return <div className="text-center text-white mt-10">Loja não encontrada.</div>;
-
     const filteredCategories = useMemo(() => {
         if (viewMode === 'all') return menu.categories;
         if (viewMode === 'filtered' && selectedGroup) {
@@ -2292,6 +2286,12 @@ const CustomerPage: React.FC = () => {
         }
         return menu.categories;
     }, [viewMode, selectedGroup, menu.categories]);
+
+    if (storeLoading || isLoading) {
+        return <div className="flex items-center justify-center h-screen bg-background"><div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
+    }
+
+    if (!currentStore) return <div className="text-center text-white mt-10">Loja não encontrada.</div>;
 
     if (viewMode === 'landing') {
         return (
