@@ -2315,28 +2315,28 @@ const CustomerPage: React.FC = () => {
                 </div>
 
                 {/* Hero Image */}
-                <div className="relative h-[65vh] w-full bg-black rounded-b-[40px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.8)]">
+                <div className="relative h-[55vh] w-full bg-black rounded-b-[40px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.8)]">
                     <img 
                         src="/acai_boat_hero.jpg" 
                         alt="Açaí Hero" 
-                        className="w-full h-full object-cover opacity-80"
+                        className="w-full h-full object-cover opacity-95"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11]/60 to-black/30"></div>
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-transparent"></div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11]/40 to-black/20"></div>
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent"></div>
                     
                     {/* Welcome Text overlay */}
-                    <div className="absolute bottom-12 left-0 right-0 flex flex-col items-center justify-center px-6 text-center z-10">
-                        <h2 className="text-4xl font-black tracking-tight mb-2 drop-shadow-[0_4px_10px_rgba(0,0,0,1)]">
+                    <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center justify-center px-4 text-center z-10">
+                        <h2 className="text-3xl md:text-4xl font-black tracking-tight mb-1 drop-shadow-[0_4px_10px_rgba(0,0,0,1)]">
                             O QUE VAMOS PEDIR <span className="text-amber-400">HOJE?</span>
                         </h2>
-                        <p className="text-gray-300 text-sm font-medium drop-shadow-md max-w-sm">
-                            Navegue pelas nossas opções e monte seu pedido do seu jeito.
+                        <p className="text-gray-300 text-xs md:text-sm font-medium drop-shadow-md max-w-sm">
+                            Navegue pelas opções e monte seu pedido do seu jeito.
                         </p>
                     </div>
                 </div>
 
-                <div className="flex-1 flex flex-col items-center justify-start -mt-6 px-4 pb-24 z-10">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 w-full max-w-2xl mb-8">
+                <div className="flex-1 flex flex-col items-center justify-start -mt-8 px-4 pb-12 z-10">
+                    <div className="grid grid-cols-3 gap-2 md:gap-4 w-full max-w-2xl mb-8">
                         {(settings?.modernGroups || []).map((group: any) => (
                             <button
                                 key={group.id}
@@ -2344,13 +2344,13 @@ const CustomerPage: React.FC = () => {
                                     setSelectedGroup(group);
                                     setViewMode('filtered');
                                 }}
-                                className="relative flex items-center justify-center h-28 rounded-2xl overflow-hidden group transition-all active:scale-95 shadow-xl border border-white/5 bg-gray-900"
+                                className="relative flex items-center justify-center h-24 md:h-28 rounded-2xl overflow-hidden group transition-all active:scale-95 shadow-xl border border-white/5 bg-gray-900"
                             >
                                 {group.image && (
                                     <img src={group.image} alt={group.name} className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:opacity-70 transition-opacity" />
                                 )}
                                 <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
-                                <span className="relative z-10 text-xl font-black uppercase tracking-widest text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)]">
+                                <span className="relative z-10 text-[10px] md:text-xl font-black uppercase tracking-widest text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-center px-1">
                                     {group.name}
                                 </span>
                             </button>
