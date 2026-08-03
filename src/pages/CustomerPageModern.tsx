@@ -2319,10 +2319,10 @@ const CustomerPage: React.FC = () => {
                     <img 
                         src="/acai_boat_hero.jpg" 
                         alt="Açaí Hero" 
-                        className="w-full h-full object-cover opacity-95"
+                        className="w-full h-full object-cover opacity-100 brightness-110 saturate-110"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11]/40 to-black/20"></div>
-                    <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-transparent"></div>
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11]/20 to-black/20"></div>
+                    <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-transparent"></div>
                     
                     {/* Welcome Text overlay */}
                     <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center justify-center px-4 text-center z-10">
@@ -2335,7 +2335,7 @@ const CustomerPage: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 flex flex-col items-center justify-start -mt-8 px-4 pb-12 z-10">
+                <div className="flex-1 flex flex-col items-center justify-start mt-2 px-4 pb-24 z-10">
                     <div className="grid grid-cols-3 gap-2 md:gap-4 w-full max-w-2xl mb-8">
                         {(settings?.modernGroups || []).map((group: any) => (
                             <button
@@ -2344,7 +2344,7 @@ const CustomerPage: React.FC = () => {
                                     setSelectedGroup(group);
                                     setViewMode('filtered');
                                 }}
-                                className="relative flex items-center justify-center h-24 md:h-28 rounded-2xl overflow-hidden group transition-all active:scale-95 shadow-xl border border-white/5 bg-gray-900"
+                                className="relative flex items-center justify-center h-24 md:h-28 rounded-2xl overflow-hidden group transition-all active:scale-95 shadow-[0_0_15px_rgba(168,85,247,0.3)] border-2 border-purple-500/80 bg-gray-900"
                             >
                                 {group.image && (
                                     <img src={group.image} alt={group.name} className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:opacity-70 transition-opacity" />
