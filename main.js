@@ -1,4 +1,5 @@
-import { app, BrowserWindow, ipcMain, Menu, dialog, Tray, nativeImage, powerSaveBlocker } from "electron";
+import electron from "electron";
+const { app, BrowserWindow, ipcMain, Menu, dialog, Tray, nativeImage, powerSaveBlocker } = electron;
 import "dotenv/config";
 import dotenv from "dotenv";
 import path from "path";
@@ -26,6 +27,9 @@ app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 // --- GLOBAL ERROR HANDLER ---
 let LOG_PATH = null;
+try {
+  LOG_PATH = path.join(app.getPath("userData"), "pdv_error.log");
+} catch (e) {}
 
 function logToFile(msg) {
   try {

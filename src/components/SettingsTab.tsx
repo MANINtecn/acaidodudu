@@ -12,11 +12,13 @@ import {
     Settings as SettingsIcon,
     ExternalLink,
     Upload,
-    CheckCheck
+    CheckCheck,
+    Scale
 } from 'lucide-react';
 import { Settings, Category } from '../types';
 import { uploadLogoToStorage } from '../services/supabaseService';
 import { printOrder, generateReceiptText } from '../services/printerService';
+import { requestSerialPort } from '../services/scaleService';
 import { UpdateManager } from './UpdateManager';
 
 interface SettingsTabProps {
@@ -41,7 +43,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
         const { name, value } = e.target;
         setFormData(prev => ({
             ...prev,
-            [name]: name === 'comboPrice' || name === 'appDiscountPercentage' || name === 'deliveryFee' ? parseFloat(value) : value
+            [name]: name === 'comboPrice' || name === 'appDiscountPercentage' || name === 'deliveryFee' || name === 'minOrderValue' ? parseFloat(value) : value
         }));
     };
 
@@ -613,6 +615,93 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                     </div>
                 </div>
 
+                {/* Balança Eletrônica Section */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold mb-2 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                        <Scale size={20} className="text-blue-600 dark:text-blue-400" /> Integração com Balança Eletrônica (Urano / Toledo / Filizola)
+                    </h3>
+                    <p className="text-xs text-gray-500 mb-4">
+                        Conecte uma balança de pesagem por quilo via cabo USB/Serial (Porta COM) para capturar o peso dos sorvetes/açaís e calcular o valor automaticamente no Balcão e Garçom.
+                    </p>
+
+                    <div className="mb-4">
+                        <label className="flex items-center gap-2 cursor-pointer font-bold text-sm text-gray-800 dark:text-gray-200">
+                            <input
+                                type="checkbox"
+                                name="isScaleEnabled"
+                                checked={formData.isScaleEnabled || false}
+                                onChange={(e) => setFormData({ ...formData, isScaleEnabled: e.target.checked })}
+                                className="w-5 h-5 text-blue-600 rounded focus:ring-blue-500"
+                            />
+                            Habilitar Leitura de Balança no Sistema (PDV & Garçom)
+                        </label>
+                    </div>
+
+                    {formData.isScaleEnabled && (
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Modelo / Marca da Balança</label>
+                                <select
+                                    name="scaleProtocol"
+                                    value={formData.scaleProtocol || 'urano'}
+                                    onChange={handleChange}
+                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+                                >
+                                    <option value="urano">Urano (POP / US 20/2 / Multiuso)</option>
+                                    <option value="toledo">Toledo (Prix / PRT1)</option>
+                                    <option value="filizola">Filizola (CS / BP)</option>
+                                    <option value="elgin">Elgin (DP-3002)</option>
+                                    <option value="generic">Genérica ASCII (COM)</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Preço Padrão por Kg (R$)</label>
+                                <input
+                                    type="number"
+                                    name="scalePricePerKg"
+                                    value={formData.scalePricePerKg || 60}
+                                    onChange={(e) => setFormData({ ...formData, scalePricePerKg: parseFloat(e.target.value) || 0 })}
+                                    step="0.10"
+                                    placeholder="Ex: 60.00"
+                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Velocidade Serial (Baud Rate)</label>
+                                <select
+                                    name="scaleBaudRate"
+                                    value={formData.scaleBaudRate || 9600}
+                                    onChange={(e) => setFormData({ ...formData, scaleBaudRate: Number(e.target.value) })}
+                                    className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+                                >
+                                    <option value={9600}>9600 Baud (Padrão Urano/Toledo)</option>
+                                    <option value={4800}>4800 Baud</option>
+                                    <option value={2400}>2400 Baud</option>
+                                </select>
+                            </div>
+
+                            <div className="md:col-span-3 mt-2 flex flex-wrap items-center gap-3">
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        try {
+                                            const port = await requestSerialPort(formData.scaleBaudRate || 9600);
+                                            alert('Porta serial conectada com sucesso!');
+                                        } catch (err: any) {
+                                            alert(`Status da Conexão: ${err.message || 'Erro ao conectar à porta serial da balança.'}`);
+                                        }
+                                    }}
+                                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow"
+                                >
+                                    🔌 Conectar / Selecionar Porta COM (USB Balança)
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
                     <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">
                         <DollarSign size={20} className="text-red-600 dark:text-red-500" /> Preços e Descontos
@@ -635,6 +724,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                 type="number"
                                 name="deliveryFee"
                                 value={formData.deliveryFee || 0}
+                                onChange={handleChange}
+                                step="0.50"
+                                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Pedido Mínimo (R$)</label>
+                            <input
+                                type="number"
+                                name="minOrderValue"
+                                value={formData.minOrderValue ?? 15.00}
                                 onChange={handleChange}
                                 step="0.50"
                                 className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"

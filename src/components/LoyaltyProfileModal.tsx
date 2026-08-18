@@ -115,10 +115,14 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
     const [bolaoStatus, setBolaoStatus] = useState<'loading' | 'open' | 'closed' | 'not_started'>('loading');
     const [bolaoStartTime, setBolaoStartTime] = useState<number | null>(null);
     const [countdown, setCountdown] = useState<string>('');
+    const [minOrderValue, setMinOrderValue] = useState<number>(MIN_ORDER_VALUE);
 
     useEffect(() => {
         if (isOpen && customer && storeId) {
             fetchPublicSettings(storeId).then(settings => {
+                if (settings && (settings as any).minOrderValue !== undefined) {
+                    setMinOrderValue(Number((settings as any).minOrderValue) || MIN_ORDER_VALUE);
+                }
                 const now = new Date().getTime();
                 // Padrão: Sábado (13/06/2026) às 13:00 até 18:00
                 const defaultStart = new Date('2026-06-13T13:00:00-03:00').getTime();
@@ -562,16 +566,16 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                                     </div>
                                 )}
 
-                                {lastOrder?.orderType === 'Entrega' && finalTotal < MIN_ORDER_VALUE && (
+                                {lastOrder?.orderType === 'Entrega' && finalTotal < minOrderValue && (
                                     <div className="mb-3 p-2 bg-red-600/20 border border-red-600 rounded-lg text-red-500 text-center font-black text-[10px] animate-pulse">
-                                        Pedido mínimo de R$ {MIN_ORDER_VALUE.toFixed(2)} não atingido para entrega
+                                        Pedido mínimo de R$ {minOrderValue.toFixed(2)} não atingido para entrega
                                     </div>
                                 )}
 
                                 <button
                                     onClick={() => onRepeatOrder(itemsToRepeat)}
-                                    disabled={isLoadingRepeat || !isStoreOpen || itemsToRepeat.length === 0 || (lastOrder?.orderType === 'Entrega' && finalTotal < MIN_ORDER_VALUE)}
-                                    className={`w-full py-3 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm ${!isStoreOpen || itemsToRepeat.length === 0 || (lastOrder?.orderType === 'Entrega' && finalTotal < MIN_ORDER_VALUE) ? 'bg-gray-600 cursor-not-allowed opacity-50' : 'bg-green-600 hover:bg-green-500 hover:shadow-green-500/20 disabled:opacity-50'}`}
+                                    disabled={isLoadingRepeat || !isStoreOpen || itemsToRepeat.length === 0 || (lastOrder?.orderType === 'Entrega' && finalTotal < minOrderValue)}
+                                    className={`w-full py-3 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm ${!isStoreOpen || itemsToRepeat.length === 0 || (lastOrder?.orderType === 'Entrega' && finalTotal < minOrderValue) ? 'bg-gray-600 cursor-not-allowed opacity-50' : 'bg-green-600 hover:bg-green-500 hover:shadow-green-500/20 disabled:opacity-50'}`}
                                 >
 
                                     {isLoadingRepeat ? 'Processando...' : <><LucideRepeat size={16} /> Repetir Pedido (R$ {finalTotal.toFixed(2)})</>}

@@ -625,6 +625,7 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     rafflePrizeValue: 0,
     raffleDrawDate: undefined,
     deliveryFee: 2.00,
+    minOrderValue: 15.00,
     isBotEnabled: true,
     // Printer Defaults
     preferredPrinter: undefined,
@@ -660,6 +661,7 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
         manualStatus: dbData?.manual_status ?? dbData?.manualStatus ?? defaultSettings.manualStatus,
         comboPrice: Number(dbData?.combo_price ?? dbData?.comboPrice ?? defaultSettings.comboPrice) || 13.0,
         deliveryFee: Number(dbData?.delivery_fee ?? dbData?.deliveryFee ?? defaultSettings.deliveryFee) || 0,
+        minOrderValue: Number(dbData?.min_order_value ?? dbData?.minOrderValue ?? defaultSettings.minOrderValue) || 15.0,
         
         isRaffleEnabled: dbData?.is_raffle_enabled ?? dbData?.isRaffleEnabled ?? defaultSettings.isRaffleEnabled,
         raffleDrawDate: dbData?.raffle_draw_date ?? dbData?.raffleDrawDate ?? defaultSettings.raffleDrawDate,
@@ -797,6 +799,10 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
     }
     if (settings.deliveryFee !== undefined) {
         dbSettings.delivery_fee = settings.deliveryFee;
+    }
+    if (settings.minOrderValue !== undefined) {
+        dbSettings.min_order_value = settings.minOrderValue;
+        dbSettings.minOrderValue = settings.minOrderValue;
     }
     if (settings.daysOfWeek !== undefined) {
         dbSettings.days_of_week = settings.daysOfWeek;
@@ -1693,6 +1699,28 @@ export const updateTvAd = async (id: string, updates: any) => {
 
 export const deleteTvAd = async (id: string) => {
     const { error } = await supabase.from('tv_ads').delete().eq('id', id);
+    if (error) throw error;
+};
+
+
+export const fetchDeliveryZones = async (storeId: string): Promise<any[]> => {
+    try {
+        const { data, error } = await supabase.from('delivery_zones').select('*').eq('store_id', storeId).order('neighborhood_name');
+        if (error) throw error;
+        return data || [];
+    } catch (e) { console.error('Error fetching delivery zones:', e); return []; }
+};
+export const createDeliveryZone = async (zone: any): Promise<any> => {
+    const { data, error } = await supabase.from('delivery_zones').insert([zone]).select();
+    if (error) throw error;
+    return data[0];
+};
+export const updateDeliveryZone = async (id: string, updates: any): Promise<void> => {
+    const { error } = await supabase.from('delivery_zones').update(updates).eq('id', id);
+    if (error) throw error;
+};
+export const deleteDeliveryZone = async (id: string): Promise<void> => {
+    const { error } = await supabase.from('delivery_zones').delete().eq('id', id);
     if (error) throw error;
 };
 

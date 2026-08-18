@@ -4,12 +4,12 @@ import { useStore } from '../contexts/StoreContext';
 import LoyaltyProfileModal from '../components/LoyaltyProfileModal';
 import { 
     Category, MenuItem, Addon, Order, Settings, Customer, Promotion,
-    OrderType, PaymentMethod, CartItem 
+    OrderType, PaymentMethod, CartItem, DeliveryZone 
 } from '../types';
 import { 
     rateOrder, fetchPublicSettings, fetchActivePromotions, createOrder, triggerWebhook, 
     fetchMenuForCustomer, fetchCustomerByPhone, fetchLastOrderByPhone, fetchCustomerLoyaltyHistory, 
-    redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee
+    redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones
 } from '../services/supabaseService';
 import { 
     ShoppingCart as LucideShoppingCart, X as LucideX, 
@@ -811,15 +811,20 @@ const SideCart: React.FC<{
     setOrderDiscount?: (val: number) => void;
     pendingReward?: any | null;
     dynamicDeliveryFee: number | null;
+    deliveryZones?: DeliveryZone[];
+    selectedZoneId?: string;
+    setSelectedZoneId?: (val: string) => void;
 }> = ({ isOpen, onClose, cart, onUpdateCart, onRemoveFromCart, onClearCart, isStoreOpen, settings, storeId,
     customerName, setCustomerName, phone, setPhone, address, setAddress, referencePoint, setReferencePoint,
     houseNumber, setHouseNumber, paymentMethod, setPaymentMethod, changeFor, setChangeFor, orderType, setOrderType,
-    orderDiscount = 0, setOrderDiscount, pendingReward, dynamicDeliveryFee
+    orderDiscount = 0, setOrderDiscount, pendingReward, dynamicDeliveryFee,
+    deliveryZones = [], selectedZoneId = '', setSelectedZoneId = () => {}
 }) => {
         const [isSubmitting, setIsSubmitting] = useState(false);
         const [showSuccess, setShowSuccess] = useState(false);
         const [lastOrderId, setLastOrderId] = useState<string | undefined>(undefined);
         const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+        const minOrderValue = settings?.minOrderValue ?? MIN_ORDER_VALUE;
 
         const subtotal = useMemo(() => {
             return cart.reduce((sum, item) => {
@@ -838,7 +843,16 @@ const SideCart: React.FC<{
             return 0;
         }, [subtotal, settings]);
 
-        const deliveryFee = orderType === 'Entrega' ? (dynamicDeliveryFee ?? settings?.deliveryFee ?? 0) : 0;
+        const selectedZone = useMemo(() => {
+            return (deliveryZones || []).find(z => z.id === selectedZoneId);
+        }, [deliveryZones, selectedZoneId]);
+
+        const deliveryFee = useMemo(() => {
+            if (orderType !== 'Entrega') return 0;
+            if (selectedZone) return Number(selectedZone.fee) || 0;
+            return dynamicDeliveryFee ?? settings?.deliveryFee ?? 0;
+        }, [orderType, selectedZone, dynamicDeliveryFee, settings?.deliveryFee]);
+
         const total = Math.max(0, subtotal - discount + deliveryFee - (orderDiscount || 0));
 
         const isFormValid = useMemo(() => {
@@ -846,14 +860,15 @@ const SideCart: React.FC<{
             const phoneDigits = phone.replace(/\D/g, '');
             if (phoneDigits.length < 8) return false;
             if (orderType === 'Entrega') {
+                if (deliveryZones && deliveryZones.length > 0 && !selectedZoneId) return false;
                 if (!address.trim()) return false;
                 if (!houseNumber.trim()) return false;
                 if (!referencePoint.trim()) return false;
             }
             if (paymentMethod === 'Dinheiro' && !changeFor) return false;
-            if (orderType === 'Entrega' && total < MIN_ORDER_VALUE) return false;
+            if (orderType === 'Entrega' && total < minOrderValue) return false;
             return true;
-        }, [customerName, phone, orderType, address, houseNumber, referencePoint, paymentMethod, changeFor, total]);
+        }, [customerName, phone, orderType, deliveryZones, selectedZoneId, address, houseNumber, referencePoint, paymentMethod, changeFor, total, minOrderValue]);
 
 
         const handleSubmit = async (e: React.FormEvent) => {
@@ -902,7 +917,7 @@ const SideCart: React.FC<{
                     dailyOrderNumber: 0, // database trigger handles this
                     customerName,
                     phone: finalPhone,
-                    address: `${address}, ${houseNumber}`,
+                    address: selectedZone ? `${address}, ${houseNumber} - Bairro: ${selectedZone.neighborhood_name}` : `${address}, ${houseNumber}`,
                     referencePoint,
                     orderType,
                     paymentMethod,
@@ -1110,6 +1125,31 @@ const SideCart: React.FC<{
 
                                 {orderType === 'Entrega' && (
                                     <div className="space-y-2">
+                                        {deliveryZones && deliveryZones.length > 0 && (
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-text-light mb-1">
+                                                    Bairro de Entrega <span className="text-red-500 font-bold">* (Obrigatório)</span>
+                                                </label>
+                                                <select
+                                                    value={selectedZoneId}
+                                                    onChange={e => setSelectedZoneId(e.target.value)}
+                                                    className={`w-full p-1.5 bg-background border rounded text-text-light focus:border-primary outline-none text-xs h-9 ${!selectedZoneId ? 'border-red-500 text-red-400 font-semibold' : 'border-surface'}`}
+                                                    required
+                                                >
+                                                    <option value="">-- Selecione seu Bairro --</option>
+                                                    {deliveryZones.map(zone => (
+                                                        <option key={zone.id} value={zone.id}>
+                                                            {zone.neighborhood_name} ({Number(zone.fee) > 0 ? `+ R$ ${Number(zone.fee).toFixed(2)}` : 'Entrega Grátis'})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                {!selectedZoneId && (
+                                                    <p className="text-[10px] text-red-500 mt-0.5 font-semibold">
+                                                        ⚠️ Por favor, selecione seu bairro para continuar.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
                                         <input
                                             type="text"
                                             placeholder="Endereço (Rua)"
@@ -1181,9 +1221,9 @@ const SideCart: React.FC<{
                                     </div>
                                 )}
 
-                                {orderType === 'Entrega' && total < MIN_ORDER_VALUE && (
+                                {orderType === 'Entrega' && total < minOrderValue && (
                                     <div className="p-2 bg-red-600/20 border border-red-600 rounded-lg text-red-500 text-center font-black text-xs animate-pulse">
-                                        Pedido mínimo de R$ {Number(MIN_ORDER_VALUE).toFixed(2)} não atingido
+                                        Pedido mínimo de R$ {Number(minOrderValue).toFixed(2)} não atingido
                                     </div>
                                 )}
 
@@ -1218,10 +1258,8 @@ const ItemDetailModal: React.FC<{
     const [selectedAddons, setSelectedAddons] = useState<Addon[]>([]);
     const [notes, setNotes] = useState('');
 
-    // Lógica para mostrar o campo de observações
     const deveMostrarObservacoes = useMemo(() => {
         const nomeCategoria = categoryName.toLowerCase();
-        // Enable for Lanches, Porções, Gourmet, or generic Burgers
         return nomeCategoria.includes('lanches') ||
             nomeCategoria.includes('porções') ||
             nomeCategoria.includes('porcoes') ||
@@ -1250,64 +1288,63 @@ const ItemDetailModal: React.FC<{
         onClose();
     };
 
-    // Use the addons explicitly selected for this item in the Admin Panel, fallback to category addons if none selected
     const relevantAddons = (item.selectedAddons && item.selectedAddons.length > 0) ? item.selectedAddons : (item.addons || []);
 
     return (
         <div 
-            className="fixed inset-0 bg-background/80 backdrop-blur-md z-[100] flex items-center justify-center p-0 md:p-4 animate-fade-in" 
+            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-0 md:p-4 animate-fade-in" 
             onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
-            <div className="bg-surface md:rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-fade-in-up h-full md:h-auto md:max-h-[90vh] flex flex-col">
-                <div className="relative h-48 md:h-64 shrink-0">
+            <div className="bg-[#130826] border border-purple-500/30 md:rounded-3xl w-full max-w-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.9)] animate-fade-in-up h-full md:h-auto md:max-h-[90vh] flex flex-col text-white">
+                <div className="relative h-48 md:h-64 shrink-0 bg-black/40">
                     <img src={item.image || 'https://via.placeholder.com/400x200?text=Sem+Imagem'} alt={item.name} className="w-full h-full object-cover" />
                     <button 
                         onClick={onClose} 
-                        className="absolute top-4 right-4 bg-black/50 backdrop-blur-md text-white rounded-full p-2 hover:bg-black/70 transition-all border border-white/10"
+                        className="absolute top-4 right-4 bg-black/70 backdrop-blur-md text-white rounded-full p-2 hover:bg-black transition-all border border-white/20 shadow-lg"
                     >
                         <LucideX size={24} />
                     </button>
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-surface to-transparent h-20"></div>
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#130826] to-transparent h-20"></div>
                 </div>
                 
                 <div className="px-6 py-4 overflow-y-auto flex-grow scrollbar-hide space-y-4">
                     <div className="space-y-3">
                         <div className="flex justify-between items-start gap-4">
-                            <h2 className="text-xl font-black text-text-light leading-tight uppercase tracking-tight">{item.name}</h2>
+                            <h2 className="text-xl font-black text-white leading-tight uppercase tracking-tight drop-shadow">{item.name}</h2>
                             <div className="text-right">
-                                <span className="block text-xl font-black text-primary whitespace-nowrap">R$ {item.price.toFixed(2)}</span>
-                                {item.eligibleForCombo && <span className="text-[10px] text-text-dark font-bold uppercase tracking-tight">+ R$ {comboPrice.toFixed(2)} no combo</span>}
+                                <span className="block text-xl font-black text-amber-400 whitespace-nowrap drop-shadow">R$ {item.price.toFixed(2)}</span>
+                                {item.eligibleForCombo && <span className="text-[10px] text-purple-300 font-bold uppercase tracking-tight">+ R$ {comboPrice.toFixed(2)} no combo</span>}
                             </div>
                         </div>
-                        <p className="text-xs text-text-dark leading-relaxed border-l-2 border-primary/20 pl-3">{item.description}</p>
+                        <p className="text-xs text-purple-200 leading-relaxed border-l-2 border-orange-500/60 pl-3">{item.description}</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {item.eligibleForCombo && (
-                            <div className="bg-background/50 border border-text-light/5 rounded-2xl p-4 flex items-center h-full">
+                            <div className="bg-[#1a0c33] border border-purple-500/20 rounded-2xl p-4 flex items-center h-full">
                                 <label className="flex items-center cursor-pointer group w-full">
                                     <input 
                                         type="checkbox" 
                                         checked={isCombo} 
                                         onChange={e => setIsCombo(e.target.checked)} 
-                                        className="h-6 w-6 text-primary rounded-lg border-surface bg-background focus:ring-offset-background" 
+                                        className="h-6 w-6 text-orange-500 rounded-lg border-purple-500/40 bg-[#130826] focus:ring-offset-[#130826]" 
                                     />
                                     <div className="ml-3">
-                                        <span className="block text-text-light font-bold text-sm group-hover:text-primary transition-colors">Virar Combo?</span>
-                                        <span className="block text-[10px] text-text-dark line-clamp-1">+ Batata + Refri (+R$ {comboPrice.toFixed(2)})</span>
+                                        <span className="block text-white font-bold text-sm group-hover:text-amber-300 transition-colors">Virar Combo?</span>
+                                        <span className="block text-[10px] text-purple-300 line-clamp-1">+ Batata + Refri (+R$ {comboPrice.toFixed(2)})</span>
                                     </div>
                                 </label>
                             </div>
                         )}
 
                         {deveMostrarObservacoes && (
-                            <div className="bg-background/50 border border-text-light/5 rounded-2xl p-3 flex flex-col h-full">
-                                <h3 className="text-[10px] font-black text-text-dark uppercase tracking-widest mb-1">Observações</h3>
+                            <div className="bg-[#1a0c33] border border-purple-500/20 rounded-2xl p-3 flex flex-col h-full">
+                                <h3 className="text-[10px] font-black text-purple-300 uppercase tracking-widest mb-1">Observações</h3>
                                 <textarea
                                     value={notes}
                                     onChange={e => setNotes(e.target.value)}
                                     placeholder="Ex: Sem cebola..."
-                                    className="w-full p-2 bg-background/30 border border-text-light/5 animate-pulse-border rounded-xl text-text-light focus:border-primary/50 outline-none resize-none h-14 text-xs transition-all"
+                                    className="w-full p-2 bg-[#130826] border border-purple-500/30 rounded-xl text-white placeholder-purple-300/50 focus:border-orange-500 outline-none resize-none h-14 text-xs transition-all"
                                 />
                             </div>
                         )}
@@ -1315,7 +1352,7 @@ const ItemDetailModal: React.FC<{
 
                     {relevantAddons.length > 0 && (
                         <div className="space-y-3">
-                            <h3 className="text-xs font-black text-text-dark uppercase tracking-widest">Turbine seu pedido</h3>
+                            <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest">Turbine seu pedido</h3>
                             <div className="grid grid-cols-1 gap-2">
                                 {relevantAddons.map(addon => {
                                     const isUnavailable = addon.isAvailable === false;
@@ -1327,18 +1364,18 @@ const ItemDetailModal: React.FC<{
                                             onClick={() => handleAddonToggle(addon)}
                                             className={`flex items-center p-3 rounded-2xl border transition-all text-left
                                                 ${isSelected 
-                                                    ? 'bg-primary/10 border-primary shadow-[0_0_15px_rgba(255,191,0,0.1)]' 
-                                                    : 'bg-background/40 border-text-light/5 hover:border-text-light/10'}
+                                                    ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]' 
+                                                    : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
                                                 ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
                                         >
                                             <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors
-                                                ${isSelected ? 'bg-primary border-primary' : 'bg-background border-surface'}`}>
-                                                {isSelected && <LucideCheck size={12} className="text-background stroke-[4]" />}
+                                                ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
+                                                {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
                                             </div>
-                                            <span className="ml-3 flex-grow text-xs font-bold text-text-light uppercase tracking-tight">
+                                            <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
                                                 {addon.name}
                                             </span>
-                                            <span className={`font-black text-xs ${isSelected ? 'text-primary' : 'text-text-dark'}`}>
+                                            <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
                                                 + R$ {addon.price.toFixed(2)}
                                             </span>
                                         </button>
@@ -1349,33 +1386,33 @@ const ItemDetailModal: React.FC<{
                     )}
                 </div>
 
-                <div className="p-4 bg-surface border-t border-text-light/5 shadow-[0_-10px_20px_rgba(0,0,0,0.2)]">
+                <div className="p-4 bg-[#100620] border-t border-purple-500/30 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
                     <div className="flex items-center gap-4 mb-3">
-                        <div className="flex items-center bg-background/50 rounded-xl p-1 border border-text-light/5">
+                        <div className="flex items-center bg-[#1a0c33] rounded-xl p-1 border border-purple-500/30">
                             <button 
                                 onClick={() => setQuantity(Math.max(1, quantity - 1))} 
-                                className="w-10 h-10 flex items-center justify-center text-primary bg-surface rounded-lg hover:bg-background active:scale-90 transition-all font-black text-xl"
+                                className="w-10 h-10 flex items-center justify-center text-amber-400 bg-[#130826] rounded-lg hover:bg-[#201040] active:scale-90 transition-all font-black text-xl border border-purple-500/30"
                             >
                                 <LucideMinus size={18} />
                             </button>
-                            <span className="text-lg font-black text-text-light w-10 text-center">{quantity}</span>
+                            <span className="text-lg font-black text-white w-10 text-center">{quantity}</span>
                             <button 
                                 onClick={() => setQuantity(quantity + 1)} 
-                                className="w-10 h-10 flex items-center justify-center text-primary bg-surface rounded-lg hover:bg-background active:scale-90 transition-all font-black text-xl"
+                                className="w-10 h-10 flex items-center justify-center text-amber-400 bg-[#130826] rounded-lg hover:bg-[#201040] active:scale-90 transition-all font-black text-xl border border-purple-500/30"
                             >
                                 <LucidePlus size={18} />
                             </button>
                         </div>
                         <div className="flex-1 text-right">
-                            <p className="text-[9px] font-black text-text-dark uppercase tracking-widest leading-none mb-1">Total do Item</p>
-                            <p className="text-xl font-black text-primary tracking-tighter leading-none">
+                            <p className="text-[9px] font-black text-purple-300 uppercase tracking-widest leading-none mb-1">Total do Item</p>
+                            <p className="text-xl font-black text-amber-400 tracking-tighter leading-none drop-shadow">
                                 R$ {((item.price + selectedAddons.reduce((s, a) => s + a.price, 0) + (isCombo ? comboPrice : 0)) * quantity).toFixed(2)}
                             </p>
                         </div>
                     </div>
                     <button 
                         onClick={handleAddToCart} 
-                        className="w-full py-4 bg-primary hover:brightness-110 active:scale-[0.98] text-background font-black rounded-xl text-base uppercase tracking-widest transition-all shadow-xl shadow-primary/10 flex items-center justify-center gap-3"
+                        className="w-full py-4 bg-gradient-to-r from-orange-500 via-amber-500 to-purple-600 hover:brightness-110 active:scale-[0.98] text-white font-black rounded-xl text-base uppercase tracking-widest transition-all shadow-xl shadow-orange-500/20 flex items-center justify-center gap-3"
                     >
                         <span>Adicionar ao Pedido</span>
                         <LucideArrowRight size={18} />
@@ -1688,6 +1725,21 @@ const CustomerPage: React.FC = () => {
     const [changeFor, setChangeFor] = useState('');
     const [orderType, setOrderType] = useState<OrderType>('Entrega');
 
+    // Delivery Zones & Mandatory Neighborhood state
+    const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+    const [selectedZoneId, setSelectedZoneId] = useState<string>('');
+
+    useEffect(() => {
+        if (currentStore?.id) {
+            fetchDeliveryZones(currentStore.id)
+                .then(zones => {
+                    const active = (zones || []).filter((z: any) => z.is_active !== false);
+                    setDeliveryZones(active);
+                })
+                .catch(err => console.error("Error fetching delivery zones:", err));
+        }
+    }, [currentStore?.id]);
+
 
     // Dynamic Delivery Fee State
     const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState<number | null>(null);
@@ -1782,9 +1834,17 @@ const CustomerPage: React.FC = () => {
                 }
                 setReferencePoint(customer.reference_point || '');
                 
-                // Immediately check for dynamic delivery fee!
+                // Immediately check for dynamic delivery fee and match zone!
                 if (customer.address) {
                     updateFee(customer.address);
+                    if (deliveryZones && deliveryZones.length > 0) {
+                        const matchedZone = deliveryZones.find(z => 
+                            customer.address.toLowerCase().includes(z.neighborhood_name.toLowerCase())
+                        );
+                        if (matchedZone) {
+                            setSelectedZoneId(matchedZone.id);
+                        }
+                    }
                 }
                 
                 // Set Payment Preferences from Customer Profile if available
@@ -2390,6 +2450,9 @@ const CustomerPage: React.FC = () => {
                 setOrderDiscount={setOrderDiscount}
                 pendingReward={pendingReward}
                 dynamicDeliveryFee={dynamicDeliveryFee}
+                deliveryZones={deliveryZones}
+                selectedZoneId={selectedZoneId}
+                setSelectedZoneId={setSelectedZoneId}
             />
 
             <LoyaltyProfileModal

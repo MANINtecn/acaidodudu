@@ -1,10 +1,11 @@
 import { useState, useMemo, useEffect, memo, useRef } from 'react';
-import { Plus, Minus, Trash2, Search, X, Bike, ShoppingBag, LogOut, Percent } from 'lucide-react';
+import { Plus, Minus, Trash2, Search, X, Bike, ShoppingBag, LogOut, Percent, Scale, Grid, ChevronDown } from 'lucide-react';
 import type { Category, MenuItem, Addon, CartItem, OrderType, PaymentMethod, Settings, OrderStatus, Customer, Order, Promotion } from '../types';
 import { fetchOpenOrderForTable, fetchCustomerByPhone, upsertCustomer, searchCustomers } from '../services/supabaseService';
 import { normalizeString } from '../utils/searchUtils';
 import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
+import { getScaleWeightWithFallback } from '../services/scaleService';
 
 interface CounterTabProps {
     categories: Category[];
@@ -28,6 +29,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     const [customerName, setCustomerName] = useState('');
     const [isTableModalOpen, setIsTableModalOpen] = useState(false);
     const [isCustomItemModalOpen, setIsCustomItemModalOpen] = useState(false);
+    const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
+    const [categorySearchTerm, setCategorySearchTerm] = useState('');
+    const [isScaleModalOpen, setIsScaleModalOpen] = useState(false);
+    const [scaleWeight, setScaleWeight] = useState<number>(0);
+    const [scalePricePerKg, setScalePricePerKg] = useState<number>(settings?.scalePricePerKg || 60);
+    const [scaleItemName, setScaleItemName] = useState<string>('Açaí/Sorvete por Quilo');
+    const [isReadingScale, setIsReadingScale] = useState(false);
     const [isAddonModalOpen, setIsAddonModalOpen] = useState(false);
     const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Dinheiro');
@@ -228,6 +236,28 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         setCustomItemName('');
         setCustomItemPrice('');
         setIsCustomItemModalOpen(false);
+    };
+
+    const handleScaleItemAdd = (weightKg: number, name: string, pricePerKg: number, notes: string = '') => {
+        const totalPrice = Number((weightKg * pricePerKg).toFixed(2));
+        const newItem: CartItem = {
+            id: -Date.now(),
+            name: `${name} (${weightKg.toFixed(3).replace('.', ',')} kg)`,
+            description: `Pesagem: R$ ${pricePerKg.toFixed(2)}/kg`,
+            price: totalPrice,
+            categoryId: -1,
+            eligibleForCombo: false,
+            isCombo: false,
+            selectedAddons: [],
+            store_id: storeId,
+            isAvailable: true,
+            cartId: `scale-${Date.now()}`,
+            quantity: 1,
+            notes: notes,
+            weightKg: weightKg,
+            pricePerKg: pricePerKg
+        };
+        setCart(prev => [...prev, newItem]);
     };
 
     const total = cart.reduce((sum, item) => {
@@ -533,11 +563,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         />
                         </div>
                     </div>
-                    <div className="flex flex-wrap gap-2 pb-1">
+                    <div className="flex flex-wrap items-center gap-2 pb-1">
                         {normalizedPromotions.length > 0 && (
                             <button 
                                 onClick={() => setSelectedCategoryId(-1)} 
-                                className={`px-4 py-1.5 rounded-full whitespace-nowrap font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5
+                                className={`px-3.5 py-1.5 rounded-full whitespace-nowrap font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5
                                     ${selectedCategoryId === -1 
                                         ? 'bg-red-600 text-white shadow-red-500/20' 
                                         : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 border border-red-100 dark:border-red-900/10'}`}
@@ -546,18 +576,47 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                 Promoções
                             </button>
                         )}
-                        {categories.map(cat => (
+
+                        {/* Top 5 Categorias */}
+                        {categories.slice(0, 5).map(cat => (
                             <button 
                                 key={cat.id} 
                                 onClick={() => setSelectedCategoryId(cat.id)} 
-                                className={`px-4 py-1.5 rounded-full whitespace-nowrap font-bold text-xs uppercase tracking-wider transition-all shadow-sm
+                                className={`px-3.5 py-1.5 rounded-full whitespace-nowrap font-bold text-xs uppercase tracking-wider transition-all shadow-sm
                                     ${selectedCategoryId === cat.id 
-                                        ? 'bg-blue-600 text-white shadow-blue-500/20' 
-                                        : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-blue-50 dark:border-blue-900/10'}`}
+                                        ? 'bg-blue-600 text-white shadow-blue-500/20 ring-2 ring-blue-400/30' 
+                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-blue-100 dark:border-gray-700'}`}
                             >
                                 {cat.name}
                             </button>
                         ))}
+
+                        {/* Categoria Ativa se fora das top 5 */}
+                        {selectedCategoryId !== -1 && !categories.slice(0, 5).some(c => c.id === selectedCategoryId) && (
+                            <button 
+                                onClick={() => setSelectedCategoryId(selectedCategoryId)} 
+                                className="px-3.5 py-1.5 rounded-full whitespace-nowrap font-bold text-xs uppercase tracking-wider transition-all shadow-sm bg-blue-600 text-white shadow-blue-500/20 ring-2 ring-blue-400/30"
+                            >
+                                {categories.find(c => c.id === selectedCategoryId)?.name || 'Categoria'}
+                            </button>
+                        )}
+
+                        {/* Botão MAIS... */}
+                        {categories.length > 5 && (
+                            <button 
+                                type="button"
+                                onClick={() => {
+                                    setCategorySearchTerm('');
+                                    setIsCategoryModalOpen(true);
+                                }}
+                                className="px-3.5 py-1.5 rounded-full whitespace-nowrap font-black text-xs uppercase tracking-wider transition-all shadow-md bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white flex items-center gap-1.5 cursor-pointer hover:scale-105"
+                                title="Ver todas as categorias"
+                            >
+                                <Grid size={14} />
+                                <span>MAIS...</span>
+                                <ChevronDown size={14} />
+                            </button>
+                        )}
                     </div>
                 </div>
                 
@@ -571,9 +630,20 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                         Produtos no Pedido
                     </h3>
-                    <button onClick={() => setIsCustomItemModalOpen(true)} className="p-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-lg shadow-green-600/20">
-                        <Plus size={16} strokeWidth={3} />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button 
+                            type="button"
+                            onClick={() => setIsScaleModalOpen(true)} 
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-md shadow-blue-600/20 flex items-center gap-1 text-xs font-bold"
+                            title="Puxar Peso da Balança (Urano / Toledo)"
+                        >
+                            <Scale size={15} />
+                            <span>Balança</span>
+                        </button>
+                        <button onClick={() => setIsCustomItemModalOpen(true)} className="p-1.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-all shadow-lg shadow-green-600/20" title="Adicionar Item Avulso">
+                            <Plus size={16} strokeWidth={3} />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
@@ -842,6 +912,202 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                 <button onClick={() => setIsCustomItemModalOpen(false)} className="flex-1 py-2 border rounded-lg">Cancelar</button>
                                 <button onClick={handleAddCustomItem} className="flex-1 py-2 bg-primary text-white rounded-lg font-bold">Adicionar</button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL DA BALANÇA ELETRÔNICA */}
+            {isScaleModalOpen && (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setIsScaleModalOpen(false)}>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="font-black text-gray-900 dark:text-white text-lg flex items-center gap-2">
+                                <Scale className="text-blue-600 animate-pulse" size={24} /> Pesagem na Balança
+                            </h3>
+                            <button onClick={() => setIsScaleModalOpen(false)} className="text-gray-400 hover:text-gray-600">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">Produto / Descrição</label>
+                                <input 
+                                    type="text" 
+                                    value={scaleItemName}
+                                    onChange={e => setScaleItemName(e.target.value)}
+                                    placeholder="Ex: Açaí por Quilo / Sorvete"
+                                    className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl font-bold text-gray-900 dark:text-white"
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">Preço / Kg (R$)</label>
+                                    <input 
+                                        type="number" 
+                                        step="0.10"
+                                        value={scalePricePerKg}
+                                        onChange={e => setScalePricePerKg(parseFloat(e.target.value) || 0)}
+                                        className="w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl font-bold text-gray-900 dark:text-white"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">Peso (Kg)</label>
+                                    <input 
+                                        type="number" 
+                                        step="0.005"
+                                        value={scaleWeight || ''}
+                                        onChange={e => setScaleWeight(parseFloat(e.target.value) || 0)}
+                                        placeholder="0.000"
+                                        className="w-full px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-300 rounded-xl font-black text-xl text-blue-700 dark:text-blue-300 text-center"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* DISPLAY DIGITAL BALANÇA */}
+                            <div className="bg-slate-950 p-4 rounded-xl border-2 border-slate-800 text-center shadow-inner">
+                                <span className="text-slate-500 text-[10px] font-black uppercase tracking-widest block mb-1">Display Balança (Urano / Toledo)</span>
+                                <div className="flex justify-around items-baseline font-mono">
+                                    <div>
+                                        <span className="text-gray-400 text-xs block">PESO</span>
+                                        <span className="text-emerald-400 font-extrabold text-3xl tracking-wider">{(scaleWeight || 0).toFixed(3)} kg</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-gray-400 text-xs block">TOTAL</span>
+                                        <span className="text-yellow-400 font-extrabold text-3xl tracking-wider">R$ {((scaleWeight || 0) * (scalePricePerKg || 0)).toFixed(2)}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="flex gap-2 pt-2">
+                                <button
+                                    type="button"
+                                    onClick={async () => {
+                                        setIsReadingScale(true);
+                                        try {
+                                            const result = await getScaleWeightWithFallback(settings || undefined);
+                                            setScaleWeight(result.weightKg);
+                                        } catch (err: any) {
+                                            alert(err?.message || 'Não foi possível ler a balança. Verifique o cabo USB/Serial.');
+                                        } finally {
+                                            setIsReadingScale(false);
+                                        }
+                                    }}
+                                    disabled={isReadingScale}
+                                    className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 text-sm"
+                                >
+                                    <Scale size={18} className={isReadingScale ? "animate-spin" : ""} />
+                                    {isReadingScale ? "Lendo..." : "⚖️ Capturar Peso"}
+                                </button>
+                                
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (!scaleWeight || scaleWeight <= 0) {
+                                            alert('Por favor, informe ou capture um peso válido.');
+                                            return;
+                                        }
+                                        handleScaleItemAdd(scaleWeight, scaleItemName || 'Açaí/Sorvete por Quilo', scalePricePerKg || 60);
+                                        setIsScaleModalOpen(false);
+                                    }}
+                                    className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase text-xs tracking-wider shadow-lg shadow-emerald-600/20"
+                                >
+                                    Adicionar ao Pedido
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL DE TODAS AS CATEGORIAS */}
+            {isCategoryModalOpen && (
+                <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm animate-fade-in" onClick={() => setIsCategoryModalOpen(false)}>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-2xl w-full shadow-2xl border border-gray-100 dark:border-gray-700 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                        <div className="flex justify-between items-center mb-4 pb-3 border-b border-gray-100 dark:border-gray-700">
+                            <div className="flex items-center gap-3">
+                                <div className="p-2.5 bg-gradient-to-br from-purple-500 to-indigo-600 text-white rounded-xl shadow-md">
+                                    <Grid size={22} />
+                                </div>
+                                <div>
+                                    <h3 className="font-black text-gray-900 dark:text-white text-lg">Todas as Categorias ({categories.length})</h3>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">Selecione para filtrar os produtos do cardápio</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setIsCategoryModalOpen(false)} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-white rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Campo de Busca de Categoria se houver mais de 6 */}
+                        {categories.length > 6 && (
+                            <div className="relative mb-4">
+                                <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
+                                <input 
+                                    type="text" 
+                                    placeholder="Buscar categoria por nome..." 
+                                    value={categorySearchTerm} 
+                                    onChange={e => setCategorySearchTerm(e.target.value)} 
+                                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 dark:bg-gray-700/60 border border-gray-200 dark:border-gray-600 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-purple-500 outline-none text-gray-900 dark:text-white" 
+                                />
+                            </div>
+                        )}
+
+                        {/* Grid de Categorias */}
+                        <div className="flex-1 overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-3 gap-3 scrollbar-hide">
+                            {normalizedPromotions.length > 0 && (
+                                <button 
+                                    onClick={() => {
+                                        setSelectedCategoryId(-1);
+                                        setIsCategoryModalOpen(false);
+                                    }}
+                                    className={`p-4 rounded-xl border text-left font-bold transition-all flex flex-col justify-between group relative overflow-hidden
+                                        ${selectedCategoryId === -1 
+                                            ? 'bg-red-600 text-white border-red-600 shadow-lg shadow-red-500/20' 
+                                            : 'bg-red-50/70 dark:bg-red-900/20 text-red-600 dark:text-red-400 border-red-100 dark:border-red-900/30 hover:bg-red-100'}`}
+                                >
+                                    <span className="flex items-center gap-2 text-xs font-black uppercase tracking-wider mb-2">
+                                        <Percent size={16} />
+                                        Promoções
+                                    </span>
+                                    <div className="flex justify-between items-center text-[10px] font-bold opacity-90">
+                                        <span>{normalizedPromotions.length} itens</span>
+                                        {selectedCategoryId === -1 && <span className="font-black">✓ SELECIONADO</span>}
+                                    </div>
+                                </button>
+                            )}
+
+                            {categories
+                                .filter(cat => !categorySearchTerm || normalizeString(cat.name).includes(normalizeString(categorySearchTerm)))
+                                .map(cat => {
+                                    const itemCount = menuItems.filter(i => i.categoryId === cat.id).length;
+                                    const isSelected = selectedCategoryId === cat.id;
+
+                                    return (
+                                        <button
+                                            key={cat.id}
+                                            onClick={() => {
+                                                setSelectedCategoryId(cat.id);
+                                                setIsCategoryModalOpen(false);
+                                            }}
+                                            className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between group relative overflow-hidden cursor-pointer hover:scale-[1.02]
+                                                ${isSelected
+                                                    ? 'bg-blue-600 text-white border-blue-600 shadow-lg shadow-blue-500/20 ring-2 ring-blue-400/30'
+                                                    : 'bg-gray-50/80 dark:bg-gray-700/40 hover:bg-blue-50/80 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 border-gray-200 dark:border-gray-600'}`}
+                                        >
+                                            <span className="font-extrabold text-xs uppercase tracking-wider mb-3 leading-snug">
+                                                {cat.name}
+                                            </span>
+                                            <div className="flex justify-between items-center text-[10px] font-bold opacity-80 border-t border-black/5 dark:border-white/10 pt-2">
+                                                <span>{itemCount} {itemCount === 1 ? 'produto' : 'produtos'}</span>
+                                                {isSelected && <span className="font-black text-white">✓ ATIVO</span>}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
                         </div>
                     </div>
                 </div>

@@ -5,12 +5,12 @@ import { useStore } from '../contexts/StoreContext';
 import LoyaltyProfileModal from '../components/LoyaltyProfileModal';
 import { 
     Category, MenuItem, Addon, Order, Settings, Customer, Promotion,
-    OrderType, PaymentMethod, CartItem 
+    OrderType, PaymentMethod, CartItem, DeliveryZone 
 } from '../types';
 import { 
     rateOrder, fetchPublicSettings, fetchActivePromotions, createOrder, triggerWebhook, 
     fetchMenuForCustomer, fetchCustomerByPhone, fetchLastOrderByPhone, fetchCustomerLoyaltyHistory, 
-    redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee
+    redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones
 } from '../services/supabaseService';
 import { 
     ShoppingCart as LucideShoppingCart, X as LucideX, 
@@ -812,15 +812,20 @@ const SideCart: React.FC<{
     setOrderDiscount?: (val: number) => void;
     pendingReward?: any | null;
     dynamicDeliveryFee: number | null;
+    deliveryZones?: DeliveryZone[];
+    selectedZoneId?: string;
+    setSelectedZoneId?: (val: string) => void;
 }> = ({ isOpen, onClose, cart, onUpdateCart, onRemoveFromCart, onClearCart, isStoreOpen, settings, storeId,
     customerName, setCustomerName, phone, setPhone, address, setAddress, referencePoint, setReferencePoint,
     houseNumber, setHouseNumber, paymentMethod, setPaymentMethod, changeFor, setChangeFor, orderType, setOrderType,
-    orderDiscount = 0, setOrderDiscount, pendingReward, dynamicDeliveryFee
+    orderDiscount = 0, setOrderDiscount, pendingReward, dynamicDeliveryFee,
+    deliveryZones = [], selectedZoneId = '', setSelectedZoneId = () => {}
 }) => {
         const [isSubmitting, setIsSubmitting] = useState(false);
         const [showSuccess, setShowSuccess] = useState(false);
         const [lastOrderId, setLastOrderId] = useState<string | undefined>(undefined);
         const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+        const minOrderValue = settings?.minOrderValue ?? MIN_ORDER_VALUE;
 
         const subtotal = useMemo(() => {
             return cart.reduce((sum, item) => {
@@ -839,7 +844,16 @@ const SideCart: React.FC<{
             return 0;
         }, [subtotal, settings]);
 
-        const deliveryFee = orderType === 'Entrega' ? (dynamicDeliveryFee ?? settings?.deliveryFee ?? 0) : 0;
+        const selectedZone = useMemo(() => {
+            return (deliveryZones || []).find(z => z.id === selectedZoneId);
+        }, [deliveryZones, selectedZoneId]);
+
+        const deliveryFee = useMemo(() => {
+            if (orderType !== 'Entrega') return 0;
+            if (selectedZone) return Number(selectedZone.fee) || 0;
+            return dynamicDeliveryFee ?? settings?.deliveryFee ?? 0;
+        }, [orderType, selectedZone, dynamicDeliveryFee, settings?.deliveryFee]);
+
         const total = Math.max(0, subtotal - discount + deliveryFee - (orderDiscount || 0));
 
         const isFormValid = useMemo(() => {
@@ -847,14 +861,15 @@ const SideCart: React.FC<{
             const phoneDigits = phone.replace(/\D/g, '');
             if (phoneDigits.length < 8) return false;
             if (orderType === 'Entrega') {
+                if (deliveryZones && deliveryZones.length > 0 && !selectedZoneId) return false;
                 if (!address.trim()) return false;
                 if (!houseNumber.trim()) return false;
                 if (!referencePoint.trim()) return false;
             }
             if (paymentMethod === 'Dinheiro' && !changeFor) return false;
-            if (orderType === 'Entrega' && total < MIN_ORDER_VALUE) return false;
+            if (orderType === 'Entrega' && total < minOrderValue) return false;
             return true;
-        }, [customerName, phone, orderType, address, houseNumber, referencePoint, paymentMethod, changeFor, total]);
+        }, [customerName, phone, orderType, deliveryZones, selectedZoneId, address, houseNumber, referencePoint, paymentMethod, changeFor, total, minOrderValue]);
 
 
         const handleSubmit = async (e: React.FormEvent) => {
@@ -903,7 +918,7 @@ const SideCart: React.FC<{
                     dailyOrderNumber: 0, // database trigger handles this
                     customerName,
                     phone: finalPhone,
-                    address: `${address}, ${houseNumber}`,
+                    address: selectedZone ? `${address}, ${houseNumber} - Bairro: ${selectedZone.neighborhood_name}` : `${address}, ${houseNumber}`,
                     referencePoint,
                     orderType,
                     paymentMethod,
@@ -1111,6 +1126,31 @@ const SideCart: React.FC<{
 
                                 {orderType === 'Entrega' && (
                                     <div className="space-y-2">
+                                        {deliveryZones && deliveryZones.length > 0 && (
+                                            <div>
+                                                <label className="block text-[11px] font-bold text-text-light mb-1">
+                                                    Bairro de Entrega <span className="text-red-500 font-bold">* (Obrigatório)</span>
+                                                </label>
+                                                <select
+                                                    value={selectedZoneId}
+                                                    onChange={e => setSelectedZoneId(e.target.value)}
+                                                    className={`w-full p-1.5 bg-background border rounded text-text-light focus:border-primary outline-none text-xs h-9 ${!selectedZoneId ? 'border-red-500 text-red-400 font-semibold' : 'border-surface'}`}
+                                                    required
+                                                >
+                                                    <option value="">-- Selecione seu Bairro --</option>
+                                                    {deliveryZones.map(zone => (
+                                                        <option key={zone.id} value={zone.id}>
+                                                            {zone.neighborhood_name} ({Number(zone.fee) > 0 ? `+ R$ ${Number(zone.fee).toFixed(2)}` : 'Entrega Grátis'})
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                {!selectedZoneId && (
+                                                    <p className="text-[10px] text-red-500 mt-0.5 font-semibold">
+                                                        ⚠️ Por favor, selecione seu bairro para continuar.
+                                                    </p>
+                                                )}
+                                            </div>
+                                        )}
                                         <input
                                             type="text"
                                             placeholder="Endereço (Rua)"
@@ -1182,9 +1222,9 @@ const SideCart: React.FC<{
                                     </div>
                                 )}
 
-                                {orderType === 'Entrega' && total < MIN_ORDER_VALUE && (
+                                {orderType === 'Entrega' && total < minOrderValue && (
                                     <div className="p-2 bg-red-600/20 border border-red-600 rounded-lg text-red-500 text-center font-black text-xs animate-pulse">
-                                        Pedido mínimo de R$ {Number(MIN_ORDER_VALUE).toFixed(2)} não atingido
+                                        Pedido mínimo de R$ {Number(minOrderValue).toFixed(2)} não atingido
                                     </div>
                                 )}
 
@@ -1219,10 +1259,8 @@ const ItemDetailModal: React.FC<{
     const [selectedAddons, setSelectedAddons] = useState<Addon[]>([]);
     const [notes, setNotes] = useState('');
 
-    // Lógica para mostrar o campo de observações
     const deveMostrarObservacoes = useMemo(() => {
         const nomeCategoria = categoryName.toLowerCase();
-        // Enable for Lanches, Porções, Gourmet, or generic Burgers
         return nomeCategoria.includes('lanches') ||
             nomeCategoria.includes('porções') ||
             nomeCategoria.includes('porcoes') ||
@@ -1251,64 +1289,63 @@ const ItemDetailModal: React.FC<{
         onClose();
     };
 
-    // Use the addons explicitly selected for this item in the Admin Panel, fallback to category addons if none selected
     const relevantAddons = (item.selectedAddons && item.selectedAddons.length > 0) ? item.selectedAddons : (item.addons || []);
 
     return (
         <div 
-            className="fixed inset-0 bg-background/80 backdrop-blur-md z-[100] flex items-center justify-center p-0 md:p-4 animate-fade-in" 
+            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-0 md:p-4 animate-fade-in" 
             onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
         >
-            <div className="bg-surface md:rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl animate-fade-in-up h-full md:h-auto md:max-h-[90vh] flex flex-col">
-                <div className="relative h-48 md:h-64 shrink-0">
+            <div className="bg-[#130826] border border-purple-500/30 md:rounded-3xl w-full max-w-lg overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.9)] animate-fade-in-up h-full md:h-auto md:max-h-[90vh] flex flex-col text-white">
+                <div className="relative h-48 md:h-64 shrink-0 bg-black/40">
                     <img src={item.image || 'https://via.placeholder.com/400x200?text=Sem+Imagem'} alt={item.name} className="w-full h-full object-cover" />
                     <button 
                         onClick={onClose} 
-                        className="absolute top-4 right-4 bg-black/50 backdrop-blur-md text-white rounded-full p-2 hover:bg-black/70 transition-all border border-white/10"
+                        className="absolute top-4 right-4 bg-black/70 backdrop-blur-md text-white rounded-full p-2 hover:bg-black transition-all border border-white/20 shadow-lg"
                     >
                         <LucideX size={24} />
                     </button>
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-surface to-transparent h-20"></div>
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-[#130826] to-transparent h-20"></div>
                 </div>
                 
                 <div className="px-6 py-4 overflow-y-auto flex-grow scrollbar-hide space-y-4">
                     <div className="space-y-3">
                         <div className="flex justify-between items-start gap-4">
-                            <h2 className="text-xl font-black text-text-light leading-tight uppercase tracking-tight">{item.name}</h2>
+                            <h2 className="text-xl font-black text-white leading-tight uppercase tracking-tight drop-shadow">{item.name}</h2>
                             <div className="text-right">
-                                <span className="block text-xl font-black text-primary whitespace-nowrap">R$ {item.price.toFixed(2)}</span>
-                                {item.eligibleForCombo && <span className="text-[10px] text-text-dark font-bold uppercase tracking-tight">+ R$ {comboPrice.toFixed(2)} no combo</span>}
+                                <span className="block text-xl font-black text-amber-400 whitespace-nowrap drop-shadow">R$ {item.price.toFixed(2)}</span>
+                                {item.eligibleForCombo && <span className="text-[10px] text-purple-300 font-bold uppercase tracking-tight">+ R$ {comboPrice.toFixed(2)} no combo</span>}
                             </div>
                         </div>
-                        <p className="text-xs text-text-dark leading-relaxed border-l-2 border-primary/20 pl-3">{item.description}</p>
+                        <p className="text-xs text-purple-200 leading-relaxed border-l-2 border-orange-500/60 pl-3">{item.description}</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {item.eligibleForCombo && (
-                            <div className="bg-background/50 border border-text-light/5 rounded-2xl p-4 flex items-center h-full">
+                            <div className="bg-[#1a0c33] border border-purple-500/20 rounded-2xl p-4 flex items-center h-full">
                                 <label className="flex items-center cursor-pointer group w-full">
                                     <input 
                                         type="checkbox" 
                                         checked={isCombo} 
                                         onChange={e => setIsCombo(e.target.checked)} 
-                                        className="h-6 w-6 text-primary rounded-lg border-surface bg-background focus:ring-offset-background" 
+                                        className="h-6 w-6 text-orange-500 rounded-lg border-purple-500/40 bg-[#130826] focus:ring-offset-[#130826]" 
                                     />
                                     <div className="ml-3">
-                                        <span className="block text-text-light font-bold text-sm group-hover:text-primary transition-colors">Virar Combo?</span>
-                                        <span className="block text-[10px] text-text-dark line-clamp-1">+ Batata + Refri (+R$ {comboPrice.toFixed(2)})</span>
+                                        <span className="block text-white font-bold text-sm group-hover:text-amber-300 transition-colors">Virar Combo?</span>
+                                        <span className="block text-[10px] text-purple-300 line-clamp-1">+ Batata + Refri (+R$ {comboPrice.toFixed(2)})</span>
                                     </div>
                                 </label>
                             </div>
                         )}
 
                         {deveMostrarObservacoes && (
-                            <div className="bg-background/50 border border-text-light/5 rounded-2xl p-3 flex flex-col h-full">
-                                <h3 className="text-[10px] font-black text-text-dark uppercase tracking-widest mb-1">Observações</h3>
+                            <div className="bg-[#1a0c33] border border-purple-500/20 rounded-2xl p-3 flex flex-col h-full">
+                                <h3 className="text-[10px] font-black text-purple-300 uppercase tracking-widest mb-1">Observações</h3>
                                 <textarea
                                     value={notes}
                                     onChange={e => setNotes(e.target.value)}
                                     placeholder="Ex: Sem cebola..."
-                                    className="w-full p-2 bg-background/30 border border-text-light/5 animate-pulse-border rounded-xl text-text-light focus:border-primary/50 outline-none resize-none h-14 text-xs transition-all"
+                                    className="w-full p-2 bg-[#130826] border border-purple-500/30 rounded-xl text-white placeholder-purple-300/50 focus:border-orange-500 outline-none resize-none h-14 text-xs transition-all"
                                 />
                             </div>
                         )}
@@ -1316,7 +1353,7 @@ const ItemDetailModal: React.FC<{
 
                     {relevantAddons.length > 0 && (
                         <div className="space-y-3">
-                            <h3 className="text-xs font-black text-text-dark uppercase tracking-widest">Turbine seu pedido</h3>
+                            <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest">Turbine seu pedido</h3>
                             <div className="grid grid-cols-1 gap-2">
                                 {relevantAddons.map(addon => {
                                     const isUnavailable = addon.isAvailable === false;
@@ -1328,18 +1365,18 @@ const ItemDetailModal: React.FC<{
                                             onClick={() => handleAddonToggle(addon)}
                                             className={`flex items-center p-3 rounded-2xl border transition-all text-left
                                                 ${isSelected 
-                                                    ? 'bg-primary/10 border-primary shadow-[0_0_15px_rgba(255,191,0,0.1)]' 
-                                                    : 'bg-background/40 border-text-light/5 hover:border-text-light/10'}
+                                                    ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]' 
+                                                    : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
                                                 ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
                                         >
                                             <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors
-                                                ${isSelected ? 'bg-primary border-primary' : 'bg-background border-surface'}`}>
-                                                {isSelected && <LucideCheck size={12} className="text-background stroke-[4]" />}
+                                                ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
+                                                {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
                                             </div>
-                                            <span className="ml-3 flex-grow text-xs font-bold text-text-light uppercase tracking-tight">
+                                            <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
                                                 {addon.name}
                                             </span>
-                                            <span className={`font-black text-xs ${isSelected ? 'text-primary' : 'text-text-dark'}`}>
+                                            <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
                                                 + R$ {addon.price.toFixed(2)}
                                             </span>
                                         </button>
@@ -1350,33 +1387,33 @@ const ItemDetailModal: React.FC<{
                     )}
                 </div>
 
-                <div className="p-4 bg-surface border-t border-text-light/5 shadow-[0_-10px_20px_rgba(0,0,0,0.2)]">
+                <div className="p-4 bg-[#100620] border-t border-purple-500/30 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
                     <div className="flex items-center gap-4 mb-3">
-                        <div className="flex items-center bg-background/50 rounded-xl p-1 border border-text-light/5">
+                        <div className="flex items-center bg-[#1a0c33] rounded-xl p-1 border border-purple-500/30">
                             <button 
                                 onClick={() => setQuantity(Math.max(1, quantity - 1))} 
-                                className="w-10 h-10 flex items-center justify-center text-primary bg-surface rounded-lg hover:bg-background active:scale-90 transition-all font-black text-xl"
+                                className="w-10 h-10 flex items-center justify-center text-amber-400 bg-[#130826] rounded-lg hover:bg-[#201040] active:scale-90 transition-all font-black text-xl border border-purple-500/30"
                             >
                                 <LucideMinus size={18} />
                             </button>
-                            <span className="text-lg font-black text-text-light w-10 text-center">{quantity}</span>
+                            <span className="text-lg font-black text-white w-10 text-center">{quantity}</span>
                             <button 
                                 onClick={() => setQuantity(quantity + 1)} 
-                                className="w-10 h-10 flex items-center justify-center text-primary bg-surface rounded-lg hover:bg-background active:scale-90 transition-all font-black text-xl"
+                                className="w-10 h-10 flex items-center justify-center text-amber-400 bg-[#130826] rounded-lg hover:bg-[#201040] active:scale-90 transition-all font-black text-xl border border-purple-500/30"
                             >
                                 <LucidePlus size={18} />
                             </button>
                         </div>
                         <div className="flex-1 text-right">
-                            <p className="text-[9px] font-black text-text-dark uppercase tracking-widest leading-none mb-1">Total do Item</p>
-                            <p className="text-xl font-black text-primary tracking-tighter leading-none">
+                            <p className="text-[9px] font-black text-purple-300 uppercase tracking-widest leading-none mb-1">Total do Item</p>
+                            <p className="text-xl font-black text-amber-400 tracking-tighter leading-none drop-shadow">
                                 R$ {((item.price + selectedAddons.reduce((s, a) => s + a.price, 0) + (isCombo ? comboPrice : 0)) * quantity).toFixed(2)}
                             </p>
                         </div>
                     </div>
                     <button 
                         onClick={handleAddToCart} 
-                        className="w-full py-4 bg-primary hover:brightness-110 active:scale-[0.98] text-background font-black rounded-xl text-base uppercase tracking-widest transition-all shadow-xl shadow-primary/10 flex items-center justify-center gap-3"
+                        className="w-full py-4 bg-gradient-to-r from-orange-500 via-amber-500 to-purple-600 hover:brightness-110 active:scale-[0.98] text-white font-black rounded-xl text-base uppercase tracking-widest transition-all shadow-xl shadow-orange-500/20 flex items-center justify-center gap-3"
                     >
                         <span>Adicionar ao Pedido</span>
                         <LucideArrowRight size={18} />
@@ -1692,6 +1729,21 @@ const CustomerPage: React.FC = () => {
     const [changeFor, setChangeFor] = useState('');
     const [orderType, setOrderType] = useState<OrderType>('Entrega');
 
+    // Delivery Zones & Mandatory Neighborhood state
+    const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+    const [selectedZoneId, setSelectedZoneId] = useState<string>('');
+
+    useEffect(() => {
+        if (currentStore?.id) {
+            fetchDeliveryZones(currentStore.id)
+                .then(zones => {
+                    const active = (zones || []).filter((z: any) => z.is_active !== false);
+                    setDeliveryZones(active);
+                })
+                .catch(err => console.error("Error fetching delivery zones:", err));
+        }
+    }, [currentStore?.id]);
+
 
     // Dynamic Delivery Fee State
     const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState<number | null>(null);
@@ -1786,9 +1838,17 @@ const CustomerPage: React.FC = () => {
                 }
                 setReferencePoint(customer.reference_point || '');
                 
-                // Immediately check for dynamic delivery fee!
+                // Immediately check for dynamic delivery fee and match zone!
                 if (customer.address) {
                     updateFee(customer.address);
+                    if (deliveryZones && deliveryZones.length > 0) {
+                        const matchedZone = deliveryZones.find(z => 
+                            customer.address.toLowerCase().includes(z.neighborhood_name.toLowerCase())
+                        );
+                        if (matchedZone) {
+                            setSelectedZoneId(matchedZone.id);
+                        }
+                    }
                 }
                 
                 // Set Payment Preferences from Customer Profile if available
@@ -2295,7 +2355,7 @@ const CustomerPage: React.FC = () => {
 
     if (viewMode === 'landing') {
         return (
-            <div className="bg-[#0f0f11] min-h-screen text-white font-sans flex flex-col relative overflow-y-auto">
+            <div className="bg-background min-h-screen text-text-light font-sans flex flex-col relative overflow-y-auto">
                 {/* Header Logo & Actions */}
                 <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-start pointer-events-none">
                     {currentStore?.logo_url ? (
@@ -2326,17 +2386,17 @@ const CustomerPage: React.FC = () => {
                     
                     {/* Welcome Text overlay */}
                     <div className="absolute bottom-8 left-0 right-0 flex flex-col items-center justify-center px-4 text-center z-10">
-                        <h2 className="text-3xl md:text-4xl font-black tracking-tight mb-1 drop-shadow-[0_4px_10px_rgba(0,0,0,1)]">
-                            O QUE VAMOS PEDIR <span className="text-amber-400">HOJE?</span>
+                        <h2 className="text-3xl md:text-5xl font-black tracking-tight mb-1 drop-shadow-[0_4px_12px_rgba(0,0,0,1)] text-white">
+                            O QUE VAMOS PEDIR <span className="bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-400 bg-clip-text text-transparent drop-shadow-lg">HOJE?</span>
                         </h2>
-                        <p className="text-gray-300 text-xs md:text-sm font-medium drop-shadow-md max-w-sm">
+                        <p className="text-gray-200 text-xs md:text-sm font-semibold drop-shadow-md max-w-sm">
                             Navegue pelas opções e monte seu pedido do seu jeito.
                         </p>
                     </div>
                 </div>
 
                 <div className="flex-1 flex flex-col items-center justify-start mt-2 px-4 pb-24 z-10">
-                    <div className="grid grid-cols-3 gap-2 md:gap-4 w-full max-w-2xl mb-8">
+                    <div className="grid grid-cols-3 gap-3 md:gap-5 w-full max-w-2xl mb-8">
                         {(settings?.modernGroups || []).map((group: any) => (
                             <button
                                 key={group.id}
@@ -2344,24 +2404,27 @@ const CustomerPage: React.FC = () => {
                                     setSelectedGroup(group);
                                     setViewMode('filtered');
                                 }}
-                                className="relative flex items-center justify-center h-24 md:h-28 rounded-2xl overflow-hidden group transition-all active:scale-95 shadow-[0_0_15px_rgba(168,85,247,0.3)] border-2 border-purple-500/80 bg-gray-900"
+                                className="relative flex items-center justify-center h-26 md:h-32 rounded-2xl overflow-hidden group transition-all duration-300 hover:scale-105 active:scale-95 p-[4px] bg-gradient-to-b from-orange-500 via-amber-400 to-purple-600 shadow-[0_0_25px_rgba(249,115,22,0.5)] hover:shadow-[0_0_30px_rgba(168,85,247,0.6)]"
                             >
-                                {group.image && (
-                                    <img src={group.image} alt={group.name} className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:opacity-70 transition-opacity" />
-                                )}
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
-                                <span className="relative z-10 text-[10px] md:text-xl font-black uppercase tracking-widest text-white drop-shadow-[0_2px_4px_rgba(0,0,0,1)] text-center px-1">
-                                    {group.name}
-                                </span>
+                                <div className="w-full h-full bg-gray-950 rounded-[12px] overflow-hidden relative flex items-center justify-center">
+                                    {group.image && (
+                                        <img src={group.image} alt={group.name} className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity duration-300 group-hover:scale-110" />
+                                    )}
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
+                                    <span className="relative z-10 text-xs md:text-xl font-black uppercase tracking-widest text-white drop-shadow-[0_2px_8px_rgba(0,0,0,1)] text-center px-1 group-hover:text-amber-300 transition-colors">
+                                        {group.name}
+                                    </span>
+                                </div>
                             </button>
                         ))}
                     </div>
 
                     <button 
                         onClick={() => setViewMode('all')}
-                        className="w-full max-w-sm bg-white/5 hover:bg-white/10 text-white font-bold text-sm py-4 rounded-xl border border-white/10 transition-colors shadow-lg"
+                        className="w-full max-w-sm bg-gradient-to-r from-red-600 via-orange-500 to-amber-500 text-white font-black text-sm uppercase tracking-wider py-4 px-6 rounded-xl border border-red-400/40 shadow-[0_0_25px_rgba(239,68,68,0.4)] hover:shadow-[0_0_30px_rgba(249,115,22,0.6)] hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
                     >
-                        Ver Cardápio Completo
+                        <span>Ver Cardápio Completo</span>
+                        <LucideArrowRight size={18} />
                     </button>
                 </div>
 
@@ -2403,17 +2466,17 @@ const CustomerPage: React.FC = () => {
     }
 
     return (
-        <div className="bg-[#0a0a0c] text-gray-100 min-h-screen font-sans pb-24">
+        <div className="bg-[#0d0716] text-white min-h-screen font-sans pb-24">
 
             <RewardCelebrationModal isOpen={showRewardCelebration} onClose={() => setShowRewardCelebration(false)} onRedeem={handleRedeemReward} />
             
-            <div className="fixed top-0 left-0 right-0 z-40 bg-[#0f0f11]/90 backdrop-blur-xl shadow-[0_4px_20px_rgba(0,0,0,0.5)] border-b border-white/5 overflow-hidden">
+            <div className="fixed top-0 left-0 right-0 z-40 bg-[#120824]/95 backdrop-blur-xl shadow-[0_4px_25px_rgba(0,0,0,0.8)] border-b border-purple-500/20 overflow-hidden">
                 <StoreStatusBanner isOpen={isStoreOpen} message={statusMessage} />
                 <div className="flex justify-between items-center px-4 py-3">
                     <button onClick={() => setViewMode('landing')} className="text-gray-400 hover:text-white transition p-2 bg-white/5 rounded-full">
                         <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
                     </button>
-                    <h1 className="font-display text-xl font-bold tracking-tight text-white">
+                    <h1 className="font-display text-xl font-bold tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-300 uppercase drop-shadow-md">
                         {viewMode === 'filtered' ? selectedGroup?.name : 'Cardápio Completo'}
                     </h1>
                     <div className="w-10"></div> {/* Spacer for centering */}
@@ -2422,26 +2485,28 @@ const CustomerPage: React.FC = () => {
                 <DiscountBanner settings={settings} />
                 <RaffleBanner settings={settings} />
                 
-                <div className="px-4 py-2 border-t border-white/5">
-                    <div className="relative w-full">
-                        <LucideSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={16} />
-                        <input
-                            type="text"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder="Buscar no cardápio..."
-                            className="w-full bg-[#1a1a1f] border border-white/5 rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:outline-none focus:border-purple-500 transition-colors placeholder-gray-600"
-                        />
+                <div className="px-4 py-2 border-t border-purple-500/20">
+                    <div className="relative w-full p-[1px] rounded-xl bg-gradient-to-r from-purple-600/60 via-orange-500/60 to-amber-500/60 shadow-[0_0_15px_rgba(168,85,247,0.25)] focus-within:shadow-[0_0_20px_rgba(249,115,22,0.4)] transition-all">
+                        <div className="relative w-full bg-[#120a1f] rounded-[11px] flex items-center">
+                            <LucideSearch className="absolute left-3 text-orange-400" size={16} />
+                            <input
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder="Buscar no cardápio..."
+                                className="w-full bg-transparent rounded-xl pl-10 pr-4 py-2 text-sm text-white focus:outline-none placeholder-gray-400 font-medium"
+                            />
+                        </div>
                     </div>
                 </div>
 
-                <nav className="py-2 border-t border-white/5">
+                <nav className="py-2.5 border-t border-purple-500/20 bg-[#0d0716]/95">
                     <div className="container mx-auto px-4 flex space-x-2 overflow-x-auto scrollbar-hide">
                         <style>{`.scrollbar-hide::-webkit-scrollbar { display: none; }`}</style>
                         {filteredCategories.map(category => (
                             <button key={category.id} onClick={() => {
                                 document.getElementById(`category-${category.id}`)?.scrollIntoView({ behavior: 'smooth' });
-                            }} className="px-4 py-1.5 bg-[#1a1a1f] text-gray-300 text-xs font-bold rounded-full whitespace-nowrap hover:bg-white/10 hover:text-white transition-all border border-white/5">
+                            }} className="px-4 py-1.5 bg-gradient-to-r from-purple-950/80 to-purple-900/60 text-purple-200 hover:text-white text-xs font-bold rounded-full whitespace-nowrap border border-purple-500/40 hover:border-orange-500 hover:shadow-[0_0_12px_rgba(249,115,22,0.5)] transition-all active:scale-95">
                                 {category.name}
                             </button>
                         ))}
@@ -2455,7 +2520,7 @@ const CustomerPage: React.FC = () => {
                     <section className="container mx-auto px-2 py-4 mb-4">
                         <div className="flex items-center gap-2 mb-4">
                             <span className="text-2xl animate-pulse">🔥</span>
-                            <h2 className="text-xl font-black text-white italic tracking-wider">PROMOÇÕES DO DIA</h2>
+                            <h2 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-300 italic tracking-wider drop-shadow-md">PROMOÇÕES DO DIA</h2>
                         </div>
                         <PromotionsCoverflow promotions={matchingPromotions} onAddToCart={(item) => {
                             handleAddToCart(item);
@@ -2477,18 +2542,21 @@ const CustomerPage: React.FC = () => {
 
                     return (
                         <section key={category.id} id={`category-${category.id}`} className="container mx-auto px-2 py-4 mb-4 scroll-mt-[220px]">
-                            <h2 className="text-2xl font-black text-white uppercase tracking-wider mb-4 border-l-4 border-amber-400 pl-3">{category.name}</h2>
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-2 h-7 rounded-full bg-gradient-to-b from-orange-500 via-amber-400 to-purple-600 shadow-[0_0_12px_rgba(249,115,22,0.7)]"></div>
+                                <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-300 uppercase tracking-wider drop-shadow-md">{category.name}</h2>
+                            </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {filteredItems.map(item => (
                                     <div key={item.id} 
                                         onClick={() => item.isAvailable && handleOpenItemModal(item as any)}
-                                        className={`bg-[#131317] rounded-2xl overflow-hidden border border-white/5 shadow-lg flex cursor-pointer transition active:scale-95 ${!item.isAvailable ? 'opacity-50' : ''}`}
+                                        className={`bg-gradient-to-br from-[#1c1033] via-[#150a29] to-[#0e061e] rounded-2xl overflow-hidden border-2 border-purple-500/40 hover:border-orange-500/80 hover:shadow-[0_0_25px_rgba(249,115,22,0.45)] transition-all duration-300 flex cursor-pointer group active:scale-[0.98] relative ${!item.isAvailable ? 'opacity-50' : ''}`}
                                     >
-                                        <div className="w-1/3 min-h-[120px] bg-black/40 relative">
+                                        <div className="w-1/3 min-h-[120px] bg-black/40 relative overflow-hidden">
                                             {item.image ? (
-                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+                                                <img src={item.image} alt={item.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
                                             ) : (
-                                                <div className="w-full h-full flex items-center justify-center opacity-20">
+                                                <div className="w-full h-full flex items-center justify-center opacity-20 text-purple-400">
                                                     <LucideShoppingCart size={32} />
                                                 </div>
                                             )}
@@ -2500,12 +2568,12 @@ const CustomerPage: React.FC = () => {
                                         </div>
                                         <div className="w-2/3 p-3 flex flex-col justify-between">
                                             <div>
-                                                <h3 className="font-bold text-white leading-tight mb-1">{item.name}</h3>
-                                                <p className="text-xs text-gray-400 line-clamp-2 leading-tight">{item.description}</p>
+                                                <h3 className="font-bold text-white leading-tight mb-1 group-hover:text-amber-300 transition-colors">{item.name}</h3>
+                                                <p className="text-xs text-purple-200/80 line-clamp-2 leading-tight">{item.description}</p>
                                             </div>
                                             <div className="flex justify-between items-center mt-2">
-                                                <span className="font-black text-amber-400">R$ {item.price.toFixed(2)}</span>
-                                                <div className="bg-white/10 p-1.5 rounded-lg text-white">
+                                                <span className="font-black text-amber-400 text-sm md:text-base drop-shadow-sm">R$ {item.price.toFixed(2)}</span>
+                                                <div className="bg-gradient-to-r from-orange-500 to-purple-600 text-white p-2 rounded-xl shadow-md shadow-orange-500/20 group-hover:scale-110 transition-transform">
                                                     <LucidePlus size={16} />
                                                 </div>
                                             </div>
@@ -2564,6 +2632,9 @@ const CustomerPage: React.FC = () => {
                 setOrderDiscount={setOrderDiscount}
                 pendingReward={pendingReward}
                 dynamicDeliveryFee={dynamicDeliveryFee}
+                deliveryZones={deliveryZones}
+                selectedZoneId={selectedZoneId}
+                setSelectedZoneId={setSelectedZoneId}
             />
 
             <LoyaltyProfileModal

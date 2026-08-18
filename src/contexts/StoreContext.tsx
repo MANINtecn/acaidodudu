@@ -105,6 +105,26 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         fetchStore();
     }, [location.pathname]);
 
+    useEffect(() => {
+        if (currentStore?.logo_url) {
+            let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+            if (!link) {
+                link = document.createElement('link');
+                link.rel = 'icon';
+                document.head.appendChild(link);
+            }
+            link.href = currentStore.logo_url;
+        } else {
+            let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
+            if (link) {
+                link.href = '/icon.png';
+            }
+        }
+        if (currentStore?.name) {
+            document.title = currentStore.name.toUpperCase();
+        }
+    }, [currentStore]);
+
     return (
         <StoreContext.Provider value={{ currentStore, loading, error, refreshStore: fetchStore }}>
             {children}

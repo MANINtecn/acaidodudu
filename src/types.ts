@@ -62,6 +62,8 @@ export interface MenuItem {
   allowedAddons?: string[];
   addons?: Addon[];
   printed?: boolean;
+  isWeightBased?: boolean;
+  pricePerKg?: number;
 }
 
 export interface CartItem extends MenuItem {
@@ -69,6 +71,7 @@ export interface CartItem extends MenuItem {
   quantity: number;
   notes: string;
   printed?: boolean;
+  weightKg?: number;
 }
 
 export type OrderType = 'Entrega' | 'Balcão' | 'Retirada';
@@ -121,8 +124,6 @@ export interface Courier {
   is_active: boolean;
   created_at?: string;
 }
-
-
 
 export interface CashSession {
   id: string;
@@ -186,6 +187,7 @@ export interface Settings {
   isRatingEnabled?: boolean;
   daysOfWeek?: string[];
   deliveryFee?: number;
+  minOrderValue?: number;
   isBotEnabled?: boolean;
   preferredPrinter?: string;
   printerPaperWidth?: '58mm' | '80mm';
@@ -200,6 +202,14 @@ export interface Settings {
   defaultDDD?: string;
   bolaoStartTime?: string;
   bolaoEndTime?: string;
+
+  // Balança Eletrônica (Urano / Toledo / Filizola / Elgin)
+  isScaleEnabled?: boolean;
+  scaleProtocol?: 'urano' | 'toledo' | 'filizola' | 'elgin' | 'generic';
+  scaleBaudRate?: number;
+  scalePricePerKg?: number;
+  scaleAutoAdd?: boolean;
+  scalePortName?: string;
 }
 
 export interface Promotion {
@@ -213,7 +223,6 @@ export interface Promotion {
   daysOfWeek?: string[];
 }
 
-
 export interface TvAd {
   id?: string;
   store_id?: string;
@@ -221,4 +230,12 @@ export interface TvAd {
   image_url: string;
   is_active: boolean;
   created_at?: string;
+}
+
+export interface DeliveryZone {
+  id: string;
+  store_id: string;
+  neighborhood_name: string;
+  fee: number;
+  is_active: boolean;
 }

@@ -64,23 +64,44 @@ const SupabaseConfigWarning = () => (
 );
 
 // Error Boundary Component
-class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean; error: any }> {
   constructor(props: { children: React.ReactNode }) {
     super(props);
-    this.state = { hasError: false };
+    this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(_: any) {
-    return { hasError: true };
+  static getDerivedStateFromError(error: any) {
+    return { hasError: true, error };
   }
 
   componentDidCatch(error: any, errorInfo: any) {
-    console.error("Uncaught error:", error, errorInfo);
+    console.error("Uncaught error in React Component:", error, errorInfo);
   }
 
   render() {
     if (this.state.hasError) {
-      return <div className="flex items-center justify-center h-screen bg-background text-text-light"><h1>Algo deu errado.</h1></div>;
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-6 text-center">
+          <div className="bg-gray-800 p-8 rounded-2xl border border-gray-700 shadow-2xl max-w-md w-full flex flex-col items-center">
+            <div className="w-16 h-16 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mb-4 text-2xl font-black">
+              ⚠️
+            </div>
+            <h1 className="text-xl font-extrabold text-white mb-2">Ops! Ocorreu um Erro de Interface</h1>
+            <p className="text-xs text-gray-400 mb-6 bg-gray-900/80 p-3 rounded-lg w-full text-left font-mono break-all max-h-32 overflow-y-auto border border-gray-700">
+              {this.state.error?.message || String(this.state.error || 'Erro desconhecido')}
+            </p>
+            <button
+              onClick={() => {
+                this.setState({ hasError: false, error: null });
+                window.location.reload();
+              }}
+              className="w-full py-3 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all text-sm uppercase tracking-wider flex items-center justify-center gap-2"
+            >
+              🔄 Recarregar Sistema
+            </button>
+          </div>
+        </div>
+      );
     }
 
     return this.props.children;
