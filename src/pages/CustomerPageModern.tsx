@@ -22,6 +22,18 @@ import { normalizeString } from '../utils/searchUtils';
 import introJs from 'intro.js';
 import { MIN_ORDER_VALUE } from '../constants';
 
+const sanitizeHtmlEntities = (text?: string) => {
+    if (!text) return '';
+    return text
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\u00A0/g, ' ')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'");
+};
+
 
 // ... (imports remain mostly same, adding Star and rateOrder above)
 
@@ -1276,7 +1288,15 @@ const ItemDetailModal: React.FC<{
         );
     };
 
+    const relevantAddons = (item.selectedAddons && item.selectedAddons.length > 0) ? item.selectedAddons : (item.addons || []);
+    const isOptionRequired = relevantAddons.length > 0;
+    const hasMandatorySelection = isOptionRequired && selectedAddons.length === 0;
+
     const handleAddToCart = () => {
+        if (hasMandatorySelection) {
+            alert('Por favor, escolha pelo menos 1 sabor/opção para adicionar o item ao pedido.');
+            return;
+        }
         const cartItem: CartItem = {
             ...item,
             cartId: `${item.id}-${Date.now()}`,
@@ -1288,8 +1308,6 @@ const ItemDetailModal: React.FC<{
         onAddToCart(cartItem);
         onClose();
     };
-
-    const relevantAddons = (item.selectedAddons && item.selectedAddons.length > 0) ? item.selectedAddons : (item.addons || []);
 
     return (
         <div 
@@ -1311,13 +1329,13 @@ const ItemDetailModal: React.FC<{
                 <div className="px-6 py-4 overflow-y-auto flex-grow scrollbar-hide space-y-4">
                     <div className="space-y-3">
                         <div className="flex justify-between items-start gap-4">
-                            <h2 className="text-xl font-black text-white leading-tight uppercase tracking-tight drop-shadow">{item.name}</h2>
+                            <h2 className="text-xl font-black text-white leading-tight uppercase tracking-tight drop-shadow">{sanitizeHtmlEntities(item.name)}</h2>
                             <div className="text-right">
                                 <span className="block text-xl font-black text-amber-400 whitespace-nowrap drop-shadow">R$ {item.price.toFixed(2)}</span>
                                 {item.eligibleForCombo && <span className="text-[10px] text-purple-300 font-bold uppercase tracking-tight">+ R$ {comboPrice.toFixed(2)} no combo</span>}
                             </div>
                         </div>
-                        <p className="text-xs text-purple-200 leading-relaxed border-l-2 border-orange-500/60 pl-3">{item.description}</p>
+                        <p className="text-xs text-purple-200 leading-relaxed border-l-2 border-orange-500/60 pl-3">{sanitizeHtmlEntities(item.description)}</p>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1353,7 +1371,10 @@ const ItemDetailModal: React.FC<{
 
                     {relevantAddons.length > 0 && (
                         <div className="space-y-3">
-                            <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest">Turbine seu pedido</h3>
+                            <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
+                                <span>Escolha seu sabor / adicionais</span>
+                                <span className="text-[10px] text-amber-400 font-bold uppercase">(Mínimo 1 opção)</span>
+                            </h3>
                             <div className="grid grid-cols-1 gap-2">
                                 {relevantAddons.map(addon => {
                                     const isUnavailable = addon.isAvailable === false;
@@ -1374,7 +1395,7 @@ const ItemDetailModal: React.FC<{
                                                 {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
                                             </div>
                                             <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
-                                                {addon.name}
+                                                {sanitizeHtmlEntities(addon.name)}
                                             </span>
                                             <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
                                                 + R$ {addon.price.toFixed(2)}
@@ -1388,6 +1409,11 @@ const ItemDetailModal: React.FC<{
                 </div>
 
                 <div className="p-4 bg-[#100620] border-t border-purple-500/30 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
+                    {hasMandatorySelection && (
+                        <div className="mb-3 p-2 bg-amber-500/20 border border-amber-500/50 rounded-xl text-center text-xs font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
+                            <span>⚠️</span> Selecione pelo menos 1 opção / sabor para continuar
+                        </div>
+                    )}
                     <div className="flex items-center gap-4 mb-3">
                         <div className="flex items-center bg-[#1a0c33] rounded-xl p-1 border border-purple-500/30">
                             <button 
@@ -1413,9 +1439,14 @@ const ItemDetailModal: React.FC<{
                     </div>
                     <button 
                         onClick={handleAddToCart} 
-                        className="w-full py-4 bg-gradient-to-r from-orange-500 via-amber-500 to-purple-600 hover:brightness-110 active:scale-[0.98] text-white font-black rounded-xl text-base uppercase tracking-widest transition-all shadow-xl shadow-orange-500/20 flex items-center justify-center gap-3"
+                        disabled={hasMandatorySelection}
+                        className={`w-full py-4 font-black rounded-xl text-base uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-3 ${
+                            hasMandatorySelection 
+                                ? 'bg-gray-800 text-gray-400 cursor-not-allowed border border-gray-700 opacity-70' 
+                                : 'bg-gradient-to-r from-orange-500 via-amber-500 to-purple-600 hover:brightness-110 active:scale-[0.98] text-white shadow-orange-500/20'
+                        }`}
                     >
-                        <span>Adicionar ao Pedido</span>
+                        <span>{hasMandatorySelection ? 'Escolha 1 Sabor / Opção' : 'Adicionar ao Pedido'}</span>
                         <LucideArrowRight size={18} />
                     </button>
                 </div>
@@ -2206,7 +2237,9 @@ const CustomerPage: React.FC = () => {
 
             console.log("CustomerPage: Data fetched successfully");
 
-            const availableMenuItems = menuData.menuItems;
+            const availableMenuItems = (menuData.menuItems || [])
+                .filter((item: MenuItem) => item.isAvailable !== false)
+                .sort((a: MenuItem, b: MenuItem) => (Number(a.price) || 0) - (Number(b.price) || 0));
 
             const displayCategories = menuData.categories.filter(
                 (category: Category) => {
@@ -2536,7 +2569,7 @@ const CustomerPage: React.FC = () => {
                         
                         const normalizedSearch = normalizeString(searchTerm);
                         return matchesCategory && normalizeString(item.name).includes(normalizedSearch);
-                    });
+                    }).sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
 
                     if (filteredItems.length === 0) return null;
 
@@ -2544,7 +2577,7 @@ const CustomerPage: React.FC = () => {
                         <section key={category.id} id={`category-${category.id}`} className="container mx-auto px-2 py-4 mb-4 scroll-mt-[220px]">
                             <div className="flex items-center gap-3 mb-4">
                                 <div className="w-2 h-7 rounded-full bg-gradient-to-b from-orange-500 via-amber-400 to-purple-600 shadow-[0_0_12px_rgba(249,115,22,0.7)]"></div>
-                                <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-300 uppercase tracking-wider drop-shadow-md">{category.name}</h2>
+                                <h2 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-amber-300 to-yellow-300 uppercase tracking-wider drop-shadow-md">{sanitizeHtmlEntities(category.name)}</h2>
                             </div>
                             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                 {filteredItems.map(item => (
@@ -2568,8 +2601,8 @@ const CustomerPage: React.FC = () => {
                                         </div>
                                         <div className="w-2/3 p-3 flex flex-col justify-between">
                                             <div>
-                                                <h3 className="font-bold text-white leading-tight mb-1 group-hover:text-amber-300 transition-colors">{item.name}</h3>
-                                                <p className="text-xs text-purple-200/80 line-clamp-2 leading-tight">{item.description}</p>
+                                                <h3 className="font-bold text-white leading-tight mb-1 group-hover:text-amber-300 transition-colors">{sanitizeHtmlEntities(item.name)}</h3>
+                                                <p className="text-xs text-purple-200/80 line-clamp-2 leading-tight">{sanitizeHtmlEntities(item.description)}</p>
                                             </div>
                                             <div className="flex justify-between items-center mt-2">
                                                 <span className="font-black text-amber-400 text-sm md:text-base drop-shadow-sm">R$ {item.price.toFixed(2)}</span>

@@ -160,6 +160,7 @@ export const fetchMenuForCustomer = async (storeId: string) => {
     const addons = (addonsRaw || []).map(mapAddonFromDB);
     const mappedItems = (menuItems || []).map((item: any) => mapMenuItemFromDB(item, addons));
 
+    mappedItems.sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
     return { categories, menuItems: mappedItems, addons };
 };
 
