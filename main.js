@@ -289,6 +289,8 @@ function createWindow() {
     return true;
   });
 
+  const isHidden = process.argv.includes('--hidden');
+
   mainWindow.once('ready-to-show', () => {
     if (!isHidden) {
       mainWindow.show();
