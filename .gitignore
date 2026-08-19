@@ -37,6 +37,7 @@ AcaiDoDudu_Final/
 resources/
 scratch/
 build/
+!build/icon.ico
 bin/
 local-printer/
 creativos para insta/

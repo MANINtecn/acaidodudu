@@ -2437,14 +2437,14 @@ const CustomerPage: React.FC = () => {
                                     setSelectedGroup(group);
                                     setViewMode('filtered');
                                 }}
-                                className="relative flex items-center justify-center h-26 md:h-32 rounded-2xl overflow-hidden group transition-all duration-300 hover:scale-105 active:scale-95 p-[4px] bg-gradient-to-b from-orange-500 via-amber-400 to-purple-600 shadow-[0_0_25px_rgba(249,115,22,0.5)] hover:shadow-[0_0_30px_rgba(168,85,247,0.6)]"
+                                className="relative flex items-center justify-center h-52 md:h-64 rounded-2xl overflow-hidden group transition-all duration-300 hover:scale-105 active:scale-95 p-[4px] bg-gradient-to-b from-orange-500 via-amber-400 to-purple-600 shadow-[0_0_25px_rgba(249,115,22,0.5)] hover:shadow-[0_0_30px_rgba(168,85,247,0.6)]"
                             >
                                 <div className="w-full h-full bg-gray-950 rounded-[12px] overflow-hidden relative flex items-center justify-center">
                                     {group.image && (
                                         <img src={group.image} alt={group.name} className="absolute inset-0 w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity duration-300 group-hover:scale-110" />
                                     )}
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent"></div>
-                                    <span className="relative z-10 text-xs md:text-xl font-black uppercase tracking-widest text-white drop-shadow-[0_2px_8px_rgba(0,0,0,1)] text-center px-1 group-hover:text-amber-300 transition-colors">
+                                    <span className="relative z-10 text-sm md:text-2xl font-black uppercase tracking-widest text-white drop-shadow-[0_2px_8px_rgba(0,0,0,1)] text-center px-2 group-hover:text-amber-300 transition-colors">
                                         {group.name}
                                     </span>
                                 </div>

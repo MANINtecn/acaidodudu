@@ -58,6 +58,7 @@
   "build": {
     "appId": "com.acaidodudu.pdv",
     "productName": "Açaí do Dudu PDV",
+    "icon": "build/icon.ico",
     "directories": {
       "output": "dist-electron"
     },
@@ -73,6 +74,7 @@
     ],
     "files": [
       "dist/**/*",
+      "build/**/*",
       ".env",
       "main.js",
       "preload.cjs",
@@ -83,7 +85,8 @@
       "node_modules/**/*"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     },
     "nsis": {
       "oneClick": false,

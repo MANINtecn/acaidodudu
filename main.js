@@ -243,13 +243,19 @@ function startNativePrintServer() {
 }
 
 function createWindow() {
+  let appIconPath = path.join(__dirname, "dist", "icon.png");
+  if (!fs.existsSync(appIconPath)) {
+    appIconPath = path.join(__dirname, "public", "icon.png");
+  }
+  if (!fs.existsSync(appIconPath)) {
+    appIconPath = path.join(__dirname, "build", "icon.png");
+  }
+
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     title: "Açaí do Dudu PDV",
-    icon: app.isPackaged 
-      ? path.join(__dirname, "dist", "icon.png")
-      : path.join(__dirname, "public", "icon.png"),
+    icon: appIconPath,
     show: false,
     focusable: true,
     webPreferences: {
