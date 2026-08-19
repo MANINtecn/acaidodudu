@@ -267,8 +267,28 @@ function createWindow() {
     },
   });
 
-  const isHidden = process.argv.includes('--hidden');
-  
+  // --- WEB SERIAL PORT SELECTION HANDLER (Balanca Eletronica) ---
+  const ses = mainWindow.webContents.session;
+  ses.on('select-serial-port', (event, portList, webContents, callback) => {
+    event.preventDefault();
+    if (portList && portList.length > 0) {
+      // Auto-select the connected USB/COM scale port
+      callback(portList[0].portId);
+    } else {
+      callback('');
+    }
+  });
+
+  ses.setPermissionCheckHandler((webContents, permission) => {
+    if (permission === 'serial') return true;
+    return true;
+  });
+
+  ses.setDevicePermissionHandler((details) => {
+    if (details.deviceType === 'serial') return true;
+    return true;
+  });
+
   mainWindow.once('ready-to-show', () => {
     if (!isHidden) {
       mainWindow.show();

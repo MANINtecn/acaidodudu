@@ -638,6 +638,11 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     barPrinterPaperWidth: '80mm',
     courierPrinter: undefined,
     courierPrinterPaperWidth: '80mm',
+    isScaleEnabled: false,
+    scaleProtocol: 'urano',
+    scaleBaudRate: 9600,
+    scalePricePerKg: 60.00,
+    scaleAutoAdd: false,
     courier_access_code: undefined,
     defaultDDD: '81',
     daysOfWeek: ['0', '1', '2', '3', '4', '5', '6'], // All days by default
@@ -693,6 +698,28 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
         courier_access_code: dbData?.courier_access_code ?? dbData?.courierAccessCode ?? defaultSettings.courier_access_code,
         bolaoStartTime: dbData?.bolao_start_time ?? dbData?.bolaoStartTime,
         bolaoEndTime: dbData?.bolao_end_time ?? dbData?.bolaoEndTime,
+
+        isScaleEnabled: (() => {
+            if (dbData?.is_scale_enabled !== undefined) return dbData.is_scale_enabled;
+            if (dbData?.isScaleEnabled !== undefined) return dbData.isScaleEnabled;
+            try {
+                const local = localStorage.getItem('acai_scale_settings');
+                if (local) return JSON.parse(local).isScaleEnabled ?? false;
+            } catch(e){}
+            return false;
+        })(),
+        scaleProtocol: dbData?.scale_protocol ?? dbData?.scaleProtocol ?? (() => {
+            try { return JSON.parse(localStorage.getItem('acai_scale_settings') || '{}').scaleProtocol || 'urano'; } catch(e){ return 'urano'; }
+        })(),
+        scaleBaudRate: Number(dbData?.scale_baud_rate ?? dbData?.scaleBaudRate) || (() => {
+            try { return Number(JSON.parse(localStorage.getItem('acai_scale_settings') || '{}').scaleBaudRate) || 9600; } catch(e){ return 9600; }
+        })(),
+        scalePricePerKg: Number(dbData?.scale_price_per_kg ?? dbData?.scalePricePerKg) || (() => {
+            try { return Number(JSON.parse(localStorage.getItem('acai_scale_settings') || '{}').scalePricePerKg) || 60; } catch(e){ return 60; }
+        })(),
+        scaleAutoAdd: dbData?.scale_auto_add ?? dbData?.scaleAutoAdd ?? (() => {
+            try { return JSON.parse(localStorage.getItem('acai_scale_settings') || '{}').scaleAutoAdd ?? false; } catch(e){ return false; }
+        })(),
         
         daysOfWeek: (() => {
             const val = dbData?.days_of_week ?? dbData?.daysOfWeek ?? defaultSettings.daysOfWeek;
@@ -859,6 +886,41 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
     if (settings.bolaoEndTime !== undefined) {
         dbSettings.bolao_end_time = settings.bolaoEndTime;
     }
+
+    // Scale Settings
+    if (settings.isScaleEnabled !== undefined) {
+        dbSettings.is_scale_enabled = settings.isScaleEnabled;
+        dbSettings.isScaleEnabled = settings.isScaleEnabled;
+    }
+    if (settings.scaleProtocol !== undefined) {
+        dbSettings.scale_protocol = settings.scaleProtocol;
+        dbSettings.scaleProtocol = settings.scaleProtocol;
+    }
+    if (settings.scaleBaudRate !== undefined) {
+        dbSettings.scale_baud_rate = settings.scaleBaudRate;
+        dbSettings.scaleBaudRate = settings.scaleBaudRate;
+    }
+    if (settings.scalePricePerKg !== undefined) {
+        dbSettings.scale_price_per_kg = settings.scalePricePerKg;
+        dbSettings.scalePricePerKg = settings.scalePricePerKg;
+    }
+    if (settings.scaleAutoAdd !== undefined) {
+        dbSettings.scale_auto_add = settings.scaleAutoAdd;
+        dbSettings.scaleAutoAdd = settings.scaleAutoAdd;
+    }
+
+    try {
+        const currentLocal = JSON.parse(localStorage.getItem('acai_scale_settings') || '{}');
+        const updatedLocal = {
+            ...currentLocal,
+            ...(settings.isScaleEnabled !== undefined && { isScaleEnabled: settings.isScaleEnabled }),
+            ...(settings.scaleProtocol !== undefined && { scaleProtocol: settings.scaleProtocol }),
+            ...(settings.scaleBaudRate !== undefined && { scaleBaudRate: settings.scaleBaudRate }),
+            ...(settings.scalePricePerKg !== undefined && { scalePricePerKg: settings.scalePricePerKg }),
+            ...(settings.scaleAutoAdd !== undefined && { scaleAutoAdd: settings.scaleAutoAdd })
+        };
+        localStorage.setItem('acai_scale_settings', JSON.stringify(updatedLocal));
+    } catch (e) {}
 
     // Printers
     const printerFields = [

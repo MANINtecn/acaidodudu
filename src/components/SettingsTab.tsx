@@ -660,8 +660,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                 <input
                                     type="number"
                                     name="scalePricePerKg"
-                                    value={formData.scalePricePerKg || 60}
-                                    onChange={(e) => setFormData({ ...formData, scalePricePerKg: parseFloat(e.target.value) || 0 })}
+                                    value={formData.scalePricePerKg === undefined || formData.scalePricePerKg === null ? '' : formData.scalePricePerKg}
+                                    onChange={(e) => {
+                                        const val = e.target.value;
+                                        setFormData({
+                                            ...formData,
+                                            scalePricePerKg: val === '' ? ('' as any) : parseFloat(val)
+                                        });
+                                    }}
                                     step="0.10"
                                     placeholder="Ex: 60.00"
                                     className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"

@@ -96,10 +96,27 @@ export async function requestSerialPort(baudRate: number = 9600): Promise<any> {
   }
 
   try {
-    const port = await (navigator as any).serial.requestPort();
-    await port.open({ baudRate });
-    activeSerialPort = port;
-    return port;
+    let port = activeSerialPort;
+    if (!port) {
+      const existingPorts = await (navigator as any).serial.getPorts();
+      if (existingPorts && existingPorts.length > 0) {
+        port = existingPorts[0];
+      } else {
+        port = await (navigator as any).serial.requestPort();
+      }
+    }
+
+    if (port) {
+      try {
+        await port.open({ baudRate });
+      } catch (openErr: any) {
+        // Port might already be open or in use, log and proceed
+        console.log('Status da porta serial:', openErr?.message || openErr);
+      }
+      activeSerialPort = port;
+      return port;
+    }
+    throw new Error('Nenhuma porta serial foi selecionada.');
   } catch (err: any) {
     console.error('Erro ao conectar porta serial:', err);
     throw err;
