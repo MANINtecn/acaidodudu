@@ -4,7 +4,7 @@ import legacy from '@vitejs/plugin-legacy'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  base: '/',
+  base: './',
   plugins: [
     react(),
     legacy({

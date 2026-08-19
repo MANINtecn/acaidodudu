@@ -58,6 +58,7 @@
   "build": {
     "appId": "com.acaidodudu.pdv",
     "productName": "Açaí do Dudu PDV",
+    "copyright": "Copyright © 2026 TECX SISTEMAS",
     "icon": "build/icon.ico",
     "directories": {
       "output": "dist-electron"
@@ -85,12 +86,29 @@
       "node_modules/**/*"
     ],
     "win": {
-      "target": "nsis",
-      "icon": "build/icon.ico"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64", "ia32"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64", "ia32"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker"
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Açaí do Dudu PDV"
+    },
+    "portable": {
+      "artifactName": "AcaiDoDuduPDV-Portable.exe"
     }
   }
 }
