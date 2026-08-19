@@ -5,7 +5,7 @@ import { fetchOpenOrderForTable, fetchCustomerByPhone, upsertCustomer, searchCus
 import { normalizeString } from '../utils/searchUtils';
 import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
-import { getScaleWeightWithFallback } from '../services/scaleService';
+import { getScaleWeightWithFallback, requestSerialPort } from '../services/scaleService';
 
 interface CounterTabProps {
     categories: Category[];
@@ -41,7 +41,52 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Dinheiro');
     const [changeFor, setChangeFor] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
-    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
+    const [liveScaleStatusText, setLiveScaleStatusText] = useState<string>('Vigiando Balança...');
+
+    // Sync scalePricePerKg from settings
+    useEffect(() => {
+        if (settings?.scalePricePerKg) {
+            setScalePricePerKg(settings.scalePricePerKg);
+        }
+    }, [settings?.scalePricePerKg]);
+
+    // Continuous Live Scale Polling Loop
+    useEffect(() => {
+        if (!settings?.isScaleEnabled) return;
+
+        let isSubscribed = true;
+        let isPolling = false;
+
+        const pollScale = async () => {
+            if (isPolling) return;
+            isPolling = true;
+            try {
+                const res = await getScaleWeightWithFallback(settings || undefined);
+                if (isSubscribed && res && typeof res.weightKg === 'number') {
+                    setScaleWeight(res.weightKg);
+                    if (res.weightKg > 0) {
+                        setLiveScaleStatusText(res.isStable ? '🟢 PESO ESTÁVEL' : '⚖️ LENDO DA BALANÇA...');
+                    } else {
+                        setLiveScaleStatusText('🟡 BALANÇA ZERADA - COLOQUE O PRATO');
+                    }
+                }
+            } catch (err: any) {
+                if (isSubscribed) {
+                    setLiveScaleStatusText('🔌 CLIQUE PARA CONECTAR BALANÇA USB');
+                }
+            } finally {
+                isPolling = false;
+            }
+        };
+
+        const intervalId = setInterval(pollScale, 800);
+        pollScale();
+
+        return () => {
+            isSubscribed = false;
+            clearInterval(intervalId);
+        };
+    }, [settings?.isScaleEnabled, settings?.scaleProtocol, settings?.scaleBaudRate]);
 
     // Debounce Product Search
     useEffect(() => {
@@ -258,6 +303,23 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             pricePerKg: pricePerKg
         };
         setCart(prev => [...prev, newItem]);
+    };
+
+    const handleLaunchScaleItemToOrder = (weightKg: number) => {
+        if (!weightKg || weightKg <= 0) return;
+        const currentPricePerKg = scalePricePerKg || 60;
+        const itemName = scaleItemName || 'Açaí/Sorvete por Quilo';
+        handleScaleItemAdd(weightKg, itemName, currentPricePerKg);
+        
+        setNotification({
+            show: true,
+            message: `Item de Balança (${weightKg.toFixed(3)}kg - R$ ${(weightKg * currentPricePerKg).toFixed(2)}) adicionado ao pedido!`,
+            type: 'success'
+        });
+
+        if (!selectedTable && !customerName) {
+            setIsTableModalOpen(true);
+        }
     };
 
     const total = cart.reduce((sum, item) => {
@@ -540,11 +602,80 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     };
 
     return (
-        <div className="flex flex-col md:flex-row min-h-full w-full gap-4 md:gap-8 p-4 md:p-12 bg-gray-100 dark:bg-gray-900 overflow-y-auto md:overflow-hidden font-sans">
+        <div className="flex flex-col min-h-full w-full gap-4 p-4 md:p-8 bg-gray-100 dark:bg-gray-900 overflow-y-auto md:overflow-hidden font-sans">
              <Notification show={notification.show} message={notification.message} type={notification.type} onClose={() => setNotification(p => ({ ...p, show: false }))} />
 
-            {/* COLUMN 1: MENU (PICKING) - BLUE THEME */}
-            <div className="flex-[3] flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-blue-900/30 md:overflow-hidden">
+            {/* BARRA DE BALANÇA EM TEMPO REAL (MODO VIGIA) */}
+            {settings?.isScaleEnabled && (
+                <div className="w-full bg-slate-950 border-2 border-emerald-500/40 rounded-2xl p-3.5 md:p-4 shadow-[0_0_25px_rgba(16,185,129,0.15)] flex flex-col lg:flex-row items-center justify-between gap-3 animate-fade-in shrink-0">
+                    <div className="flex items-center gap-3 w-full lg:w-auto">
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold transition-all ${scaleWeight > 0 ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30 scale-105' : 'bg-slate-900 text-emerald-400 border border-emerald-500/30'}`}>
+                            <Scale size={24} className={scaleWeight > 0 ? "animate-pulse" : ""} />
+                        </div>
+                        <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs font-black uppercase tracking-wider text-emerald-400">Balança em Tempo Real</span>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${scaleWeight > 0 ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'}`}>
+                                    {liveScaleStatusText}
+                                </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 font-medium">Peso lido continuamente. Insira o prato/tigela para calcular o total.</p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center justify-around w-full lg:w-auto gap-4 md:gap-8 bg-slate-900/90 px-5 py-2 rounded-xl border border-slate-800 font-mono shadow-inner">
+                        <div className="text-center">
+                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">PESO ATUAL</span>
+                            <span className={`text-xl md:text-2xl font-extrabold ${scaleWeight > 0 ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'text-slate-500'}`}>
+                                {(scaleWeight || 0).toFixed(3)} <span className="text-xs font-normal">kg</span>
+                            </span>
+                        </div>
+                        <div className="h-7 w-px bg-slate-800"></div>
+                        <div className="text-center">
+                            <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">VALOR TOTAL</span>
+                            <span className={`text-xl md:text-2xl font-extrabold ${scaleWeight > 0 ? 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'text-slate-500'}`}>
+                                R$ {((scaleWeight || 0) * (scalePricePerKg || 60)).toFixed(2)}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 w-full lg:w-auto">
+                        <button
+                            type="button"
+                            onClick={async () => {
+                                try {
+                                    await requestSerialPort(settings?.scaleBaudRate || 9600);
+                                    alert('Porta da balança USB/Serial selecionada com sucesso!');
+                                } catch(err: any) {
+                                    alert(err?.message || 'Erro ao conectar à porta da balança.');
+                                }
+                            }}
+                            className="px-3 py-2.5 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-1.5 active:scale-95"
+                            title="Conectar ou selecionar porta USB/COM da balança"
+                        >
+                            🔌 Conectar USB
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => handleLaunchScaleItemToOrder(scaleWeight)}
+                            disabled={!scaleWeight || scaleWeight <= 0}
+                            className={`flex-1 lg:flex-initial px-5 py-2.5 rounded-xl font-black text-xs md:text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg ${
+                                scaleWeight > 0 
+                                    ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:brightness-110 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer ring-2 ring-emerald-400/40 animate-pulse' 
+                                    : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
+                            }`}
+                        >
+                            <Plus size={16} />
+                            <span>Lançar Pedido (R$ {((scaleWeight || 0) * (scalePricePerKg || 60)).toFixed(2)})</span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            <div className="flex flex-col md:flex-row flex-1 w-full gap-4 md:gap-8 overflow-y-auto md:overflow-hidden">
+                {/* COLUMN 1: MENU (PICKING) - BLUE THEME */}
+                <div className="flex-[3] flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-blue-900/30 md:overflow-hidden">
                 <div className="p-3 bg-blue-50/50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-900/20">
                     <div className="relative mb-2 flex gap-2 items-center">
                         {onBack && (
@@ -879,6 +1010,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         )}
                     </button>
                 </div>
+            </div>
             </div>
 
             {/* MODALS REMAINS FOR CUSTOM ITEM AND ADDONS AS THEY ARE STILL NECESSARY */}
