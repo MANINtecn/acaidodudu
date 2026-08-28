@@ -14,7 +14,7 @@ if (typeof window !== 'undefined') {
       if (console) console.warn('Ignored DOM removeChild mismatch:', child, this);
       return child;
     }
-    return originalRemoveChild.call(this, child);
+    return originalRemoveChild.call(this, child) as T;
   };
 
   const originalInsertBefore = Node.prototype.insertBefore;
@@ -23,7 +23,7 @@ if (typeof window !== 'undefined') {
       if (console) console.warn('Ignored DOM insertBefore mismatch:', referenceNode, this);
       return newNode;
     }
-    return originalInsertBefore.call(this, newNode, referenceNode);
+    return originalInsertBefore.call(this, newNode, referenceNode) as T;
   };
 }
 

@@ -693,7 +693,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                     type="button"
                                     onClick={async () => {
                                         try {
-                                            const port = await requestSerialPort(formData.scaleBaudRate || 9600);
+                                            await requestSerialPort(formData.scaleBaudRate || 9600, true);
                                             alert('Porta serial conectada com sucesso!');
                                         } catch (err: any) {
                                             alert(`Status da Conexão: ${err.message || 'Erro ao conectar à porta serial da balança.'}`);
@@ -701,7 +701,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                     }}
                                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-2 shadow"
                                 >
-                                    🔌 Conectar / Selecionar Porta COM (USB Balança)
+                                    Conectar / Selecionar Porta COM (USB Balança)
                                 </button>
                             </div>
                         </div>

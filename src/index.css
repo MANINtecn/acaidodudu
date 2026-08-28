@@ -30,8 +30,24 @@ html.light-mode {
   --color-secondary: #d97706;  /* Golden Amber */
 }
 
+/* Sem ALTURA definida aqui, o h-screen do painel admin nao tem referencia e o
+   <body> cresce com o conteudo: a PAGINA INTEIRA passa a rolar, deixando visivel
+   o conteudo da aba seguinte (que fica logo abaixo da tela). Foi a causa do
+   "conteudo da aba Pedidos invadindo o Balcao". Ver Regra 7.
+
+   NAO colocar `overflow:hidden` aqui: LoginPage e CourierPage usam min-h-screen
+   e dependem do scroll da pagina. Quem trava o scroll e o proprio AdminPage,
+   que ja e h-screen + overflow-hidden. */
+html,
+body {
+  height: 100%;
+}
+
 #root {
   width: 100%;
+  /* min-height (nao height): da a referencia de altura que o h-screen precisa,
+     sem cortar paginas que legitimamente passam da tela (min-h-screen). */
+  min-height: 100%;
 }
 
 @layer utilities {

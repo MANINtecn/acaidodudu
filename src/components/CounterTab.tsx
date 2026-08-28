@@ -5,7 +5,7 @@ import { fetchOpenOrderForTable, fetchCustomerByPhone, upsertCustomer, searchCus
 import { normalizeString } from '../utils/searchUtils';
 import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
-import { getScaleWeightWithFallback, requestSerialPort } from '../services/scaleService';
+import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, connectScale, getScaleRawLog, clearScaleRawLog, getScaleSnapshot, type ScaleStatus } from '../services/scaleService';
 
 interface CounterTabProps {
     categories: Category[];
@@ -23,6 +23,7 @@ interface CounterTabProps {
 export const CounterTab = memo(({ categories, menuItems, addons, settings, storeId, onOrderComplete, initialTable, activeOrders, onBack, promotions }: CounterTabProps) => {
     const [selectedCategoryId, setSelectedCategoryId] = useState<number>(categories[0]?.id || 0);
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [orderType, setOrderType] = useState<OrderType>('Balcão');
     const [selectedTable, setSelectedTable] = useState<string>('');
@@ -42,6 +43,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     const [changeFor, setChangeFor] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
     const [liveScaleStatusText, setLiveScaleStatusText] = useState<string>('Vigiando Balança...');
+    const [scaleStatus, setScaleStatus] = useState<ScaleStatus>('disconnected');
+    const [isScaleStable, setIsScaleStable] = useState(false);
+    const [isScaleDiagOpen, setIsScaleDiagOpen] = useState(false);
+    const [scaleRawLines, setScaleRawLines] = useState<string[]>([]);
 
     // Sync scalePricePerKg from settings
     useEffect(() => {
@@ -50,43 +55,53 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         }
     }, [settings?.scalePricePerKg]);
 
-    // Continuous Live Scale Polling Loop
+    // Balança: stream contínuo (sem polling — a porta é aberta UMA vez).
+    // Ver claude-acai.md, Regra 6. NÃO substituir por setInterval.
     useEffect(() => {
         if (!settings?.isScaleEnabled) return;
 
-        let isSubscribed = true;
-        let isPolling = false;
+        const unsubscribe = subscribeToScale((snap) => {
+            setScaleStatus(snap.status);
+            setScaleWeight(snap.weightKg);
+            setIsScaleStable(snap.isStable);
 
-        const pollScale = async () => {
-            if (isPolling) return;
-            isPolling = true;
-            try {
-                const res = await getScaleWeightWithFallback(settings || undefined);
-                if (isSubscribed && res && typeof res.weightKg === 'number') {
-                    setScaleWeight(res.weightKg);
-                    if (res.weightKg > 0) {
-                        setLiveScaleStatusText(res.isStable ? '🟢 PESO ESTÁVEL' : '⚖️ LENDO DA BALANÇA...');
-                    } else {
-                        setLiveScaleStatusText('🟡 BALANÇA ZERADA - COLOQUE O PRATO');
-                    }
-                }
-            } catch (err: any) {
-                if (isSubscribed) {
-                    setLiveScaleStatusText('🔌 CLIQUE PARA CONECTAR BALANÇA USB');
-                }
-            } finally {
-                isPolling = false;
+            switch (snap.status) {
+                case 'disconnected':
+                    setLiveScaleStatusText('🔌 CLIQUE EM CONECTAR USB');
+                    break;
+                case 'connecting':
+                    setLiveScaleStatusText('⏳ CONECTANDO...');
+                    break;
+                case 'waiting':
+                    setLiveScaleStatusText('🟡 AGUARDANDO DADOS DA BALANÇA');
+                    break;
+                case 'unstable':
+                    setLiveScaleStatusText('⚖️ ESTABILIZANDO...');
+                    break;
+                case 'stable':
+                    setLiveScaleStatusText('🟢 PESO ESTÁVEL');
+                    break;
+                case 'error':
+                    setLiveScaleStatusText(snap.errorMessage || '⚠️ ERRO NA BALANÇA');
+                    break;
             }
-        };
+        });
 
-        const intervalId = setInterval(pollScale, 800);
-        pollScale();
+        // Reconecta a uma porta já autorizada, sem abrir o seletor.
+        connectScale(settings?.scaleBaudRate || 9600, false);
 
         return () => {
-            isSubscribed = false;
-            clearInterval(intervalId);
+            unsubscribe();
         };
     }, [settings?.isScaleEnabled, settings?.scaleProtocol, settings?.scaleBaudRate]);
+
+    // Atualiza o log cru enquanto o painel de diagnóstico estiver aberto.
+    useEffect(() => {
+        if (!isScaleDiagOpen) return;
+        const id = setInterval(() => setScaleRawLines(getScaleRawLog()), 400);
+        setScaleRawLines(getScaleRawLog());
+        return () => clearInterval(id);
+    }, [isScaleDiagOpen]);
 
     // Debounce Product Search
     useEffect(() => {
@@ -602,7 +617,9 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     };
 
     return (
-        <div className="flex flex-col min-h-full w-full gap-4 p-4 md:p-8 bg-gray-100 dark:bg-gray-900 overflow-y-auto md:overflow-hidden font-sans">
+        // h-full (nao min-h-full): min-h-full forca "pelo menos a tela inteira" e,
+        // somado a barra da balanca, estoura o container do pai. Ver Regra 7.
+        <div className="flex flex-col h-full w-full gap-4 p-4 md:p-8 bg-gray-100 dark:bg-gray-900 overflow-y-auto md:overflow-hidden font-sans">
              <Notification show={notification.show} message={notification.message} type={notification.type} onClose={() => setNotification(p => ({ ...p, show: false }))} />
 
             {/* BARRA DE BALANÇA EM TEMPO REAL (MODO VIGIA) */}
@@ -645,8 +662,16 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             onClick={async () => {
                                 try {
                                     await requestSerialPort(settings?.scaleBaudRate || 9600);
-                                    alert('Porta da balança USB/Serial selecionada com sucesso!');
+                                    alert('Balança conectada com sucesso!');
                                 } catch(err: any) {
+                                    // Se a balança já está lendo, a falha foi em alguma
+                                    // das outras portas (esta máquina lista 38, quase
+                                    // todas Bluetooth). Não é erro para o operador.
+                                    if (getScaleSnapshot().status === 'stable' ||
+                                        getScaleSnapshot().status === 'unstable' ||
+                                        getScaleSnapshot().status === 'waiting') {
+                                        return;
+                                    }
                                     alert(err?.message || 'Erro ao conectar à porta da balança.');
                                 }
                             }}
@@ -658,24 +683,129 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
                         <button
                             type="button"
+                            onClick={() => setIsScaleDiagOpen(v => !v)}
+                            className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition-all border active:scale-95 ${
+                                isScaleDiagOpen
+                                    ? 'bg-amber-500/20 text-amber-300 border-amber-500/50'
+                                    : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-700/80'
+                            }`}
+                            title="Mostrar os dados crus enviados pela balança (diagnóstico)"
+                        >
+                            🔍 Diagnóstico
+                        </button>
+
+                        {/* Só habilita o lançamento com peso ESTÁVEL e confirmado.
+                            Peso oscilando = valor errado no pedido. Ver Regra 6. */}
+                        <button
+                            type="button"
                             onClick={() => handleLaunchScaleItemToOrder(scaleWeight)}
-                            disabled={!scaleWeight || scaleWeight <= 0}
+                            disabled={!scaleWeight || scaleWeight <= 0 || !isScaleStable}
+                            title={!isScaleStable && scaleWeight > 0 ? 'Aguarde o peso estabilizar' : undefined}
                             className={`flex-1 lg:flex-initial px-5 py-2.5 rounded-xl font-black text-xs md:text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg ${
-                                scaleWeight > 0 
-                                    ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:brightness-110 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer ring-2 ring-emerald-400/40 animate-pulse' 
+                                scaleWeight > 0 && isScaleStable
+                                    ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:brightness-110 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer ring-2 ring-emerald-400/40 animate-pulse'
                                     : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
                             }`}
                         >
                             <Plus size={16} />
-                            <span>Lançar Pedido (R$ {((scaleWeight || 0) * (scalePricePerKg || 60)).toFixed(2)})</span>
+                            <span>
+                                {scaleWeight > 0 && !isScaleStable
+                                    ? 'Aguarde estabilizar...'
+                                    : `Lançar Pedido (R$ ${((scaleWeight || 0) * (scalePricePerKg || 60)).toFixed(2)})`}
+                            </span>
                         </button>
                     </div>
                 </div>
             )}
 
-            <div className="flex flex-col md:flex-row flex-1 w-full gap-4 md:gap-8 overflow-y-auto md:overflow-hidden">
+            {/* PAINEL DE DIAGNÓSTICO DA BALANÇA — mostra o texto cru da porta serial.
+                Serve para descobrir o formato real do frame da Urano US 31/2 POS. */}
+            {settings?.isScaleEnabled && isScaleDiagOpen && (
+                <div className="w-full bg-slate-950 border-2 border-amber-500/40 rounded-2xl p-4 shadow-lg animate-fade-in shrink-0">
+                    <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+                        <div>
+                            <h3 className="text-xs font-black uppercase tracking-wider text-amber-400">
+                                Diagnóstico da Balança (dados crus)
+                            </h3>
+                            <p className="text-[11px] text-slate-400 mt-0.5">
+                                Coloque um peso conhecido (ex.: 500 g) e observe as linhas abaixo.
+                                É este texto que define como o peso é interpretado.
+                            </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={async () => {
+                                    const txt = getScaleRawLog().join('\n');
+                                    if (!txt) { alert('Ainda não há log para salvar.'); return; }
+                                    const api = (window as any).electron;
+                                    if (api?.salvarLogBalanca) {
+                                        const r = await api.salvarLogBalanca(txt);
+                                        alert(r?.ok
+                                            ? `Log salvo na Área de Trabalho:\n\n${r.caminho}`
+                                            : `Não foi possível salvar: ${r?.erro || 'erro desconhecido'}`);
+                                    } else {
+                                        navigator.clipboard?.writeText(txt);
+                                        alert('Log copiado para a área de transferência.');
+                                    }
+                                }}
+                                className="px-3 py-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/50 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all active:scale-95"
+                                title="Salva o log num arquivo .txt na Área de Trabalho"
+                            >
+                                Salvar Arquivo
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    if (!confirm('Apagar o log? Se ainda não salvou, o conteúdo será perdido.')) return;
+                                    clearScaleRawLog();
+                                    setScaleRawLines([]);
+                                }}
+                                className="px-3 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700/80 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all active:scale-95"
+                            >
+                                Limpar
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const txt = getScaleRawLog().join('\n');
+                                    if (txt) navigator.clipboard?.writeText(txt);
+                                }}
+                                className="px-3 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/50 rounded-lg text-[11px] font-bold uppercase tracking-wider transition-all active:scale-95"
+                            >
+                                Copiar Log
+                            </button>
+                        </div>
+                    </div>
+
+                    <div className="bg-black/60 border border-slate-800 rounded-xl p-3 max-h-56 overflow-y-auto font-mono text-[11px] leading-relaxed">
+                        {scaleRawLines.length === 0 ? (
+                            <p className="text-slate-500">
+                                Nenhum dado recebido ainda. Verifique se a balança está ligada,
+                                conectada via USB e se a porta foi selecionada em "Conectar USB".
+                            </p>
+                        ) : (
+                            scaleRawLines.map((line, i) => (
+                                <div key={i} className="text-emerald-300 whitespace-pre-wrap break-all">
+                                    {line}
+                                </div>
+                            ))
+                        )}
+                    </div>
+
+                    <p className="text-[10px] text-slate-500 mt-2">
+                        Status atual: <span className="text-slate-300 font-bold">{scaleStatus}</span>
+                        {' · '}Peso: <span className="text-slate-300 font-bold">{scaleWeight.toFixed(3)} kg</span>
+                        {' · '}Estável: <span className="text-slate-300 font-bold">{isScaleStable ? 'sim' : 'não'}</span>
+                    </p>
+                </div>
+            )}
+
+            {/* min-h-0 tambem aqui: sem ele este flex-1 cresce com o conteudo das
+                colunas e empurra a pagina, mesmo com o <main> ja corrigido. Regra 7. */}
+            <div className="flex flex-col md:flex-row flex-1 min-h-0 w-full gap-4 md:gap-8 overflow-y-auto md:overflow-hidden">
                 {/* COLUMN 1: MENU (PICKING) - BLUE THEME */}
-                <div className="flex-[3] flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-blue-900/30 md:overflow-hidden">
+                <div className="flex-[3] min-h-0 flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-blue-100 dark:border-blue-900/30 md:overflow-hidden">
                 <div className="p-3 bg-blue-50/50 dark:bg-blue-900/10 border-b border-blue-100 dark:border-blue-900/20">
                     <div className="relative mb-2 flex gap-2 items-center">
                         {onBack && (
@@ -755,7 +885,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             </div>
 
             {/* COLUMN 2: SELECTED ITEMS (CART) - GREEN THEME */}
-            <div className="flex-[3] flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-green-100 dark:border-green-900/30 md:overflow-hidden">
+            <div className="flex-[3] min-h-0 flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-green-100 dark:border-green-900/30 md:overflow-hidden">
                 <div className="p-4 bg-green-50/50 dark:bg-green-900/10 border-b border-green-100 dark:border-green-900/20 flex justify-between items-center">
                     <h3 className="font-black text-green-700 dark:text-green-400 uppercase tracking-widest text-xs flex items-center gap-2">
                         <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
@@ -830,7 +960,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             </div>
 
             {/* COLUMN 3: ORDER INFO & DETAILS (RED THEME) */}
-            <div className="flex-[3] flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-red-100 dark:border-red-900/30 md:overflow-hidden">
+            <div className="flex-[3] min-h-0 flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-red-100 dark:border-red-900/30 md:overflow-hidden">
                 <div className="p-3 bg-red-50/50 dark:bg-red-900/10 border-b border-red-100 dark:border-red-900/20">
                     <div className="flex p-1 bg-gray-100 dark:bg-gray-900 rounded-xl gap-1">
                         <button onClick={() => handleOrderTypeChange('Balcão')} className={`flex-1 py-2 rounded-lg font-black text-[10px] uppercase tracking-wider transition-all ${orderType === 'Balcão' ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/20' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200'}`}>Mesa</button>
@@ -1121,7 +1251,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                         setIsReadingScale(true);
                                         try {
                                             const result = await getScaleWeightWithFallback(settings || undefined);
-                                            setScaleWeight(result.weightKg);
+                                            // Só aceita peso confirmado como estável. Ver Regra 6.
+                                            if (!result.isStable || result.weightKg <= 0) {
+                                                alert('Peso ainda não estabilizou. Aguarde a balança parar de oscilar e tente novamente.');
+                                            } else {
+                                                setScaleWeight(result.weightKg);
+                                            }
                                         } catch (err: any) {
                                             alert(err?.message || 'Não foi possível ler a balança. Verifique o cabo USB/Serial.');
                                         } finally {

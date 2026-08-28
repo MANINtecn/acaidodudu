@@ -320,7 +320,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                         <div className="bg-gradient-to-br from-green-700 to-yellow-600 rounded-2xl p-5 shadow-2xl border border-yellow-400/30 relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/20 rounded-full filter blur-[30px]"></div>
                             
-                            <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-1 relative z-10 drop-shadow-md">🏆 Bolão da Copa</h2>
+                            <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-1 relative z-10 drop-shadow-md">Bolão da Copa</h2>
                             <p className="text-[9px] text-yellow-200/80 uppercase tracking-widest font-black mb-3 relative z-10 flex items-center justify-center gap-1">
                                 <MapPin size={10} /> MetLife Stadium, Nova Jersey (EUA)
                             </p>
@@ -454,7 +454,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                                     {!isEditingAddress ? (
                                         <>
                                             <div className="flex justify-between items-start">
-                                                <p className="font-bold text-gray-300 mb-1 flex items-center gap-1"><span className="text-yellow-500">📍</span> Endereço de Entrega:</p>
+                                                <p className="font-bold text-gray-300 mb-1 flex items-center gap-1">Endereço de Entrega:</p>
                                                 <button
                                                     onClick={() => setIsEditingAddress(true)}
                                                     className="text-[10px] text-primary hover:text-white border border-primary/30 hover:bg-primary/10 px-2 py-0.5 rounded transition-colors"
@@ -556,7 +556,6 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                                 {/* Upsell Tip */}
                                 {finalTotal < 35 && (
                                     <div className="mb-3 bg-blue-500/10 border border-blue-500/30 rounded-lg p-2.5 flex items-start gap-2 animate-fade-in">
-                                        <span className="text-blue-400 text-lg">💡</span>
                                         <div className="text-xs text-blue-200">
                                             <p className="font-bold text-blue-300">Quase lá!</p>
                                             <p className="leading-tight mt-0.5">
@@ -599,7 +598,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                             </button>
                         ) : (
                             <div className="text-center p-2 bg-red-500/10 border border-red-500/30 rounded-xl">
-                                <p className="text-red-400 font-bold text-sm uppercase tracking-wide">🔴 Loja Fechada</p>
+                                <p className="text-red-400 font-bold text-sm uppercase tracking-wide">Loja Fechada</p>
                                 <p className="text-gray-400 text-xs">Aguarde o horário de abertura para fazer pedidos.</p>
                             </div>
                         )}
@@ -653,7 +652,6 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                                             )}
                                             {lastOrder.paymentMethod === 'Dinheiro' && lastOrder.changeFor && (
                                                 <div className="flex items-center gap-2 text-[10px] text-gray-300">
-                                                    <span className="text-green-400">💵</span>
                                                     <span>Troco para: <strong className="text-white">R$ {parseFloat(lastOrder.changeFor).toFixed(2)}</strong></span>
                                                 </div>
                                             )}
@@ -672,7 +670,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                         )}
 
                         <h3 className="text-xl font-display text-white mb-1 flex items-center gap-2">
-                            <span className="text-yellow-500 text-2xl">🎟️</span> Fidelidade Açaí do Dudu
+                            Fidelidade Açaí do Dudu
                         </h3>
                         <p className="text-xs text-gray-400 mb-6">Junte 10 selos e ganhe R$ 20,00 ou um X-Tudo!</p>
 
@@ -690,7 +688,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                                             return (
                                                 <div key={i} className={`aspect-square rounded-full flex items-center justify-center border-2 transition-all duration-500 ${filled ? 'bg-yellow-500 border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.5)] transform scale-110' : 'bg-gray-800/50 border-gray-700'}`}>
                                                     {filled ? (
-                                                        <span className="text-black text-xl md:text-2xl animate-pulse">🍔</span>
+                                                        <span className="text-black text-xs font-bold font-mono">✓</span>
                                                     ) : (
                                                         <span className="text-gray-600 text-xs font-mono">{i + 1}</span>
                                                     )}
@@ -717,7 +715,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                         <div className="mt-6">
                             {rewardsAvailable > 0 ? (
                                 <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-xl p-4 text-center animate-pulse-slow">
-                                    <p className="text-yellow-400 font-bold mb-2">🎉 Você tem {rewardsAvailable} recompensa(s) disponível!</p>
+                                    <p className="text-yellow-400 font-bold mb-2">Você tem {rewardsAvailable} recompensa(s) disponível!</p>
                                     <button
                                         onClick={() => {
                                             onClose();

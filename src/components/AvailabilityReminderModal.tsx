@@ -18,7 +18,7 @@ export const AvailabilityReminderModal: React.FC<AvailabilityReminderModalProps>
                     <div className="w-16 h-16 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mb-4">
                         <Monitor className="text-orange-600 dark:text-orange-400 w-8 h-8" />
                     </div>
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Atenção! 📢</h2>
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Atenção!</h2>
                     <p className="text-gray-600 dark:text-gray-400 mb-6 font-medium">
                         Existem <span className="text-orange-600 dark:text-orange-400 px-1">{unavailableCount} {unavailableCount === 1 ? 'item' : 'itens'}</span> marcados como indisponíveis/esgotados no cardápio.
                         <br /><span className="text-sm font-normal">Deseja conferir se já pode ativá-los?</span>

@@ -64,7 +64,7 @@ const SuccessModal: React.FC<{ isOpen: boolean; onClose: () => void; orderId?: s
         return (
             <div className="fixed inset-0 bg-black bg-opacity-70 z-[60] flex items-center justify-center p-4 animate-fade-in">
                 <div className="bg-surface rounded-xl p-8 max-w-md w-full text-center shadow-2xl border border-primary transform transition-all scale-100">
-                    <h2 className="text-2xl font-bold text-text-light mb-2">Obrigado! ⭐</h2>
+                    <h2 className="text-2xl font-bold text-text-light mb-2">Obrigado!</h2>
                     <p className="text-text-light/80">Sua avaliação nos ajuda muito.</p>
                 </div>
             </div>
@@ -270,9 +270,7 @@ const DiscountBanner: React.FC<{ settings: Partial<Settings> | null }> = ({ sett
 
     return (
         <div className="bg-orange-500 text-white text-center py-1 px-2 text-[10px] md:text-xs font-black shadow-inner flex items-center justify-center space-x-2 animate-fade-in uppercase tracking-widest">
-            <span>🔥</span>
             <span>GANHE <strong>{settings.appDiscountPercentage}% OFF</strong> PELO APP!</span>
-            <span>🔥</span>
         </div>
     );
 };
@@ -353,9 +351,7 @@ const RaffleBanner: React.FC<{ settings: Partial<Settings> | null }> = ({ settin
         return (
             <div className="bg-purple-600 text-white text-center py-1 px-4 text-[10px] md:text-sm font-medium shadow-inner flex flex-col items-center justify-center animate-fade-in leading-tight">
                 <div className="flex items-center space-x-2">
-                    <span>🏆</span>
                     <span>Ganhador do sorteio: <strong>{settings.lastRaffleWinner}</strong>!</span>
-                    <span>🏆</span>
                 </div>
             </div>
         );
@@ -364,9 +360,7 @@ const RaffleBanner: React.FC<{ settings: Partial<Settings> | null }> = ({ settin
     if (settings.raffleDrawDate && timeLeft) {
         return (
             <div className="bg-gradient-to-r from-purple-600 to-indigo-600 text-white text-center py-1 px-2 text-[10px] md:text-sm font-medium shadow-inner flex items-center justify-center space-x-2 animate-fade-in">
-                <span>🎁</span>
                 <span>Sorteio de <strong>R$ {Number(settings.rafflePrizeValue || 0).toFixed(2)}</strong> em: <strong>{timeLeft}</strong></span>
-                <span>🎁</span>
             </div>
         );
     }
@@ -1157,7 +1151,7 @@ const SideCart: React.FC<{
                                                 </select>
                                                 {!selectedZoneId && (
                                                     <p className="text-[10px] text-red-500 mt-0.5 font-semibold">
-                                                        ⚠️ Por favor, selecione seu bairro para continuar.
+                                                         Por favor, selecione seu bairro para continuar.
                                                     </p>
                                                 )}
                                             </div>
@@ -1410,7 +1404,7 @@ const ItemDetailModal: React.FC<{
                 <div className="p-4 bg-[#100620] border-t border-purple-500/30 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
                     {hasMandatorySelection && (
                         <div className="mb-3 p-2 bg-amber-500/20 border border-amber-500/50 rounded-xl text-center text-xs font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
-                            <span>⚠️</span> Selecione pelo menos 1 opção / sabor para continuar
+                            Selecione pelo menos 1 opção / sabor para continuar
                         </div>
                     )}
                     <div className="flex items-center gap-4 mb-3">
@@ -1502,7 +1496,6 @@ const CustomerRecognitionBar: React.FC<{ onPhoneSubmit: (phone: string) => void;
             <div className="relative z-10 py-4 px-4 flex flex-col sm:flex-row items-center justify-between gap-3 w-full max-w-5xl mx-auto">
                 <div className="flex flex-col items-center sm:items-start justify-center w-full sm:w-auto">
                     <div className="flex items-center gap-2">
-                        <span className="text-xl md:text-2xl drop-shadow-[0_0_8px_rgba(168,85,247,0.8)]">🍧</span>
                         <h2 className="font-black text-base md:text-xl text-transparent bg-clip-text bg-gradient-to-r from-purple-300 via-purple-100 to-white uppercase tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-none">
                             Açaí do Dudu
                         </h2>
@@ -1551,18 +1544,17 @@ const NewCustomerModal: React.FC<{
                     <LucideX className="w-5 h-5" />
                 </button>
                 <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                    <span className="text-3xl">✨</span>
                 </div>
                 <h2 className="text-2xl font-display text-primary mb-2">Bem-vindo(a)!</h2>
                 <p className="text-white text-base mb-6">
-                    Parece que é sua primeira vez por aqui. Que tal já preencher seus dados para agilizar seu pedido? Vai ficar tudo salvo para a próxima! 😉
+                    Parece que é sua primeira vez por aqui. Que tal já preencher seus dados para agilizar seu pedido? Vai ficar tudo salvo para a próxima!
                 </p>
                 <div className="space-y-3">
                     <button
                         onClick={onProceed}
                         className="w-full py-3 bg-primary hover:bg-primary-dark text-background font-bold rounded-lg text-base transition-transform transform hover:scale-105 shadow-lg"
                     >
-                        🚀 Preencher meus dados
+                        Preencher meus dados
                     </button>
                     <button
                         onClick={onClose}
@@ -1589,7 +1581,6 @@ const RewardCelebrationModal: React.FC<{ isOpen: boolean; onClose: () => void; o
                     </button>
 
                     <div className="w-24 h-24 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-6 shadow-lg animate-pulse-slow relative z-10">
-                        <span className="text-6xl">🏆</span>
                     </div>
 
                     <h2 className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-500 mb-2 uppercase italic tracking-wider relative z-10">
@@ -1611,7 +1602,6 @@ const RewardCelebrationModal: React.FC<{ isOpen: boolean; onClose: () => void; o
                             }}
                             className="w-full py-3 bg-gray-800 hover:bg-gray-700 border border-green-500/30 text-white rounded-xl shadow-lg transition-all flex items-center p-4 group cursor-pointer"
                         >
-                            <span className="text-3xl mr-3 group-hover:scale-110 transition-transform">💸</span>
                             <div className="text-left">
                                 <span className="block font-bold text-green-400">R$ 20,00 OFF</span>
                                 <span className="text-xs text-gray-400">Desconto no total</span>
@@ -1866,11 +1856,12 @@ const CustomerPage: React.FC = () => {
                 setReferencePoint(customer.reference_point || '');
                 
                 // Immediately check for dynamic delivery fee and match zone!
-                if (customer.address) {
-                    updateFee(customer.address);
+                const addr = customer.address;
+                if (addr) {
+                    updateFee(addr);
                     if (deliveryZones && deliveryZones.length > 0) {
                         const matchedZone = deliveryZones.find(z => 
-                            customer.address.toLowerCase().includes(z.neighborhood_name.toLowerCase())
+                            addr.toLowerCase().includes(z.neighborhood_name.toLowerCase())
                         );
                         if (matchedZone) {
                             setSelectedZoneId(matchedZone.id);
@@ -1937,37 +1928,37 @@ const CustomerPage: React.FC = () => {
                     .setOptions({
                         steps: [
                             {
-                                title: 'Bem-vindo! 👋',
+                                title: 'Bem-vindo!',
                                 intro: 'Bem-vindo ao Açaí do Dudu! Vamos te mostrar como fazer seu pedido rapidinho.'
                             },
                             {
                                 element: '#tour-fidelity',
-                                title: 'Fidelidade & Agilidade 🚀',
+                                title: 'Fidelidade & Agilidade',
                                 intro: 'Digite seu telefone aqui para identificar seus pedidos anteriores e participar do nosso **Programa de Fidelidade**! A cada 10 pedidos, ganhe prêmios!'
                             },
                             {
                                 element: '#tour-categories',
-                                title: 'Categorias 🍔',
+                                title: 'Categorias',
                                 intro: 'Navegue pelas categorias aqui para encontrar Lanches ou Açaís.'
                             },
                             {
                                 element: '#tour-search',
-                                title: 'Busca 🔍',
+                                title: 'Busca',
                                 intro: 'Já sabe o que quer? Digite aqui (ex: "X-Tudo", "Coca").'
                             },
                             {
                                 element: '#tour-product-first',
-                                title: 'Produtos 😋',
+                                title: 'Produtos',
                                 intro: 'Clique no produto para adicionar. Se tiver opcionais, você poderá escolher na próxima tela!'
                             },
                             {
                                 element: '#tour-cart',
-                                title: 'Seu Carrinho 🛒',
+                                title: 'Seu Carrinho',
                                 intro: 'Seus itens aparecem aqui. Clique para ver o resumo e finalizar o pedido.'
                             },
                             {
                                 element: '#tour-fidelity',
-                                title: 'Dica de Mestre 💡',
+                                title: 'Dica de Mestre',
                                 intro: 'Depois de preencher seus dados no carrinho hoje, na próxima vez basta digitar seu telefone aqui para carregar tudo automático!'
                             }
                         ],

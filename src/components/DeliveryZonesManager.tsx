@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, Check, X } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { DeliveryZone } from '../types';
 import { fetchDeliveryZones, createDeliveryZone, updateDeliveryZone, deleteDeliveryZone } from '../services/supabaseService';
 

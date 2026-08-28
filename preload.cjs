@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld("electron", {
   downloadUpdate: () => ipcRenderer.invoke("download-update"),
   quitAndInstall: () => ipcRenderer.invoke("quit-and-install"),
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
+
+  // Salva o log da balanca num .txt na Area de Trabalho, para o log nao se
+  // perder ao copiar/limpar. Retorna o caminho do arquivo.
+  salvarLogBalanca: (texto) => ipcRenderer.invoke("salvar-log-balanca", texto),
   
   // Listeners
   onUpdateAvailable: (callback) => ipcRenderer.on("update-available", (event, ...args) => callback(...args)),

@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
 import { supabase } from '../services/supabaseService';
 import { useStore } from '../contexts/StoreContext';
+import { useAuth } from '../auth/AuthContext';
 import logoImg from '../../public/icon.png';
 import bgHero from '../../public/acai_boat_hero.jpg';
-import { Lock, Mail, ArrowLeft, LogIn, Sparkles } from 'lucide-react';
+import { Lock, Mail, ArrowLeft, LogIn } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
   const { currentStore } = useStore();
+  const { session, loading: authLoading } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -17,10 +19,19 @@ const LoginPage: React.FC = () => {
   const location = useLocation();
   const { storeSlug } = useParams();
 
-  const storeLogo = currentStore?.logo_url || currentStore?.logoUrl || logoImg;
+  const storeLogo = currentStore?.logo_url || (currentStore as any)?.logoUrl || logoImg;
 
-  const defaultRedirect = storeSlug ? `/${storeSlug}/admin` : '/';
-  const from = (location.state as any)?.from?.pathname || defaultRedirect;
+  const targetSlug = storeSlug || 'acaidodudu';
+  const defaultRedirect = `/${targetSlug}/admin`;
+  const rawFrom = (location.state as any)?.from?.pathname;
+  const from = (rawFrom && rawFrom !== '/' && !rawFrom.endsWith('/login')) ? rawFrom : defaultRedirect;
+
+  // Auto-redirect if user already has an active session
+  useEffect(() => {
+    if (session && !authLoading) {
+      navigate(from, { replace: true });
+    }
+  }, [session, authLoading, navigate, from]);
 
   useEffect(() => {
     const checkSavedCredentials = async () => {
@@ -98,7 +109,7 @@ const LoginPage: React.FC = () => {
 
         <div className="text-center mb-8">
           <h2 className="text-2xl font-black text-white tracking-tight flex items-center justify-center gap-2">
-            Painel Administrativo <Sparkles className="w-5 h-5 text-purple-400" />
+            Painel Administrativo
           </h2>
           <p className="text-xs font-semibold text-purple-300 uppercase tracking-widest mt-1">
             Açaí do Dudu • Sistema PDV
@@ -160,7 +171,7 @@ const LoginPage: React.FC = () => {
 
           {error && (
             <div className="p-3 bg-red-900/30 border border-red-500/40 rounded-xl text-red-400 text-xs font-medium text-center animate-shake">
-              ⚠️ {error}
+              {error}
             </div>
           )}
 

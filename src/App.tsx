@@ -84,7 +84,6 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
         <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-6 text-center">
           <div className="bg-gray-800 p-8 rounded-2xl border border-gray-700 shadow-2xl max-w-md w-full flex flex-col items-center">
             <div className="w-16 h-16 bg-red-500/20 text-red-500 rounded-full flex items-center justify-center mb-4 text-2xl font-black">
-              ⚠️
             </div>
             <h1 className="text-xl font-extrabold text-white mb-2">Ops! Ocorreu um Erro de Interface</h1>
             <p className="text-xs text-gray-400 mb-6 bg-gray-900/80 p-3 rounded-lg w-full text-left font-mono break-all max-h-32 overflow-y-auto border border-gray-700">
@@ -97,7 +96,7 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
               }}
               className="w-full py-3 bg-purple-600 hover:bg-purple-700 active:scale-95 text-white font-bold rounded-xl shadow-lg transition-all text-sm uppercase tracking-wider flex items-center justify-center gap-2"
             >
-              🔄 Recarregar Sistema
+              Recarregar Sistema
             </button>
           </div>
         </div>
@@ -174,13 +173,17 @@ const App: React.FC = () => {
 
 // Helper component to decide what to render at root '/'
 const RootRoute: React.FC = () => {
-  const { currentStore, loading } = useStore();
+  const { currentStore, loading: storeLoading } = useStore();
+  const { session, loading: authLoading } = useAuth();
   const isElectron = /Electron/i.test(navigator.userAgent);
 
-  if (loading) return <div className="flex items-center justify-center h-screen bg-background"><div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
+  if (storeLoading || authLoading) return <div className="flex items-center justify-center h-screen bg-background"><div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
 
-  // If in Electron, always redirect to admin login
+  // If in Electron, check if user is already authenticated
   if (isElectron) {
+    if (session) {
+      return <Navigate to="/acaidodudu/admin" replace />;
+    }
     return <Navigate to="/acaidodudu/login" replace />;
   }
 
@@ -190,7 +193,6 @@ const RootRoute: React.FC = () => {
   }
 
   // If no store loaded at root, redirect to default path-based store
-  // In a real SaaS, this would be the Landing Page
   return <Navigate to="/acaidodudu" replace />;
 };
 

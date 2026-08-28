@@ -8,6 +8,7 @@ Abra o arquivo `package.json` e aumente o número da versão.
 _Exemplo:_ De `"version": "1.0.0"` para `"version": "1.0.1"`.
 
 > 💡 **Dica:** Se você me pedir "Prepare uma nova versão", eu posso fazer isso para você!
+> ⚠️ **REGRA OBRIGATÓRIA (IA)**: Sempre que for gerar um novo .exe de produção, incrementar a versão no `package.json` antes de compilar.
 
 ## 2. Gerar o Executável (Build)
 

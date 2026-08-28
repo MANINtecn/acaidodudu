@@ -206,7 +206,7 @@ DICA: Agilize seu pedido no nosso APP e participe do SELO DE FIDELIDADE.
                                 <MessageSquare size={32} />
                             </div>
                             <div>
-                                <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight">WhatsApp AI Agent (Local)</h2>
+                                <h2 className="text-2xl font-black text-gray-900 dark:text-white uppercase tracking-tight">Atendimento WhatsApp (Local)</h2>
                                 <button 
                                     onClick={handleToggleLocalBot}
                                     className="flex items-center gap-2 mt-1 hover:opacity-80 transition-opacity group"
@@ -278,7 +278,7 @@ DICA: Agilize seu pedido no nosso APP e participe do SELO DE FIDELIDADE.
                                 </div>
 
                                 <div className="md:col-span-2 space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">📍 Número de Teste (Bypass)</label>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Número de Teste (Bypass)</label>
                                     <input 
                                         type="text"
                                         value={bypassNumber}
@@ -321,7 +321,7 @@ DICA: Agilize seu pedido no nosso APP e participe do SELO DE FIDELIDADE.
                                 </div>
 
                                 <div className="space-y-2">
-                                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">📱 Número da Estância (Robô)</label>
+                                    <label className="text-[10px] font-black text-gray-400 uppercase ml-1">Número da Estância</label>
                                     <div className="relative group">
                                         <input 
                                             type="text"
@@ -381,7 +381,7 @@ DICA: Agilize seu pedido no nosso APP e participe do SELO DE FIDELIDADE.
                                 <button 
                                     type="button"
                                     onClick={() => {
-                                        if (window.confirm("⚠️ ATENÇÃO: Isso parará o robô, apagará a conexão atual (QR Code) e LIMPARÁ O HISTÓRICO de conversas do banco de dados. Use se o robô estiver travado ou se quiser começar do zero. Continuar?")) {
+                                        if (window.confirm("ATENÇÃO: Isso parará o robô, apagará a conexão atual (QR Code) e LIMPARÁ O HISTÓRICO de conversas do banco de dados. Use se o robô estiver travado ou se quiser começar do zero. Continuar?")) {
                                             setBtzapToken('');
                                             setInstanceNumber('');
                                             (window as any).electron.resetWhatsAppSession();

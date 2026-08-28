@@ -1,7 +1,7 @@
 {
   "name": "acai-do-dudu",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.0.18",
   "description": "Sistema de PDV Açaí do Dudu",
   "author": "TECX SISTEMAS",
   "main": "main.js",
@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "electron:dev": "concurrently \"npm run dev\" \"electron .\"",
     "build:bot": "esbuild servidor.ts --bundle --platform=node --format=cjs --outfile=servidor.cjs --external:electron --external:path --external:fs --external:os --external:http",
-    "electron:build": "npm run build:bot && vite build --base=./ && electron-builder"
+    "electron:build": "npm run build:bot && vite build --base=./ && electron-builder --win nsis"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.3",
@@ -59,6 +59,7 @@
     "appId": "com.acaidodudu.pdv",
     "productName": "Açaí do Dudu PDV",
     "copyright": "Copyright © 2026 TECX SISTEMAS",
+    "compression": "normal",
     "icon": "build/icon.ico",
     "directories": {
       "output": "dist-electron"
@@ -82,20 +83,10 @@
       "servidor.cjs",
       "servidor.js",
       "package.json",
-      "resources/**/*",
-      "node_modules/**/*"
+      "resources/**/*"
     ],
     "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": ["x64", "ia32"]
-        },
-        {
-          "target": "portable",
-          "arch": ["x64", "ia32"]
-        }
-      ],
+      "target": "nsis",
       "icon": "build/icon.ico",
       "requestedExecutionLevel": "asInvoker"
     },
@@ -105,7 +96,7 @@
       "allowElevation": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Açaí do Dudu PDV"
+      "shortcutName": "Acai do Dudu PDV"
     },
     "portable": {
       "artifactName": "AcaiDoDuduPDV-Portable.exe"

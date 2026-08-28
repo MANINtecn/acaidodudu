@@ -123,6 +123,19 @@ const AdminPage = () => {
     useEffect(() => {
         settingsRef.current = settings;
     }, [settings]);
+
+    // Trava o scroll da PAGINA enquanto o painel admin esta aberto.
+    // O painel e h-screen: tudo que precisa rolar rola DENTRO dele. Sem esta
+    // trava, qualquer conteudo que exceda a tela faz o <body> rolar e revela o
+    // bloco da aba seguinte (era o "Pedidos invadindo o Balcao").
+    // Escopado ao admin: paginas de cliente/login seguem rolando normalmente.
+    useEffect(() => {
+        const anterior = document.body.style.overflow;
+        document.body.style.overflow = 'hidden';
+        return () => {
+            document.body.style.overflow = anterior;
+        };
+    }, []);
     const [promotions, setPromotions] = useState<Promotion[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
@@ -1159,7 +1172,10 @@ const AdminPage = () => {
             </aside>
 
             {/* Main Content */}
-            <main className={`flex-1 transition-all duration-300 flex flex-col ${activeTab === 'orders' || activeTab === 'kitchen' || activeTab === 'counter' ? 'overflow-hidden' : 'overflow-y-auto'} ${activeTab === 'counter' || activeTab === 'kitchen' ? 'p-0' : 'p-4 md:p-6'}`}>
+            {/* min-h-0: sem isto o <main> assume a altura do conteudo (padrao do flex)
+                e estica a pagina, fazendo o conteudo da aba seguinte ficar alcancavel
+                por scroll. Ver claude-acai.md, Regra 7. */}
+            <main className={`flex-1 min-h-0 transition-all duration-300 flex flex-col ${activeTab === 'orders' || activeTab === 'kitchen' || activeTab === 'counter' ? 'overflow-hidden' : 'overflow-y-auto'} ${activeTab === 'counter' || activeTab === 'kitchen' ? 'p-0' : 'p-4 md:p-6'}`}>
                 {/* Mobile Header (Hidden in Kitchen Mode) */}
                 {activeTab !== 'kitchen' && (
                     <div className="md:hidden flex items-center justify-between mb-4 bg-white dark:bg-gray-800 p-4 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">

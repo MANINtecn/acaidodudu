@@ -87,6 +87,22 @@ ipcMain.handle("get-app-version", () => {
   return app.getVersion();
 });
 
+// Salva o log da balanca num .txt na Area de Trabalho. Existe porque copiar o
+// log da tela e frageil (o operador perdeu um log ao tentar copiar) e porque
+// diagnostico de hardware precisa sobreviver a um fechamento do app.
+ipcMain.handle("salvar-log-balanca", (event, texto) => {
+  try {
+    const destino = path.join(
+      app.getPath("desktop"),
+      `balanca-log-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.txt`
+    );
+    fs.writeFileSync(destino, String(texto ?? ""), "utf8");
+    return { ok: true, caminho: destino };
+  } catch (err) {
+    return { ok: false, erro: err?.message || String(err) };
+  }
+});
+
 
 // Native Silent Print Server (Option 2)
 
@@ -271,12 +287,43 @@ function createWindow() {
   const ses = mainWindow.webContents.session;
   ses.on('select-serial-port', (event, portList, webContents, callback) => {
     event.preventDefault();
-    if (portList && portList.length > 0) {
-      // Auto-select the connected USB/COM scale port
-      callback(portList[0].portId);
-    } else {
+
+    if (!portList || portList.length === 0) {
       callback('');
+      return;
     }
+
+    // ATENCAO: NAO usar portList[0] as cegas.
+    // Esta maquina tem 9 portas COM e 8 sao "Serial Padrao por link Bluetooth",
+    // que NAO abrem. Pegar a primeira fazia a conexao falhar sempre com
+    // "Failed to execute 'open' on 'SerialPort'". Ver claude-acai.md, Regra 8.
+    //
+    // A balanca e um conversor USB-Serial (Prolific PL2303, VID 067B).
+    // Filtramos as Bluetooth e priorizamos os chips USB-Serial conhecidos.
+    const ehBluetooth = (p) => {
+      const nome = (p.displayName || '').toLowerCase();
+      const caminho = (p.portName || p.portId || '').toLowerCase();
+      return nome.includes('bluetooth') || caminho.includes('bthenum');
+    };
+
+    // VIDs dos conversores USB-Serial mais comuns em balancas/impressoras:
+    // 067B Prolific (a desta loja) | 0403 FTDI | 10C4 Silicon Labs | 1A86 CH340
+    const VIDS_USB_SERIAL = ['067b', '0403', '10c4', '1a86', '2341'];
+
+    const candidatas = portList.filter((p) => !ehBluetooth(p));
+
+    const preferida =
+      candidatas.find((p) => VIDS_USB_SERIAL.includes(String(p.vendorId || '').toLowerCase())) ||
+      candidatas[0] ||
+      portList[0];
+
+    console.log(
+      '[BALANCA] portas:',
+      portList.map((p) => `${p.portName || p.portId}=${p.displayName || '?'}`).join(' | ')
+    );
+    console.log('[BALANCA] escolhida:', preferida.portName || preferida.portId, preferida.displayName || '');
+
+    callback(preferida.portId);
   });
 
   ses.setPermissionCheckHandler((webContents, permission) => {

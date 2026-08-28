@@ -372,7 +372,7 @@ export default function WaiterPage() {
             setIsCartOpen(false);
             setIsCheckoutModalOpen(false);
             
-            showNotify('Mesa fechada com sucesso! 💰', 'success');
+            showNotify('Mesa fechada com sucesso!', 'success');
 
         } catch (error) {
             console.error("Checkout error:", error);

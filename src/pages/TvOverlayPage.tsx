@@ -160,11 +160,9 @@ const TvOverlayPage: React.FC = () => {
       {showFooterAd && (
         <div className="absolute bottom-[1px] left-0 w-full bg-gradient-to-r from-orange-600 via-amber-500 to-orange-600 border-t-[6px] border-yellow-400 py-3 z-30 opacity-95 shadow-[0_-10px_30px_rgba(0,0,0,0.5)] animate-in slide-in-from-bottom-8 duration-700">
           <div className="flex justify-center items-center gap-6">
-             <span className="text-yellow-400 text-5xl animate-bounce">🇧🇷</span>
              <p className="text-white text-[27px] font-black tracking-widest uppercase drop-shadow-[0_4px_4px_rgba(0,0,0,0.9)]">
                GOL DO BRASIL MERECE SORTEIO! FIQUE ATENTO!
              </p>
-             <span className="text-yellow-400 text-5xl animate-bounce">🎁</span>
           </div>
         </div>
       )}
