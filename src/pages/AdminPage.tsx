@@ -23,13 +23,15 @@ import {
     History,
     Menu,
     X as LucideX,
-    Search
+    Search,
+    MapPin
 } from 'lucide-react';
 import { normalizeString } from '../utils/searchUtils';
 import CounterTab from '../components/CounterTab';
 import RaffleTab from '../components/RaffleTab';
 import { AdsTab } from '../components/AdsTab';
 import { ReviewsTab } from '../components/ReviewsTab';
+import { DeliveryZonesManager } from '../components/DeliveryZonesManager';
 import {
     fetchMenuForAdmin,
     createCategory,
@@ -1088,6 +1090,9 @@ const AdminPage = () => {
                     <button onClick={() => setActiveTab('ads')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'ads' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <ImageIcon size={20} /> Propagandas
                     </button>
+                    <button onClick={() => setActiveTab('delivery-zones')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'delivery-zones' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                        <MapPin size={20} /> Taxas de Entrega
+                    </button>
                     <button onClick={() => navigate(`/${currentStore.slug}/entregador`)} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700">
                         <Bike size={20} /> Área do Entregador
                     </button>
@@ -1532,6 +1537,10 @@ const AdminPage = () => {
                 )}
                 
                 {activeTab === 'ads' && <AdsTab />}
+
+                {activeTab === 'delivery-zones' && currentStore && (
+                    <DeliveryZonesManager storeId={currentStore.id} />
+                )}
 
                 {activeTab === 'reviews' && currentStore && (
                     <ReviewsTab storeId={currentStore.id} />
