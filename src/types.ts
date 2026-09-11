@@ -206,6 +206,24 @@ export interface Settings {
    * undefined = true (comportamento historico, nao quebra quem ja usa).
    */
   autoPrintDineIn?: boolean;
+  /** Som do alerta de pedido novo: 'sino' | 'alarme' | 'campainha'. */
+  sireneTipo?: string;
+  /** Volume do alerta. 1 = normal, ate 10 para ambiente barulhento. */
+  sireneVolume?: number;
+
+  // ── PIX + comprovante pelo WhatsApp (tela pos-pedido do cliente) ──
+  /** Liga a tela com a chave PIX e o botao de enviar comprovante. */
+  pixEnabled?: boolean;
+  /** A chave em si. Ex.: 44344954000197 */
+  pixKey?: string;
+  /** CNPJ | CPF | Celular | E-mail | Aleatoria */
+  pixKeyType?: string;
+  /** Nome que aparece para o cliente conferir antes de pagar. */
+  pixBeneficiary?: string;
+  /** WhatsApp da loja que recebe o comprovante (so digitos, com DDD). */
+  storeWhatsapp?: string;
+  /** Modelo do resumo enviado. Aceita as marcas {{...}} — ver MODELO_PADRAO. */
+  pixResumoTemplate?: string;
   kitchenPrinter?: string;
   kitchenPrinterPaperWidth?: '58mm' | '80mm';
   barPrinter?: string;

@@ -3,6 +3,8 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../contexts/StoreContext';
 import LoyaltyProfileModal from '../components/LoyaltyProfileModal';
+import PixPosPedido from '../components/PixPosPedido';
+import type { DadosResumo } from '../services/resumoPedidoService';
 import { 
     Category, MenuItem, Addon, Order, Settings, Customer, Promotion,
     OrderType, PaymentMethod, CartItem, DeliveryZone 
@@ -831,6 +833,8 @@ const SideCart: React.FC<{
         const [showSuccess, setShowSuccess] = useState(false);
         const [lastOrderId, setLastOrderId] = useState<string | undefined>(undefined);
         const [submitMessage, setSubmitMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+        /** Dados do pedido recem-fechado, para a tela de PIX. null = nao mostrar. */
+        const [dadosPix, setDadosPix] = useState<DadosResumo | null>(null);
         const minOrderValue = settings?.minOrderValue ?? MIN_ORDER_VALUE;
 
         const subtotal = useMemo(() => {
@@ -965,7 +969,37 @@ const SideCart: React.FC<{
                     onClearCart();
                     if (setOrderDiscount) setOrderDiscount(0); // Reset discount
                     setLastOrderId(createdOrder.id);
-                    setShowSuccess(true);
+
+                    // Tela de PIX: so quando a loja ativou E o pagamento e PIX.
+                    if (settings?.pixEnabled && paymentMethod === 'PIX' && settings?.pixKey) {
+                        setDadosPix({
+                            numeroPedido: createdOrder.dailyOrderNumber,
+                            nomeCliente: customerName,
+                            telefone: finalPhone,
+                            tipoPedido: orderType,
+                            endereco: orderType === 'Entrega' ? `${address}, ${houseNumber}` : undefined,
+                            bairro: selectedZone?.neighborhood_name,
+                            pontoReferencia: referencePoint,
+                            itens: finalItems.map((i: any) => ({
+                                nome: i.name,
+                                quantidade: i.quantity,
+                                preco: Number(i.price) || 0,
+                                adicionais: (i.selectedAddons || []).map((a: any) => ({
+                                    nome: a.name, preco: Number(a.price) || 0
+                                })),
+                            })),
+                            subtotal,
+                            taxaEntrega: deliveryFee,
+                            desconto: orderDiscount,
+                            total,
+                            formaPagamento: 'PIX',
+                            pixKey: settings.pixKey,
+                            pixKeyType: settings.pixKeyType,
+                            pixBeneficiary: settings.pixBeneficiary,
+                        });
+                    } else {
+                        setShowSuccess(true);
+                    }
 
                     if (settings?.webhookNewOrderUrl) {
                         triggerWebhook(settings.webhookNewOrderUrl, {
@@ -999,6 +1033,13 @@ const SideCart: React.FC<{
 
         return (
             <>
+            <PixPosPedido
+                aberto={!!dadosPix}
+                onFechar={() => { setDadosPix(null); handleCloseSuccess(); }}
+                dados={dadosPix || ({} as any)}
+                modeloResumo={settings?.pixResumoTemplate}
+                whatsappLoja={settings?.storeWhatsapp}
+            />
                 {isOpen && <div className="fixed inset-0 bg-black bg-opacity-50 z-40" onClick={onClose}></div>}
                 <div className={`fixed top-0 right-0 h-full w-full md:w-96 bg-surface shadow-2xl z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'} flex flex-col`}>
                     <div className="p-2 bg-primary text-background flex justify-between items-center">

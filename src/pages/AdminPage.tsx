@@ -35,6 +35,7 @@ import { ReviewsTab } from '../components/ReviewsTab';
 import { DeliveryZonesManager } from '../components/DeliveryZonesManager';
 import ComandosTab from '../components/ComandosTab';
 import { reservarImpressao, liberarImpressao, liberarTodasAsVias } from '../services/impressaoLockService';
+import { tocarSirene, type TipoSirene } from '../services/sireneService';
 import {
     fetchMenuForAdmin,
     createCategory,
@@ -166,12 +167,14 @@ const AdminPage = () => {
     // F5 recarrega a página por padrão: o preventDefault abaixo impede isso.
     useEffect(() => {
         const aoTeclar = (e: KeyboardEvent) => {
-            // Mesma trava do CounterTab: efeito sem array de dependências
-            // reinstala o listener a cada render e o evento chegava duas vezes.
+            // Filtra a tecla ANTES de marcar o evento. Marcar primeiro fazia o
+            // F4 falhar de forma intermitente: o CounterTab tem outro listener
+            // no mesmo window, e o evento podia sair daqui já marcado e ser
+            // descartado antes de virar troca de aba. Ver Regra 10.
+            if (e.key !== 'F4' && e.key !== 'F5' && e.key !== 'F6') return;
+
             if ((e as any).__pdvNav) return;
             (e as any).__pdvNav = true;
-
-            if (e.key !== 'F4' && e.key !== 'F5' && e.key !== 'F6') return;
 
             // Não sequestra a tecla com um modal aberto (checkout, editar pedido...).
             const temModalAberto = isEditOrderModalOpen || isCheckoutModalOpen;
@@ -305,7 +308,12 @@ const AdminPage = () => {
                 const hasNew = ordersData.some(o => !ordersRef.current.find(lo => lo.id === o.id));
                 if (hasNew && notificationSound.current) {
                     console.log(`[Polling] New order(s) detected via polling. Playing sound.`);
-                    notificationSound.current.play().catch(e => console.warn('Sound play blocked:', e));
+                    // Sirene gerada no app (sireneService): funciona sem internet e o volume
+                    // vai alem do que um <audio> permite. Ver Configuracoes -> Alerta Sonoro.
+                    tocarSirene(
+                        (settingsRef.current?.sireneTipo as TipoSirene) || 'sino',
+                        Number(settingsRef.current?.sireneVolume) || 3
+                    );
                 }
             }
 
@@ -337,7 +345,12 @@ const AdminPage = () => {
                 
                 // Play sound for all new orders IMMEDIATELY
                 if (notificationSound.current) {
-                    notificationSound.current.play().catch(e => console.warn('Sound play blocked:', e));
+                    // Sirene gerada no app (sireneService): funciona sem internet e o volume
+                    // vai alem do que um <audio> permite. Ver Configuracoes -> Alerta Sonoro.
+                    tocarSirene(
+                        (settingsRef.current?.sireneTipo as TipoSirene) || 'sino',
+                        Number(settingsRef.current?.sireneVolume) || 3
+                    );
                 }
 
                 showNotify(`Novo pedido recebido!`, 'success');

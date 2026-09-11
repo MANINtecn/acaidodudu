@@ -636,6 +636,14 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     printerPaperWidth: '80mm',
     printerCompatibilityMode: false,
     autoPrintDineIn: true,   // padrao: imprime sozinho (comportamento historico)
+    sireneTipo: 'sino',
+    sireneVolume: 3,
+    pixEnabled: false,
+    pixKey: '',
+    pixKeyType: 'CNPJ',
+    pixBeneficiary: '',
+    storeWhatsapp: '',
+    pixResumoTemplate: '',
     kitchenPrinter: undefined,
     kitchenPrinterPaperWidth: '80mm',
     barPrinter: undefined,
@@ -692,6 +700,14 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
 
         printerCompatibilityMode: dbData?.printer_compatibility_mode ?? dbData?.printerCompatibilityMode ?? defaultSettings.printerCompatibilityMode,
         autoPrintDineIn: dbData?.auto_print_dine_in ?? dbData?.autoPrintDineIn ?? defaultSettings.autoPrintDineIn,
+        sireneTipo: dbData?.sirene_tipo ?? dbData?.sireneTipo ?? defaultSettings.sireneTipo,
+        sireneVolume: Number(dbData?.sirene_volume ?? dbData?.sireneVolume ?? defaultSettings.sireneVolume),
+        pixEnabled: dbData?.pix_enabled ?? dbData?.pixEnabled ?? defaultSettings.pixEnabled,
+        pixKey: dbData?.pix_key ?? dbData?.pixKey ?? defaultSettings.pixKey,
+        pixKeyType: dbData?.pix_key_type ?? dbData?.pixKeyType ?? defaultSettings.pixKeyType,
+        pixBeneficiary: dbData?.pix_beneficiary ?? dbData?.pixBeneficiary ?? defaultSettings.pixBeneficiary,
+        storeWhatsapp: dbData?.store_whatsapp ?? dbData?.storeWhatsapp ?? defaultSettings.storeWhatsapp,
+        pixResumoTemplate: dbData?.pix_resumo_template ?? dbData?.pixResumoTemplate ?? defaultSettings.pixResumoTemplate,
         kitchenPrinter: dbData?.kitchen_printer ?? dbData?.kitchenPrinter ?? defaultSettings.kitchenPrinter,
         kitchenPrinterPaperWidth: dbData?.kitchen_printer_paper_width ?? dbData?.kitchenPrinterPaperWidth ?? defaultSettings.kitchenPrinterPaperWidth,
         barPrinter: dbData?.bar_printer ?? dbData?.barPrinter ?? defaultSettings.barPrinter,
@@ -934,7 +950,10 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
         'courierPrinter', 'courierPrinterPaperWidth',
         'preferredPrinter', 'printerPaperWidth',
         'printerCompatibilityMode',
-        'autoPrintDineIn'
+        'autoPrintDineIn',
+        'sireneTipo', 'sireneVolume',
+        'pixEnabled', 'pixKey', 'pixKeyType', 'pixBeneficiary',
+        'storeWhatsapp', 'pixResumoTemplate'
     ];
 
     printerFields.forEach(field => {

@@ -530,6 +530,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // "Item Avulso".
             if (digitando || modalAbertoRef.current) return;
 
+            // F4/F5/F6 sao da NAVEGACAO (AdminPage). Sair antes de marcar o
+            // evento — senao o F4 falhava de forma intermitente, dependendo de
+            // qual listener rodava primeiro.
+            if (e.key === 'F4' || e.key === 'F5' || e.key === 'F6') return;
+
             // Trava anti-duplicidade (ver comentário no addEventListener):
             // o mesmo evento chegava duas vezes e o produto entrava em dobro.
             if ((e as any).__pdvTratado) return;

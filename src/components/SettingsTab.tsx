@@ -13,10 +13,13 @@ import {
     ExternalLink,
     Upload,
     CheckCheck,
-    Scale
+    Scale,
+    Volume2
 } from 'lucide-react';
 import { Settings, Category } from '../types';
 import EstacaoImpressao from './EstacaoImpressao';
+import PixWhatsappConfig from './PixWhatsappConfig';
+import { SIRENES, testarSirene, VOLUME_MAXIMO, type TipoSirene } from '../services/sireneService';
 import { uploadLogoToStorage } from '../services/supabaseService';
 import { printOrder, generateReceiptText } from '../services/printerService';
 import { requestSerialPort } from '../services/scaleService';
@@ -373,6 +376,75 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                             />
                         </div>
                     </div>
+                </div>
+
+                <PixWhatsappConfig formData={formData} setFormData={setFormData} />
+
+                {/* ALERTA SONORO — som gerado no app, funciona sem internet.
+                    O som anterior vinha de uma URL externa com volume fixo em 0.8. */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-purple-200 dark:border-purple-900/30">
+                    <h3 className="text-lg font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                        <Volume2 size={20} className="text-purple-600 dark:text-purple-400" /> Alerta de Pedido Novo
+                    </h3>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                        Som que toca quando entra pedido. Funciona mesmo sem internet.
+                    </p>
+
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Som</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+                        {SIRENES.map(op => (
+                            <button
+                                key={op.valor}
+                                type="button"
+                                onClick={() => {
+                                    setFormData(prev => ({ ...prev, sireneTipo: op.valor }));
+                                    testarSirene(op.valor, Number(formData.sireneVolume) || 3);
+                                }}
+                                className={`text-left p-3 rounded-lg border-2 transition-all ${
+                                    (formData.sireneTipo || 'sino') === op.valor
+                                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                                        : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
+                                }`}
+                            >
+                                <span className={`block text-sm font-bold ${
+                                    (formData.sireneTipo || 'sino') === op.valor
+                                        ? 'text-purple-700 dark:text-purple-300'
+                                        : 'text-gray-900 dark:text-gray-100'
+                                }`}>{op.nome}</span>
+                                <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{op.descricao}</span>
+                            </button>
+                        ))}
+                    </div>
+
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Volume: <span className="font-bold text-purple-600 dark:text-purple-400">{Number(formData.sireneVolume) || 3}</span>
+                        <span className="text-gray-400 font-normal"> / {VOLUME_MAXIMO}</span>
+                    </label>
+                    <div className="flex items-center gap-3">
+                        <input
+                            type="range"
+                            min={1}
+                            max={VOLUME_MAXIMO}
+                            step={1}
+                            value={Number(formData.sireneVolume) || 3}
+                            onChange={e => setFormData(prev => ({ ...prev, sireneVolume: parseInt(e.target.value, 10) }))}
+                            className="flex-1 accent-purple-600"
+                        />
+                        <button
+                            type="button"
+                            onClick={() => testarSirene(
+                                (formData.sireneTipo as TipoSirene) || 'sino',
+                                Number(formData.sireneVolume) || 3
+                            )}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold text-sm whitespace-nowrap active:scale-95 transition-all"
+                        >
+                            Ouvir
+                        </button>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-2">
+                        Volume 3 e o normal. Acima disso o som e amplificado — util para cozinha barulhenta.
+                        Clique em um som para ouvir.
+                    </p>
                 </div>
 
                 <EstacaoImpressao impressorasDisponiveis={availablePrinters} />

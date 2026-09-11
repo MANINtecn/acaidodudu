@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Order, PaymentMethod } from '../types';
 import { X, DollarSign, CreditCard, Banknote, Calculator, Printer } from 'lucide-react';
 
@@ -24,8 +24,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
     const [discount, setDiscount] = useState<string>('');
     const [tax, setTax] = useState<string>('');
     const [isProcessing, setIsProcessing] = useState(false);
+    /** Garante que o foco inicial aconteca UMA vez por abertura do modal. */
+    const jaFocou = useRef(false);
 
     useEffect(() => {
+        if (!isOpen) {
+            jaFocou.current = false;   // proxima abertura foca de novo
+        }
         if (isOpen) {
             setMethod(order.paymentMethod || 'Dinheiro');
             setAmountTendered('');
@@ -106,7 +111,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
             className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
             onKeyDown={aoTeclar}
             tabIndex={-1}
-            ref={(el) => el?.focus()}
+            ref={(el) => {
+                // Focar SO na abertura. Antes era `el?.focus()` direto, que roda
+                // a cada render — e o React re-renderiza a cada tecla digitada.
+                // Resultado: o foco era roubado do campo de volta para o
+                // container, parecendo um "tab" forcado, e o operador nao
+                // conseguia digitar o valor no fechamento da conta.
+                if (el && !jaFocou.current) {
+                    jaFocou.current = true;
+                    el.focus();
+                }
+            }}
         >
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Header */}
