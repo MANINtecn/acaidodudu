@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, memo, useRef } from 'react';
+import { useState, useMemo, useEffect, memo, useRef, useCallback } from 'react';
 import { Plus, Minus, Trash2, Search, X, Bike, ShoppingBag, LogOut, Percent, Scale, Grid, ChevronDown } from 'lucide-react';
 import type { Category, MenuItem, Addon, CartItem, OrderType, PaymentMethod, Settings, OrderStatus, Customer, Order, Promotion } from '../types';
 import { fetchOpenOrderForTable, fetchCustomerByPhone, upsertCustomer, searchCustomers } from '../services/supabaseService';
@@ -48,6 +48,20 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     const [isScaleDiagOpen, setIsScaleDiagOpen] = useState(false);
     const [scaleRawLines, setScaleRawLines] = useState<string[]>([]);
 
+    // ── ATALHO DE TECLADO DA BALANÇA ──────────────────────────────
+    // Fluxo do balcão: pesa → digita o número da mesa → Enter → lançou.
+    // Produtos usam código a partir de 100, então 1–30 nunca colide com produto.
+    const [teclasMesa, setTeclasMesa] = useState('');           // dígitos em digitação
+    const [nomeAberto, setNomeAberto] = useState(false);        // campo de nome na confirmação
+    const campoNomeRef = useRef<HTMLInputElement>(null);
+    const [avisoAtalho, setAvisoAtalho] = useState<{
+        // 'enviar' = montado e aguardando o ENTER de confirmacao
+        tipo: 'ok' | 'somou' | 'erro' | 'confirmar' | 'enviar';
+        titulo: string;
+        detalhe?: string;
+        mesa?: number;
+    } | null>(null);
+
     // Sync scalePricePerKg from settings
     useEffect(() => {
         if (settings?.scalePricePerKg) {
@@ -87,10 +101,26 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             }
         });
 
-        // Reconecta a uma porta já autorizada, sem abrir o seletor.
-        connectScale(settings?.scaleBaudRate || 9600, false);
+        // Reconexao AUTOMATICA e continua. Na loja o operador nao pode ficar
+        // clicando em "Conectar USB": o PDV abre de manha e a balanca tem que
+        // aparecer sozinha. Tentamos a cada 5s enquanto nao estiver lendo, e
+        // seguimos vigiando depois (se o cabo cair, reconecta sozinho).
+        let ativo = true;
+        const tentarConectar = () => {
+            if (!ativo) return;
+            const st = getScaleSnapshot().status;
+            if (st === 'stable' || st === 'unstable' || st === 'waiting' || st === 'connecting') return;
+            connectScale(settings?.scaleBaudRate || 9600, false);
+        };
+
+        tentarConectar();
+        // 20s (nao 5s): a porta ocupada nao se libera em segundos, e tentar
+        // rapido demais so enche o log e cria concorrencia de open().
+        const idReconexao = setInterval(tentarConectar, 20000);
 
         return () => {
+            ativo = false;
+            clearInterval(idReconexao);
             unsubscribe();
         };
     }, [settings?.isScaleEnabled, settings?.scaleProtocol, settings?.scaleBaudRate]);
@@ -130,6 +160,34 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         });
         return statuses;
     }, [activeOrders]);
+
+    // Bipe via WebAudio: não depende de arquivo de som nem de permissão.
+    const bipar = useCallback((tipo: 'ok' | 'somou' | 'erro') => {
+        try {
+            const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+            if (!Ctx) return;
+            const ctx = new Ctx();
+            // ok: 1 bipe agudo | somou: 2 bipes | erro: 1 bipe grave e longo
+            const notas = tipo === 'erro' ? [{ f: 220, t: 0, d: 0.35 }]
+                        : tipo === 'somou' ? [{ f: 880, t: 0, d: 0.12 }, { f: 880, t: 0.18, d: 0.12 }]
+                        : [{ f: 880, t: 0, d: 0.15 }];
+            notas.forEach(({ f, t, d }) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.frequency.value = f;
+                osc.type = 'sine';
+                gain.gain.setValueAtTime(0.18, ctx.currentTime + t);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + d);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(ctx.currentTime + t);
+                osc.stop(ctx.currentTime + t + d);
+            });
+            setTimeout(() => ctx.close?.(), 900);
+        } catch (_) {
+            // Sem áudio disponível: o aviso visual já cobre.
+        }
+    }, []);
 
     const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
 
@@ -336,6 +394,308 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             setIsTableModalOpen(true);
         }
     };
+
+    /**
+     * Lança o peso da balança direto numa mesa, pelo teclado.
+     * `forcarReabertura` = o operador confirmou com ESC numa mesa que já
+     * pediu a conta: reabrimos a mesa e lançamos.
+     */
+    const lancarPesoNaMesa = (numeroMesa: number, forcarReabertura = false) => {
+        const TOTAL_MESAS = 30;
+
+        if (numeroMesa < 1 || numeroMesa > TOTAL_MESAS) {
+            bipar('erro');
+            setAvisoAtalho({ tipo: 'erro', titulo: `Mesa ${numeroMesa} não existe`, detalhe: `As mesas vão de 1 a ${TOTAL_MESAS}.` });
+            return;
+        }
+
+        // O atalho serve a DOIS fluxos:
+        //  a) peso na balança (açaí por quilo)
+        //  b) itens já escolhidos no carrinho (picolé, refrigerante...)
+        // Exigir peso sempre travava o caso (b), que e igualmente comum no balcao.
+        const temPeso = scaleWeight > 0 && isScaleStable;
+        const temCarrinho = cart.length > 0;
+
+        if (!temPeso && !temCarrinho) {
+            bipar('erro');
+            setAvisoAtalho({
+                tipo: 'erro',
+                titulo: 'Nada para lançar',
+                detalhe: 'Coloque o produto na balança ou escolha itens no cardápio.'
+            });
+            return;
+        }
+
+        const statusMesa = tableStatuses[numeroMesa];
+        const mesaOcupada = !!statusMesa;
+
+        // Conta já solicitada: não lançar por engano no meio do fechamento.
+        // ESC confirma, reabre a mesa e lança.
+        if (statusMesa === 'Conta Solicitada' && !forcarReabertura) {
+            bipar('erro');
+            setAvisoAtalho({
+                tipo: 'confirmar',
+                mesa: numeroMesa,
+                titulo: `Mesa ${numeroMesa} está fechando a conta`,
+                detalhe: 'Pressione ESC para reabrir a mesa e lançar mesmo assim.'
+            });
+            return;
+        }
+
+        const precoKg = scalePricePerKg || 60;
+
+        setSelectedTable(String(numeroMesa));
+        setOrderType('Balcão');
+
+        // Valor do que ja esta no carrinho (picole, refri, itens do cardapio).
+        const valorCarrinho = cart.reduce((soma, item) => {
+            const preco = Number(item.price) || 0;
+            const qtd = Number(item.quantity) || 1;
+            const adicionais = (item.selectedAddons || [])
+                .reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
+            return soma + (preco + adicionais) * qtd;
+        }, 0);
+
+        // So adiciona o item de balanca se houver peso; senao vai so o carrinho.
+        const valorPeso = temPeso ? scaleWeight * precoKg : 0;
+        if (temPeso) {
+            handleScaleItemAdd(scaleWeight, scaleItemName || 'Açaí/Sorvete por Quilo', precoKg);
+        }
+
+        const valor = valorPeso + valorCarrinho;
+
+        // Descricao do que foi lancado, conforme o caso.
+        const descricao = temPeso && valorCarrinho > 0
+            ? `${scaleWeight.toFixed(3)} kg + ${cart.length} item(ns)`
+            : temPeso
+                ? `${scaleWeight.toFixed(3)} kg`
+                : `${cart.length} item(ns)`;
+
+        // O pedido NAO e enviado aqui. O operador confere o aviso e aperta ENTER
+        // de novo (ou F2) para enviar — decisao do Icaro: um toque a mais em
+        // troca da chance de perceber a mesa errada antes de gravar.
+        if (mesaOcupada) {
+            // Mesa ocupada = normalmente a segunda rodada da mesma mesa.
+            // Somamos, mas deixamos MUITO claro que já havia pedido lá.
+            const jaNaMesa = activeOrders
+                .filter(o => o.table_number === numeroMesa)
+                .reduce((s, o) => s + (o.total || 0), 0);
+            bipar('somou');
+            setAvisoAtalho({
+                tipo: 'enviar',
+                mesa: numeroMesa,
+                titulo: `MESA ${numeroMesa} · +${descricao} · R$ ${valor.toFixed(2)}`,
+                detalhe: `Mesa já tinha R$ ${jaNaMesa.toFixed(2)} · Ficará R$ ${(jaNaMesa + valor).toFixed(2)}  —  ENTER confirma · ESC cancela`
+            });
+        } else {
+            bipar('ok');
+            setAvisoAtalho({
+                tipo: 'enviar',
+                mesa: numeroMesa,
+                titulo: `MESA ${numeroMesa} · ${descricao} · R$ ${valor.toFixed(2)}`,
+                detalhe: 'ENTER confirma e envia · ESC cancela'
+            });
+        }
+    };
+
+    // O handler precisa enxergar o estado ATUAL (carrinho, peso, aviso...), mas
+    // reinstalar o listener a cada render deixava o app lento (o F4 chegava a
+    // demorar ~1 min). Guardamos a versão atual numa ref e registramos o
+    // listener UMA única vez.
+    const handlerTecladoRef = useRef<(e: KeyboardEvent) => void>(() => {});
+
+    // Espelho síncrono de "algum modal está aberto". Atualizado no corpo do
+    // render (não em useEffect) para nunca ficar um ciclo atrás do estado.
+    const modalAbertoRef = useRef(false);
+    modalAbertoRef.current = isTableModalOpen || isCustomItemModalOpen ||
+                             isScaleModalOpen || isCategoryModalOpen || isAddonModalOpen;
+
+    // Captura das teclas. Ignorada enquanto o foco está num campo de texto
+    // (o operador pode estar digitando nome/observação) e com modal aberto.
+    useEffect(() => {
+        const aoTeclar = (e: KeyboardEvent) => {
+            // Digitando num campo? Sai ANTES de marcar o evento. Marcar aqui
+            // fazia o campo de nome (tecla N) parecer bloqueado: o evento saía
+            // marcado daqui e o handler do próprio input o descartava.
+            const alvo = e.target as HTMLElement | null;
+            const digitando = !!alvo && (
+                alvo.tagName === 'INPUT' ||
+                alvo.tagName === 'TEXTAREA' ||
+                alvo.isContentEditable
+            );
+            // Lê da REF, não da closure. O handler vive numa ref atualizada a
+            // cada render; se ela ficasse defasada por um ciclo, o handler
+            // antigo não sabia que o modal tinha aberto e o preventDefault()
+            // abaixo engolia as teclas — foi o que travou a digitação no
+            // "Item Avulso".
+            if (digitando || modalAbertoRef.current) return;
+
+            // Trava anti-duplicidade (ver comentário no addEventListener):
+            // o mesmo evento chegava duas vezes e o produto entrava em dobro.
+            if ((e as any).__pdvTratado) return;
+            (e as any).__pdvTratado = true;
+
+            // ESC: confirma a reabertura de mesa com conta solicitada,
+            // ou simplesmente limpa o que estiver pendente na tela.
+            if (e.key === 'Escape') {
+                if (avisoAtalho?.tipo === 'confirmar' && avisoAtalho.mesa) {
+                    e.preventDefault();
+                    lancarPesoNaMesa(avisoAtalho.mesa, true);
+                    return;
+                }
+                // Cancelando um pedido montado: desfaz tambem o carrinho e a
+                // mesa, senao sobraria item "solto" para o proximo lancamento.
+                if (avisoAtalho?.tipo === 'enviar') {
+                    e.preventDefault();
+                    setCart([]);
+                    setSelectedTable('');
+                    setCustomerName('');
+                    setNomeAberto(false);
+                    setAvisoAtalho({ tipo: 'erro', titulo: 'Cancelado', detalhe: 'Nada foi enviado.' });
+                    setTeclasMesa('');
+                    return;
+                }
+                setTeclasMesa('');
+                setAvisoAtalho(null);
+                return;
+            }
+
+            if (/^[0-9]$/.test(e.key)) {
+                e.preventDefault();
+                setTeclasMesa(prev => (prev + e.key).slice(0, 4)); // mesa: 2 dígitos · código: até 4
+                setAvisoAtalho(null);
+                return;
+            }
+
+            // R: lança como RETIRADA (sem mesa). Mesmo fluxo da mesa, mas o
+            // pedido não fica preso a um número — o cliente leva embora.
+            if (e.key.toUpperCase() === 'R' && !avisoAtalho) {
+                e.preventDefault();
+                const temPesoR = scaleWeight > 0 && isScaleStable;
+                if (!temPesoR && cart.length === 0) {
+                    bipar('erro');
+                    setAvisoAtalho({ tipo: 'erro', titulo: 'Nada para lançar', detalhe: 'Coloque o produto na balança ou escolha itens.' });
+                    return;
+                }
+
+                setSelectedTable('');
+                setOrderType('Retirada');
+
+                const precoKgR = scalePricePerKg || 60;
+                const valorCarrinhoR = cart.reduce((soma, item) => {
+                    const preco = Number(item.price) || 0;
+                    const qtd = Number(item.quantity) || 1;
+                    const add = (item.selectedAddons || []).reduce((t: number, a: any) => t + (Number(a.price) || 0), 0);
+                    return soma + (preco + add) * qtd;
+                }, 0);
+                const valorPesoR = temPesoR ? scaleWeight * precoKgR : 0;
+                if (temPesoR) {
+                    handleScaleItemAdd(scaleWeight, scaleItemName || 'Açaí/Sorvete por Quilo', precoKgR);
+                }
+
+                const descR = temPesoR && valorCarrinhoR > 0
+                    ? `${scaleWeight.toFixed(3)} kg + ${cart.length} item(ns)`
+                    : temPesoR ? `${scaleWeight.toFixed(3)} kg` : `${cart.length} item(ns)`;
+
+                bipar('ok');
+                setTeclasMesa('');
+                setAvisoAtalho({
+                    tipo: 'enviar',
+                    titulo: `RETIRADA · ${descR} · R$ ${(valorPesoR + valorCarrinhoR).toFixed(2)}`,
+                    detalhe: 'ENTER confirma e envia · N para dar um nome · ESC cancela'
+                });
+                return;
+            }
+
+            // N: abre o campo de nome na tela de confirmação (opcional).
+            // Útil quando a mesa tem várias pessoas ou é retirada com nome.
+            if (e.key.toUpperCase() === 'N' && avisoAtalho?.tipo === 'enviar' && !nomeAberto) {
+                e.preventDefault();
+                setNomeAberto(true);
+                // Tenta focar por ~1s: o campo só existe depois do render, e
+                // 50ms fixos às vezes não bastavam — o campo abria sem foco e
+                // parecia bloqueado.
+                let tentativas = 0;
+                const focar = setInterval(() => {
+                    const campo = campoNomeRef.current;
+                    if (campo) { campo.focus(); campo.select(); clearInterval(focar); }
+                    else if (++tentativas > 20) clearInterval(focar);
+                }, 50);
+                return;
+            }
+
+            // 2º ENTER (ou F2): confirma e ENVIA o pedido montado.
+            if ((e.key === 'Enter' || e.key === 'F2') && avisoAtalho?.tipo === 'enviar') {
+                e.preventDefault();
+                setAvisoAtalho(null);
+                setNomeAberto(false);
+                if (!isProcessing) handleFinalize();
+                return;
+            }
+
+            // 1º ENTER: 1..30 = mesa · 100+ = código de produto.
+            if (e.key === 'Enter' && teclasMesa) {
+                e.preventDefault();
+                const numero = parseInt(teclasMesa, 10);
+                setTeclasMesa('');
+
+                if (numero >= 100) {
+                    // Código de produto: adiciona ao carrinho, sem mouse.
+                    const produto = menuItems.find(p => p.codigo === numero);
+                    if (!produto) {
+                        bipar('erro');
+                        setAvisoAtalho({ tipo: 'erro', titulo: `Código ${numero} não encontrado`, detalhe: 'Nenhum produto tem este código.' });
+                        return;
+                    }
+                    if (produto.isAvailable === false) {
+                        bipar('erro');
+                        setAvisoAtalho({ tipo: 'erro', titulo: `${produto.name}`, detalhe: 'Produto está indisponível.' });
+                        return;
+                    }
+                    addToCart(produto);
+                    bipar('ok');
+                    setAvisoAtalho({
+                        tipo: 'ok',
+                        titulo: `${produto.name} · R$ ${Number(produto.price).toFixed(2)}`,
+                        detalhe: 'Adicionado. Digite a mesa e ENTER para lançar.'
+                    });
+                    return;
+                }
+
+                lancarPesoNaMesa(numero);
+                return;
+            }
+
+            if (e.key === 'Backspace' && teclasMesa) {
+                e.preventDefault();
+                setTeclasMesa(prev => prev.slice(0, -1));
+            }
+        };
+
+        handlerTecladoRef.current = aoTeclar;
+    });
+
+    // Listener registrado UMA vez; delega para a ref, sempre atualizada.
+    useEffect(() => {
+        const despachar = (e: KeyboardEvent) => handlerTecladoRef.current?.(e);
+        window.addEventListener('keydown', despachar);
+        return () => window.removeEventListener('keydown', despachar);
+    }, []);
+
+    // Trava anti-duplicidade: este useEffect NÃO tem array de dependências
+    // (precisa enxergar o estado atual a cada render), então o listener é
+    // reinstalado com frequência — e com StrictMode o handler chegava a rodar
+    // DUAS vezes para a mesma tecla, lançando o produto em dobro.
+    // Marcamos o próprio evento: um KeyboardEvent nativo é único por tecla
+    // pressionada, então a segunda passagem reconhece e ignora.
+
+    // O aviso some sozinho. O de confirmação fica até o operador decidir.
+    useEffect(() => {
+        // 'confirmar' e 'enviar' aguardam decisão do operador: não somem sozinhos.
+        if (!avisoAtalho || avisoAtalho.tipo === 'confirmar' || avisoAtalho.tipo === 'enviar') return;
+        const id = setTimeout(() => setAvisoAtalho(null), 3500);
+        return () => clearTimeout(id);
+    }, [avisoAtalho]);
 
     const total = cart.reduce((sum, item) => {
         let itemPrice = Number(item.price) || 0;
@@ -572,7 +932,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 // LET THE DATABASE HANDLE THIS (Trigger set_daily_order_number)
                 // dailyOrderNumber: await getNextDailyOrderNumber(storeId), -> REMOVED TO FIX RACE CONDITION
                 dailyOrderNumber: 0, 
-                customerName: isAvulso ? (customerName || 'Cliente Avulso') : (orderType === 'Balcão' ? `Mesa ${selectedTable}` : (customerName || (orderType === 'Entrega' ? 'Entrega' : 'Balcão'))),
+                // Mesa COM nome digitado -> "Mesa 2 · João" (o nome ajuda a
+                // identificar quem e na hora de entregar/fechar).
+                // Sem nome, continua so "Mesa 2" como sempre foi.
+                customerName: isAvulso
+                    ? (customerName || 'Cliente Avulso')
+                    : (orderType === 'Balcão'
+                        ? (customerName ? `Mesa ${selectedTable} · ${customerName}` : `Mesa ${selectedTable}`)
+                        : (customerName || (orderType === 'Entrega' ? 'Entrega' : 'Balcão'))),
                 phone: finalPhone || undefined,
                 address: finalAddress,
                 orderType,
@@ -585,7 +952,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 table_number: (isAvulso || orderType === 'Entrega' || orderType === 'Retirada') ? undefined : parseInt(selectedTable),
                 comandaNumber: (isAvulso || orderType === 'Entrega' || orderType === 'Retirada') ? undefined : parseInt(selectedTable),
                 deliveryFee: orderType === 'Entrega' ? deliveryFee : 0,
-                origin: 'APP',
+                // 'BALCÃO' (nao 'APP'): este pedido foi lancado NO BALCAO, pelo
+                // operador. Marcado como 'APP' ele era tratado como pedido de
+                // garcom/app — imprimia "via garcom" e escapava da regra de
+                // auto-print de mesa/retirada.
+                origin: 'BALCÃO',
                 printed: false
             };
 
@@ -621,6 +992,80 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         // somado a barra da balanca, estoura o container do pai. Ver Regra 7.
         <div className="flex flex-col h-full w-full gap-4 p-4 md:p-8 bg-gray-100 dark:bg-gray-900 overflow-y-auto md:overflow-hidden font-sans">
              <Notification show={notification.show} message={notification.message} type={notification.type} onClose={() => setNotification(p => ({ ...p, show: false }))} />
+
+            {/* AVISO DO ATALHO DE TECLADO — grande e no meio da tela, para o
+                operador enxergar sem tirar os olhos da balança. */}
+            {avisoAtalho && !isCustomItemModalOpen && !isTableModalOpen && !isScaleModalOpen && !isCategoryModalOpen && !isAddonModalOpen && (
+                <div className={`fixed inset-0 z-[9998] flex items-center justify-center p-4 ${nomeAberto ? '' : 'pointer-events-none'}`}>
+                    <div className={`px-8 py-6 rounded-2xl shadow-2xl border-4 text-center max-w-lg animate-fade-in ${
+                        avisoAtalho.tipo === 'enviar'    ? 'bg-blue-600 border-blue-300 text-white' :
+                        avisoAtalho.tipo === 'ok'        ? 'bg-emerald-600 border-emerald-300 text-white' :
+                        avisoAtalho.tipo === 'somou'     ? 'bg-amber-500 border-amber-200 text-slate-900' :
+                        avisoAtalho.tipo === 'confirmar' ? 'bg-orange-600 border-orange-300 text-white' :
+                                                           'bg-red-600 border-red-300 text-white'
+                    }`}>
+                        <p className="text-2xl md:text-3xl font-black tracking-tight">{avisoAtalho.titulo}</p>
+                        {avisoAtalho.detalhe && (
+                            <p className="text-sm md:text-base font-bold mt-2 opacity-90">{avisoAtalho.detalhe}</p>
+                        )}
+
+                        {/* Nome do cliente — opcional, só na tela de confirmação.
+                            Tecla N abre; quem não quiser nome segue com ENTER direto. */}
+                        {avisoAtalho.tipo === 'enviar' && (
+                            nomeAberto ? (
+                                <div className="mt-4">
+                                    <input
+                                        ref={campoNomeRef}
+                                        type="text"
+                                        value={customerName}
+                                        onChange={(e) => setCustomerName(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            // ENTER dentro do campo já confirma e envia.
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setAvisoAtalho(null);
+                                                setNomeAberto(false);
+                                                if (!isProcessing) handleFinalize();
+                                            }
+                                            if (e.key === 'Escape') {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                setCustomerName('');
+                                                setNomeAberto(false);
+                                            }
+                                        }}
+                                        placeholder="Nome do cliente"
+                                        className="w-full px-4 py-3 rounded-xl text-center text-lg font-bold text-slate-900 bg-white border-2 border-white/50 outline-none placeholder:text-slate-400"
+                                    />
+                                    <p className="text-[11px] font-bold mt-1.5 opacity-80">
+                                        ENTER confirma e envia · ESC limpa o nome
+                                    </p>
+                                </div>
+                            ) : (
+                                <p className="text-[11px] font-bold mt-3 opacity-70">
+                                    Aperte <kbd className="px-1.5 py-0.5 bg-white/25 rounded font-black">N</kbd> para dar um nome
+                                </p>
+                            )
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Dígitos sendo digitados — mostra o que a mesa vai receber. */}
+            {teclasMesa && !isCustomItemModalOpen && !isTableModalOpen && !isScaleModalOpen && !isCategoryModalOpen && !isAddonModalOpen && (
+                <div className="fixed bottom-8 right-8 z-[9998] pointer-events-none">
+                    <div className="bg-slate-900 border-4 border-emerald-500 rounded-2xl px-8 py-4 shadow-2xl text-center">
+                        <span className="block text-[10px] font-black uppercase tracking-widest text-emerald-400">
+                            {parseInt(teclasMesa, 10) >= 100 ? 'Código do Produto' : 'Mesa'}
+                        </span>
+                        <span className="block text-5xl font-black text-white font-mono leading-none">{teclasMesa}</span>
+                        <span className="block text-[10px] font-bold text-slate-400 mt-1">
+                            {parseInt(teclasMesa, 10) >= 100 ? 'ENTER adiciona ao pedido' : 'ENTER para lançar'}
+                        </span>
+                    </div>
+                </div>
+            )}
 
             {/* BARRA DE BALANÇA EM TEMPO REAL (MODO VIGIA) */}
             {settings?.isScaleEnabled && (

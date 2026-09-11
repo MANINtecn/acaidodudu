@@ -36,17 +36,16 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
         }
     };
 
+    // Dois rotulos apenas, um por acao real:
+    //   PRONTO        -> avanca o preparo (pedido ainda 'Novo')
+    //   FECHAR CONTA  -> encerra a mesa e cobra
+    // Antes existiam TRES nomes ("FINALIZAR MESA" e "FECHAR CONTA" para a mesma
+    // acao), o que fazia dois cards em estados diferentes parecerem inconsistentes.
     const getNextAction = (status: string) => {
         if (status === 'Novo') {
             return { label: 'PRONTO', icon: <CheckCircle size={14} />, color: 'bg-green-600 hover:bg-green-700' };
         }
-        if (status === 'Em Produção') {
-            return { label: 'FINALIZAR MESA', icon: <DollarSign size={14} />, color: 'bg-green-600 hover:bg-green-700' };
-        }
-        if (status === 'Conta Solicitada') {
-            return { label: 'FECHAR CONTA', icon: <DollarSign size={14} />, color: 'bg-green-600 hover:bg-green-700' };
-        }
-        return { label: 'FINALIZAR MESA', icon: <DollarSign size={14} />, color: 'bg-green-600 hover:bg-green-700' };
+        return { label: 'FECHAR CONTA', icon: <DollarSign size={14} />, color: 'bg-green-600 hover:bg-green-700' };
     };
 
     const action = getNextAction(mainStatus);
@@ -136,27 +135,32 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
                     <span className="text-base font-bold text-gray-900 dark:text-gray-100">R$ {totalAmount.toFixed(2)}</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2">
-                    <button
-                        onClick={() => {
-                            const billingRequested = orders.find(o => o.status === 'Conta Solicitada');
-                            if (billingRequested) {
-                                onAdvanceStatus({ ...billingRequested, total: totalAmount });
-                            } else {
-                                const activeOrders = orders.filter(o => o.status !== 'Entregue' && o.status !== 'Cancelado');
-                                // Prioritize advancing 'Novo' orders if the button is PRONTO
-                                const novoOrder = activeOrders.find(o => o.status === 'Novo');
-                                if (novoOrder) {
-                                    onAdvanceStatus(novoOrder);
-                                } else if (activeOrders.length > 0) {
-                                    onAdvanceStatus(activeOrders[0]);
-                                }
+                {/* Acao principal em LARGURA TOTAL e destacada.
+                    No balcao o operador fecha conta o tempo todo: este botao
+                    (FECHAR CONTA / PRONTO) precisa ser o alvo obvio e grande,
+                    nao um dos dois botoes pequenos lado a lado. */}
+                <button
+                    onClick={() => {
+                        const billingRequested = orders.find(o => o.status === 'Conta Solicitada');
+                        if (billingRequested) {
+                            onAdvanceStatus({ ...billingRequested, total: totalAmount });
+                        } else {
+                            const activeOrders = orders.filter(o => o.status !== 'Entregue' && o.status !== 'Cancelado');
+                            // Prioritize advancing 'Novo' orders if the button is PRONTO
+                            const novoOrder = activeOrders.find(o => o.status === 'Novo');
+                            if (novoOrder) {
+                                onAdvanceStatus(novoOrder);
+                            } else if (activeOrders.length > 0) {
+                                onAdvanceStatus(activeOrders[0]);
                             }
-                        }}
-                        className={`flex items-center justify-center gap-2 p-2 text-white font-bold rounded-lg transition-all active:scale-95 cursor-pointer text-[10px] min-h-[40px] shadow-sm ${action.color}`}
-                    >
-                        {action.label} {action.icon}
-                    </button>
+                        }
+                    }}
+                    className={`w-full mb-2 flex items-center justify-center gap-2 p-3 text-white font-black rounded-lg transition-all active:scale-95 cursor-pointer text-sm min-h-[48px] shadow-lg ring-2 ring-white/20 ${action.color}`}
+                >
+                    {action.label} {action.icon}
+                </button>
+
+                <div className="grid grid-cols-1 gap-2">
                     <button
                         onClick={() => onEdit(orders[0])}
                         className="flex items-center justify-center gap-2 p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 hover:bg-blue-100 rounded-lg transition-colors text-[10px] min-h-[40px] border border-blue-100 dark:border-blue-900/30"

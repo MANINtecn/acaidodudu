@@ -61,6 +61,9 @@ export const mapMenuItemFromDB = (item: any, addons?: Addon[]): MenuItem => {
     return {
         ...item,
         price: Number(item.price) || 0,
+        // Mesmo nome nos dois lados (codigo), mas garantimos o tipo numérico:
+        // vindo do banco como string, a comparação no atalho falharia.
+        codigo: item.codigo !== null && item.codigo !== undefined ? Number(item.codigo) : undefined,
         categoryId: item.category_id || item.categoryId,
         isAvailable: item.is_available ?? item.isAvailable ?? true,
         eligibleForCombo: item.eligible_for_combo ?? item.eligibleForCombo ?? false,
@@ -632,6 +635,7 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     preferredPrinter: undefined,
     printerPaperWidth: '80mm',
     printerCompatibilityMode: false,
+    autoPrintDineIn: true,   // padrao: imprime sozinho (comportamento historico)
     kitchenPrinter: undefined,
     kitchenPrinterPaperWidth: '80mm',
     barPrinter: undefined,
@@ -687,6 +691,7 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
         appDiscountPercentage: Number(dbData?.app_discount_percentage ?? dbData?.appDiscountPercentage ?? defaultSettings.appDiscountPercentage) || 0,
 
         printerCompatibilityMode: dbData?.printer_compatibility_mode ?? dbData?.printerCompatibilityMode ?? defaultSettings.printerCompatibilityMode,
+        autoPrintDineIn: dbData?.auto_print_dine_in ?? dbData?.autoPrintDineIn ?? defaultSettings.autoPrintDineIn,
         kitchenPrinter: dbData?.kitchen_printer ?? dbData?.kitchenPrinter ?? defaultSettings.kitchenPrinter,
         kitchenPrinterPaperWidth: dbData?.kitchen_printer_paper_width ?? dbData?.kitchenPrinterPaperWidth ?? defaultSettings.kitchenPrinterPaperWidth,
         barPrinter: dbData?.bar_printer ?? dbData?.barPrinter ?? defaultSettings.barPrinter,
@@ -928,7 +933,8 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
         'barPrinter', 'barPrinterPaperWidth',
         'courierPrinter', 'courierPrinterPaperWidth',
         'preferredPrinter', 'printerPaperWidth',
-        'printerCompatibilityMode'
+        'printerCompatibilityMode',
+        'autoPrintDineIn'
     ];
 
     printerFields.forEach(field => {

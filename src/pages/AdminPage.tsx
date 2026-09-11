@@ -24,7 +24,8 @@ import {
     Menu,
     X as LucideX,
     Search,
-    MapPin
+    MapPin,
+    Keyboard
 } from 'lucide-react';
 import { normalizeString } from '../utils/searchUtils';
 import CounterTab from '../components/CounterTab';
@@ -32,6 +33,8 @@ import RaffleTab from '../components/RaffleTab';
 import { AdsTab } from '../components/AdsTab';
 import { ReviewsTab } from '../components/ReviewsTab';
 import { DeliveryZonesManager } from '../components/DeliveryZonesManager';
+import ComandosTab from '../components/ComandosTab';
+import { reservarImpressao, liberarImpressao, liberarTodasAsVias } from '../services/impressaoLockService';
 import {
     fetchMenuForAdmin,
     createCategory,
@@ -111,7 +114,7 @@ const AdminPage = () => {
     const showNotify = (message: string, type: NotificationType = 'success') => {
         setNotification({ show: true, message, type });
     };
-    const [activeTab, setActiveTab] = useState<'orders' | 'kitchen' | 'menu' | 'settings' | 'promotions' | 'cash' | 'addons' | 'counter' | 'raffle' | 'ads' | 'reviews' | 'history' | 'couriers' | 'whatsapp-bot'>('orders');
+    const [activeTab, setActiveTab] = useState<'orders' | 'kitchen' | 'menu' | 'settings' | 'promotions' | 'cash' | 'addons' | 'counter' | 'raffle' | 'ads' | 'reviews' | 'history' | 'couriers' | 'whatsapp-bot' | 'delivery-zones' | 'comandos'>('orders');
     const [menuSubTab, setMenuSubTab] = useState<'items' | 'addons'>('items');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [showUtilityMenu, setShowUtilityMenu] = useState(false);
@@ -125,6 +128,8 @@ const AdminPage = () => {
     useEffect(() => {
         settingsRef.current = settings;
     }, [settings]);
+
+
 
     // Trava o scroll da PAGINA enquanto o painel admin esta aberto.
     // O painel e h-screen: tudo que precisa rolar rola DENTRO dele. Sem esta
@@ -152,6 +157,32 @@ const AdminPage = () => {
     const [showAvailabilityReminder, setShowAvailabilityReminder] = useState(false);
     const [isEditOrderModalOpen, setIsEditOrderModalOpen] = useState(false);
     const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+
+    // ── ATALHOS GLOBAIS DE NAVEGAÇÃO ──────────────────────────────
+    // Depois de lançar um pedido o app vai sozinho para "Pedidos"; sem estas
+    // teclas o operador PRECISA do mouse para voltar ao Balcão e recomeçar o
+    // fluxo — o que quebrava o ciclo todo feito por teclado.
+    //   F4 = Balcão   ·   F5 = Pedidos (mesas/retiradas)
+    // F5 recarrega a página por padrão: o preventDefault abaixo impede isso.
+    useEffect(() => {
+        const aoTeclar = (e: KeyboardEvent) => {
+            // Mesma trava do CounterTab: efeito sem array de dependências
+            // reinstala o listener a cada render e o evento chegava duas vezes.
+            if ((e as any).__pdvNav) return;
+            (e as any).__pdvNav = true;
+
+            if (e.key !== 'F4' && e.key !== 'F5' && e.key !== 'F6') return;
+
+            // Não sequestra a tecla com um modal aberto (checkout, editar pedido...).
+            const temModalAberto = isEditOrderModalOpen || isCheckoutModalOpen;
+            if (temModalAberto) return;
+
+            e.preventDefault();
+            setActiveTab(e.key === 'F4' ? 'counter' : e.key === 'F5' ? 'orders' : 'comandos');
+        };
+        window.addEventListener('keydown', aoTeclar);
+        return () => window.removeEventListener('keydown', aoTeclar);
+    }, [isEditOrderModalOpen, isCheckoutModalOpen]);
     const [checkoutOrder, setCheckoutOrder] = useState<Order | null>(null);
     const [showPrintSplash, setShowPrintSplash] = useState(false);
     const [darkMode, setDarkMode] = useState(() => {
@@ -717,6 +748,25 @@ const AdminPage = () => {
             return;
         }
 
+
+        // 1b. Impressao automatica de MESA/RETIRADA desligada nas configuracoes.
+        // O pedido entra normalmente; so nao imprime sozinho. O operador usa o
+        // botao de imprimir do card (que chama com force=true e passa aqui).
+        // Entrega nao e afetada. undefined = ligado (comportamento historico).
+        // Mesa/Retirada = tudo que NAO e entrega. Testar pelo negativo e mais
+        // seguro: o orderType nem sempre vem preenchido, mas "e entrega" da para
+        // determinar com confianca (tipo Entrega ou com taxa/endereco).
+        const ehEntrega =
+            order.orderType === 'Entrega' ||
+            (order.deliveryFee ?? 0) > 0;
+        const ehMesaOuRetirada = !ehEntrega;
+        const autoPrintLigado = settingsRef.current?.autoPrintDineIn !== false;
+
+        if (!force && ehMesaOuRetirada && !autoPrintLigado) {
+            console.log(`[Printer] Auto-print de mesa/retirada DESLIGADO nas configuracoes. Pedido #${order.id} recebido sem imprimir.`);
+            return;
+        }
+
         const hasUnprinted = order.items.some(i => !i.printed);
         
         // 2. CENTRAL BLOCK: Table orders are manual only for UPDATES (requested by user)
@@ -752,6 +802,22 @@ const AdminPage = () => {
         // Add to printing queue
         currentlyPrintingIds.current.add(order.id);
 
+        // ── TRAVA NO BANCO (impressaoLockService) ────────────────────
+        // As travas em memoria acima tem uma janela entre "checar" e "marcar",
+        // e o realtime + o polling passavam os dois por ela — o pedido saia 2x
+        // MESMO COM UMA SO MAQUINA. Aqui o Postgres recusa a segunda insercao
+        // de forma atomica, sem depender de timing.
+        // Reimpressao manual (force) limpa a reserva antes, para sempre funcionar.
+        if (force) {
+            await liberarTodasAsVias(order.id);
+        } else {
+            const reservou = await reservarImpressao(order.id, order.store_id, 'principal');
+            if (!reservou) {
+                currentlyPrintingIds.current.delete(order.id);
+                return;
+            }
+        }
+
         try {
             const currentSettings = settingsRef.current;
             
@@ -780,12 +846,18 @@ const AdminPage = () => {
                 showNotify("Pedido impresso!");
             } else {
                 console.warn("Print execution failed:", success?.message);
+                // Falhou: devolve a reserva para uma nova tentativa poder imprimir.
+                // (fora de escopo nao precisa: aquela estacao nao deve imprimir mesmo)
+                if (!(success as any)?.foraDeEscopo) {
+                    await liberarImpressao(order.id, 'principal');
+                }
                 if (force) {
                     showNotify(`Erro na Impressora: ${success?.message || 'Verifique o servidor de impressão.'}`, 'error');
                 }
             }
         } catch (error) {
             console.error("Print Error:", error);
+            if (order.id) await liberarImpressao(order.id, 'principal');
         } finally {
             // Remove from printing queue after a delay to allow DB sync
             setTimeout(() => {
@@ -1092,6 +1164,9 @@ const AdminPage = () => {
                     </button>
                     <button onClick={() => setActiveTab('delivery-zones')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'delivery-zones' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <MapPin size={20} /> Taxas de Entrega
+                    </button>
+                    <button onClick={() => setActiveTab('comandos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'comandos' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                        <Keyboard size={20} /> Comandos <span className="ml-auto text-[10px] font-mono opacity-50">F6</span>
                     </button>
                     <button onClick={() => navigate(`/${currentStore.slug}/entregador`)} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700">
                         <Bike size={20} /> Área do Entregador
@@ -1540,6 +1615,10 @@ const AdminPage = () => {
 
                 {activeTab === 'delivery-zones' && currentStore && (
                     <DeliveryZonesManager storeId={currentStore.id} />
+                )}
+
+                {activeTab === 'comandos' && (
+                    <ComandosTab menuItems={menuItems} categories={categories} />
                 )}
 
                 {activeTab === 'reviews' && currentStore && (

@@ -199,6 +199,20 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onPrint, onCancel, onDelet
                     </div>
                 </div>
 
+                {/* FINALIZAR EM PRIMEIRO LUGAR.
+                    No balcao o operador precisa fechar a conta rapido; deixar
+                    este botao depois de Imprimir/Excluir/Editar custava tempo a
+                    cada pedido. Fica largo, no topo e destacado. */}
+                {onUpdateStatus && order.status !== 'Entregue' && order.status !== 'Cancelado' &&
+                 !(order.orderType === 'Entrega' && (order.status === 'A Caminho' || order.status === 'No Portão')) && (
+                    <button
+                        onClick={() => onUpdateStatus(order, 'Entregue')}
+                        className="w-full mb-2 flex items-center justify-center gap-2 p-3 bg-green-600 hover:bg-green-700 text-white font-black rounded-lg transition-all active:scale-95 cursor-pointer text-sm min-h-[48px] shadow-lg shadow-green-600/20 ring-2 ring-green-400/30"
+                    >
+                        <CheckCircle size={18} /> FINALIZAR PEDIDO
+                    </button>
+                )}
+
                 <div className="grid grid-cols-4 gap-2">
                     {onPrint && (
                         <button
@@ -257,21 +271,15 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onPrint, onCancel, onDelet
                         </div>
                     ) : (
                         /* Standard Sequential Flow (Admin/Waiter) + Direct Finalize */
-                        <div className="col-span-4 grid grid-cols-2 gap-2">
+                        /* O "Finalizar" subiu para o topo do card (ver acima).
+                           Aqui fica so o avanco de etapa do fluxo. */
+                        <div className="col-span-4">
                             <button
                                 onClick={() => onAdvanceStatus(order)}
-                                className={`flex items-center justify-center gap-2 p-2 text-white font-bold rounded-lg transition-all active:scale-95 cursor-pointer text-[10px] min-h-[40px] ${action.color}`}
+                                className={`w-full flex items-center justify-center gap-2 p-2 text-white font-bold rounded-lg transition-all active:scale-95 cursor-pointer text-[10px] min-h-[40px] ${action.color}`}
                             >
                                 {action.label} {action.icon}
                             </button>
-                            {onUpdateStatus && order.status !== 'Entregue' && order.status !== 'Cancelado' && (
-                                <button
-                                    onClick={() => onUpdateStatus(order, 'Entregue')}
-                                    className="flex items-center justify-center gap-2 p-2 bg-green-600 hover:bg-green-700 text-white font-bold rounded-lg transition-all active:scale-95 cursor-pointer text-[10px] min-h-[40px]"
-                                >
-                                    Finalizar <CheckCircle size={14} />
-                                </button>
-                            )}
                         </div>
                     )}
                 </div>

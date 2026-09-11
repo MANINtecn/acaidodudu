@@ -50,6 +50,12 @@ export interface Addon {
 export interface MenuItem {
   id: number;
   name: string;
+  /**
+   * Código para lançamento rápido por teclado no balcão. SEMPRE >= 100:
+   * 1..30 são números de MESA no atalho, então produtos começam em 100
+   * para nunca haver ambiguidade. Único por loja.
+   */
+  codigo?: number;
   description: string;
   price: number;
   image?: string;
@@ -192,6 +198,14 @@ export interface Settings {
   preferredPrinter?: string;
   printerPaperWidth?: '58mm' | '80mm';
   printerCompatibilityMode?: boolean;
+  /**
+   * Imprimir automaticamente pedidos de Mesa/Retirada.
+   * Quando false, o pedido e recebido normalmente mas NAO dispara impressao —
+   * o operador imprime pelo botao do card quando quiser.
+   * Nao afeta pedidos de Entrega, que seguem imprimindo sozinhos.
+   * undefined = true (comportamento historico, nao quebra quem ja usa).
+   */
+  autoPrintDineIn?: boolean;
   kitchenPrinter?: string;
   kitchenPrinterPaperWidth?: '58mm' | '80mm';
   barPrinter?: string;

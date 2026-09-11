@@ -286,7 +286,12 @@ function stopEnqPolling() {
 }
 
 async function runReadLoop(port: any) {
-  if (readLoopRunning) return;
+  // Guarda contra dois loops simultâneos: cada um cria seu timer de ENQ e os
+  // dois passam a escrever na mesma porta, deixando a balança muda.
+  if (readLoopRunning) {
+    pushRaw('[stream] já existe um leitor ativo — ignorando nova chamada');
+    return;
+  }
   readLoopRunning = true;
   keepReading = true;
 
@@ -299,7 +304,17 @@ async function runReadLoop(port: any) {
   pushRaw('[stream] iniciado');
 
   try {
-    while (keepReading && port.readable) {
+    // Só `keepReading` na condição. Ter `port.readable` aqui fazia o loop SAIR
+    // durante a troca de leitor (o stream fica indisponível por um instante),
+    // o runReadLoop era chamado de novo e dois timers de ENQ passavam a
+    // disputar a mesma porta — a balança recebia comando fora de hora e ficava
+    // muda. Se a porta cair de vez, o `if` abaixo encerra.
+    while (keepReading) {
+      if (!port.readable) {
+        // Pode ser a troca de leitor: espera e reavalia antes de desistir.
+        await new Promise((r) => setTimeout(r, 200));
+        if (!port.readable) break;
+      }
       if (port.readable.locked) {
         pushRaw('[stream] porta travada por outro leitor — aguardando');
         await new Promise((r) => setTimeout(r, 500));
@@ -399,12 +414,27 @@ async function runReadLoop(port: any) {
   } finally {
     stopEnqPolling();
     readLoopRunning = false;
+    // O loop terminou. Se ninguém pediu para parar, a porta caiu de verdade:
+    // volta para 'disconnected' para a reconexão automática poder agir.
+    // Sem isto o status ficava preso em 'waiting' e ninguém tentava de novo.
+    if (keepReading) {
+      keepReading = false;
+      emit({ status: 'disconnected', weightKg: 0, isStable: false });
+    }
   }
 }
 
 /**
  * Conecta à balança. forcePrompt=true abre o seletor de porta do Chrome/Electron.
  */
+/**
+ * Trava de concorrencia. Sem ela, a reconexao automatica (5s) dispara enquanto
+ * a tentativa anterior ainda esta abrindo a porta, e o Chromium responde
+ * "InvalidStateError: A call to open() is already in progress" — varias
+ * tentativas competindo pela mesma porta e atrapalhando umas as outras.
+ */
+let conexaoEmAndamento = false;
+
 export async function connectScale(
   baudRate: number = 9600,
   forcePrompt: boolean = false
@@ -413,6 +443,10 @@ export async function connectScale(
     emit({ status: 'error', errorMessage: 'Web Serial não disponível neste ambiente.' });
     return false;
   }
+
+  // Uma tentativa por vez (ver conexaoEmAndamento acima).
+  if (conexaoEmAndamento) return false;
+  conexaoEmAndamento = true;
 
   emit({ status: 'connecting', errorMessage: undefined });
 
@@ -453,23 +487,59 @@ export async function connectScale(
         });
 
         for (const candidata of ordenadas) {
+          const info = typeof candidata.getInfo === 'function' ? candidata.getInfo() : {};
+          const etiqueta = info?.usbVendorId
+            ? `USB ${info.usbVendorId.toString(16)}`
+            : 'sem VID';
+
           if (candidata.readable) {          // ja aberta: serve
+            pushRaw(`[conexao] ${etiqueta} ja estava aberta — usando`);
             port = candidata;
             break;
           }
           try {
             await candidata.open({ baudRate });
+            pushRaw(`[conexao] ${etiqueta} aberta com sucesso (baud ${baudRate})`);
             port = candidata;
             break;
-          } catch (_) {
-            // Porta que nao abre (Bluetooth, ocupada...): tenta a proxima.
+          } catch (err: any) {
+            // NUNCA engolir em silencio: sem este log, o diagnostico morre
+            // logo depois de listar as portas e nao da para saber o motivo.
+            pushRaw(`[conexao] ${etiqueta} NAO abriu: ${err?.name || ''} ${err?.message || err}`);
+
+            // NetworkError na porta da balanca = o SO recusou o acesso.
+            // Quase sempre a porta esta OCUPADA por outro programa (software da
+            // balanca, emulador de teclado, PDV antigo) ou o driver esta em uso.
+            if (err?.name === 'NetworkError' && info?.usbVendorId) {
+              pushRaw('[conexao] >>> A porta da balanca existe mas o Windows recusou.');
+              pushRaw('[conexao] >>> Causa provavel: OUTRO PROGRAMA esta usando a COM.');
+              pushRaw('[conexao] >>> Feche softwares da balanca/PDV antigo e tente de novo.');
+            }
           }
         }
       }
 
       if (!port) {
-        // Nenhuma porta autorizada abriu. Nao e erro: o usuario ainda nao
-        // escolheu a balanca. Fica aguardando o clique em "Conectar USB".
+        // Instalacao NOVA: getPorts() so lista o que ja foi autorizado, entao
+        // vem vazio e a balanca nunca apareceria sozinha. No Electron o
+        // handler 'select-serial-port' do main.js escolhe a porta SEM mostrar
+        // dialogo, entao podemos pedir programaticamente e continuar automatico.
+        // (Em navegador comum isto exigiria gesto do usuario e vai falhar —
+        // por isso o try/catch silencioso.)
+        // ⚠️ NAO chamar requestPort() aqui.
+        //
+        // requestPort() abre um DIALOGO MODAL NATIVO do Electron, que bloqueia
+        // a janela inteira: nenhum campo aceita clique enquanto ele estiver de
+        // pe. Como a reconexao automatica roda em intervalo, o dialogo reabria
+        // sem parar e travava o PDV todo (busca, checkout, tudo).
+        //
+        // requestPort() SO pode ser chamado a partir de um clique do usuario —
+        // e o que o botao "Conectar USB" faz (forcePrompt = true).
+        if (!known || known.length === 0) {
+          pushRaw('[conexao] nenhuma porta autorizada — clique em "Conectar USB" uma vez');
+        }
+
+        // Nao e erro: fica aguardando o clique em "Conectar USB".
         emit({
           status: 'disconnected',
           weightKg: 0,
@@ -539,6 +609,8 @@ export async function connectScale(
       errorMessage: err?.message || 'Erro ao conectar à balança.'
     });
     return false;
+  } finally {
+    conexaoEmAndamento = false;
   }
 }
 

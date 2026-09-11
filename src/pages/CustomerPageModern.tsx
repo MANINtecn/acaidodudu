@@ -881,6 +881,10 @@ const SideCart: React.FC<{
         const handleSubmit = async (e: React.FormEvent) => {
             e.preventDefault();
             if (!isFormValid || !isStoreOpen) return;
+            // Carrinho vazio nunca deve virar pedido. A UI ja esconde o
+            // formulario, mas a guarda aqui protege caminhos indiretos
+            // (repetir pedido, recompensa, voltar do historico).
+            if (!cart || cart.length === 0) return;
 
             setIsSubmitting(true);
             setSubmitMessage(null);
@@ -2046,7 +2050,16 @@ const CustomerPage: React.FC = () => {
                 setOrderDiscount(effectiveDiscount);
             }
 
-            const subtotal = mergedItems.reduce((acc, i) => acc + (i.price * i.quantity), 0);
+            // ⚠️ Somar ADICIONAIS e COMBO, igual ao subtotal da tela (useMemo acima).
+            // Sem isto, "repetir pedido" cobrava só o preço base — os adicionais
+            // (398 cadastrados, alguns de R$ 48) saíam de graça.
+            const subtotal = mergedItems.reduce((acc, i) => {
+                const precoItem = Number(i.price) || 0;
+                const precoAdicionais = (i.selectedAddons || []).reduce(
+                    (s: number, a: any) => s + (Number(a.price) || 0), 0);
+                const precoCombo = i.isCombo ? (Number(settings?.comboPrice) || 0) : 0;
+                return acc + ((precoItem + precoAdicionais + precoCombo) * (Number(i.quantity) || 1));
+            }, 0);
             const discountValue = orderType === 'Retirada' ? subtotal * ((settings?.appDiscountPercentage || 0) / 100) : 0;
             
             let finalDeliveryFee = 0;

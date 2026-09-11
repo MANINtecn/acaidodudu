@@ -336,6 +336,21 @@ function createWindow() {
     return true;
   });
 
+  // Sem isto, o Chromium so devolve em getPorts() as portas ja autorizadas
+  // manualmente — numa instalacao NOVA a lista vem vazia e a balanca so
+  // aparece depois de alguem clicar em "Conectar USB". Na loja isso nao serve:
+  // o PDV abre de manha e a balanca tem que estar la. Concedendo acesso a
+  // dispositivos seriais, getPorts() ja enxerga a balanca no primeiro boot.
+  if (typeof ses.setUSBProtectedClassesHandler === 'function') {
+    ses.setUSBProtectedClassesHandler(() => []);
+  }
+  ses.on('serial-port-added', (event, port) => {
+    console.log('[BALANCA] porta conectada:', port.portName || port.portId);
+  });
+  ses.on('serial-port-removed', (event, port) => {
+    console.log('[BALANCA] porta removida:', port.portName || port.portId);
+  });
+
   const isHidden = process.argv.includes('--hidden');
 
   mainWindow.once('ready-to-show', () => {

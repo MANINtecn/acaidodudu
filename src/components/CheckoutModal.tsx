@@ -69,8 +69,45 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
         }
     };
 
+    // ── ATALHOS DE TECLADO ────────────────────────────────────────
+    // Eles vêm de PDV com atalho por letra (D/C/P). Como este checkout é
+    // MODAL, as letras só valem enquanto ele está aberto — não conflitam com
+    // o atalho numérico de mesa da tela do balcão.
+    // Ligado ao container via onKeyDown (nao useEffect): este componente tem
+    // um early-return acima, e hook depois de return quebra as regras do React.
+    const aoTeclar = (e: React.KeyboardEvent<HTMLDivElement>) => {
+        const alvo = e.target as HTMLElement | null;
+        const digitando = !!alvo && (
+            alvo.tagName === 'INPUT' ||
+            alvo.tagName === 'TEXTAREA' ||
+            alvo.isContentEditable
+        );
+
+        if (e.key === 'Escape') { onClose(); return; }
+
+        // F2 finaliza mesmo com o cursor num campo: e a tecla de confirmar.
+        if (e.key === 'F2') {
+            e.preventDefault();
+            if (!isProcessing) handleConfirm();
+            return;
+        }
+
+        if (digitando) return;
+
+        const tecla = e.key.toUpperCase();
+        if (tecla === 'D') { e.preventDefault(); setMethod('Dinheiro'); }
+        else if (tecla === 'C') { e.preventDefault(); setMethod('Cartão'); }
+        else if (tecla === 'P') { e.preventDefault(); setMethod('PIX'); }
+        else if (e.key === 'Enter') { e.preventDefault(); if (!isProcessing) handleConfirm(); }
+    };
+
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+        <div
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
+            onKeyDown={aoTeclar}
+            tabIndex={-1}
+            ref={(el) => el?.focus()}
+        >
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Header */}
                 <div className="bg-gray-50 dark:bg-gray-700/50 p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center">
@@ -114,24 +151,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                         <div className="grid grid-cols-3 gap-3">
                             <button
                                 onClick={() => setMethod('Dinheiro')}
-                                className={`p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'Dinheiro' ? 'bg-green-50 border-green-500 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 ring-1 ring-green-500' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                className={`relative p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'Dinheiro' ? 'bg-green-50 border-green-500 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 ring-1 ring-green-500' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
                                 <Banknote size={24} />
                                 <span className="text-xs font-bold">Dinheiro</span>
+                                <span className="absolute top-1 left-1.5 text-[10px] font-black opacity-60 leading-none">D</span>
                             </button>
                             <button
                                 onClick={() => setMethod('PIX')}
-                                className={`p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'PIX' ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/20 dark:border-blue-500 dark:text-blue-400 ring-1 ring-blue-500' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                className={`relative p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'PIX' ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/20 dark:border-blue-500 dark:text-blue-400 ring-1 ring-blue-500' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
                                 <div className="w-6 h-6 font-bold flex items-center justify-center border-2 border-current rounded text-[10px]">PIX</div>
                                 <span className="text-xs font-bold">Pix</span>
+                                <span className="absolute top-1 left-1.5 text-[10px] font-black opacity-60 leading-none">P</span>
                             </button>
                             <button
                                 onClick={() => setMethod('Cartão')}
-                                className={`p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'Cartão' ? 'bg-purple-50 border-purple-500 text-purple-700 dark:bg-purple-900/20 dark:border-purple-500 dark:text-purple-400 ring-1 ring-purple-500' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                className={`relative p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'Cartão' ? 'bg-purple-50 border-purple-500 text-purple-700 dark:bg-purple-900/20 dark:border-purple-500 dark:text-purple-400 ring-1 ring-purple-500' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
                                 <CreditCard size={24} />
                                 <span className="text-xs font-bold">Cartão</span>
+                                <span className="absolute top-1 left-1.5 text-[10px] font-black opacity-60 leading-none">C</span>
                             </button>
                         </div>
                     </div>

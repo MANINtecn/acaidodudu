@@ -5,6 +5,11 @@ import './index.css';
 import 'intro.js/introjs.css'; // Base styles (REQUIRED)
 import 'intro.js/themes/introjs-modern.css'; // Modern Theme
 import { registerPWA } from './pwa';
+import { carregarConfigEstacao } from './services/estacaoService';
+
+// Configuracao de impressao DESTA maquina (salao / cozinha). Carregada antes
+// de qualquer impressao para o printerService ja encontrar o cache pronto.
+carregarConfigEstacao();
 
 // --- DOM Exception Mismatch Safeguard (Prevents removeChild / insertBefore crashes from extensions/Google Translate) ---
 if (typeof window !== 'undefined') {

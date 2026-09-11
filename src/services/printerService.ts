@@ -1,4 +1,5 @@
 import { Order, CashSummary } from '../types';
+import { estacaoDeveImprimir, aplicarEstacao, estacaoAtiva } from './estacaoService';
 
 class PrinterService {
   private static processedOrderIds = new Set<string>();
@@ -307,7 +308,20 @@ class PrinterService {
     }
 
     try {
-      const settings = (order as any).settings;
+      // ── CONFIGURACAO DESTA MAQUINA (estacaoService) ──────────────
+      // Com salao e cozinha em PCs diferentes, cada um tem a sua impressora
+      // e decide o que imprime. Quando a estacao nao esta configurada, tudo
+      // segue como antes (configuracao do banco, vale para todos).
+      if (estacaoAtiva() && !estacaoDeveImprimir(order.origin)) {
+        console.log(`[Printer] Pedido #${order.id} fora do escopo desta estacao (origem: ${order.origin || 'n/d'}). Nao imprime aqui.`);
+        // success:false de proposito. Se voltasse true, o chamador marcaria o
+        // pedido como printed=true no banco — e a maquina que DEVIA imprimir
+        // (a cozinha) veria o pedido como ja impresso. Foi o que fez o pedido
+        // sair duas vezes com o salao em "Nao imprimir".
+        return { success: false, message: 'Fora do escopo desta estacao', foraDeEscopo: true } as any;
+      }
+
+      const settings = aplicarEstacao((order as any).settings || {});
       const itemsToPrint = (order as any).itemsToPrint || order.items;
       const html = this.generateReceiptHtml({ ...order, items: itemsToPrint });
       

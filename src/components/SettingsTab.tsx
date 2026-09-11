@@ -16,6 +16,7 @@ import {
     Scale
 } from 'lucide-react';
 import { Settings, Category } from '../types';
+import EstacaoImpressao from './EstacaoImpressao';
 import { uploadLogoToStorage } from '../services/supabaseService';
 import { printOrder, generateReceiptText } from '../services/printerService';
 import { requestSerialPort } from '../services/scaleService';
@@ -374,6 +375,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                     </div>
                 </div>
 
+                <EstacaoImpressao impressorasDisponiveis={availablePrinters} />
+
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-orange-200 dark:border-orange-900/30">
                     <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">
                         <Monitor size={20} className="text-orange-600 dark:text-orange-500" /> Configurações de Impressão
@@ -491,6 +494,31 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                     </label>
                                     <p className="text-[10px] text-gray-500">
                                         Simplifica os comandos de impressão para evitar conflitos com drivers manuais ou impressoras bluetooth.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Impressão automática de Mesa/Retirada.
+                            Padrão LIGADO: quem já usa o sistema não vê mudança. */}
+                        <div className="md:col-span-2 pt-2 border-t border-gray-100 dark:border-gray-700 mt-2">
+                             <div className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    name="autoPrintDineIn"
+                                    id="autoPrintDineIn"
+                                    checked={formData.autoPrintDineIn !== false}
+                                    onChange={handleCheckboxChange}
+                                    className="h-5 w-5 rounded text-orange-600 focus:ring-orange-500 border-gray-300 dark:bg-gray-700 dark:border-gray-600"
+                                />
+                                <div>
+                                    <label htmlFor="autoPrintDineIn" className="text-sm font-bold text-gray-900 dark:text-gray-100 cursor-pointer">
+                                        Imprimir automaticamente pedidos de Mesa / Retirada
+                                    </label>
+                                    <p className="text-[10px] text-gray-500">
+                                        Desmarcado: o pedido de mesa/retirada é recebido normalmente, mas <strong>não</strong> imprime sozinho —
+                                        o operador imprime pelo botão do card quando quiser. Pedidos de <strong>Entrega</strong> continuam
+                                        imprimindo automaticamente.
                                     </p>
                                 </div>
                             </div>

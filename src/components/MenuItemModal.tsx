@@ -61,7 +61,11 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
         const { name, value } = e.target;
         setFormData(prev => ({
             ...prev,
-            [name]: name === 'price' ? parseFloat(value) : name === 'categoryId' ? parseInt(value) : value
+            [name]: name === 'price' ? parseFloat(value)
+                  : name === 'categoryId' ? parseInt(value)
+                  // codigo vazio = sem codigo (undefined, nao NaN nem 0)
+                  : name === 'codigo' ? (value === '' ? undefined : parseInt(value))
+                  : value
         }));
     };
 
@@ -84,6 +88,14 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Trava na origem: 1..30 sao mesas no atalho do balcao.
+        const cod = (formData as any).codigo;
+        if (cod !== undefined && cod !== null && cod !== '' && Number(cod) < 100) {
+            alert('O código do produto deve ser 100 ou maior.\n\nOs números de 1 a 30 são usados para as mesas no atalho do balcão.');
+            return;
+        }
+
         setLoading(true);
         try {
             let imageUrl = formData.image;
@@ -144,6 +156,28 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
                                 required
                             />
                         </div>
+                    </div>
+
+                    {/* Código para lançamento rápido por teclado no balcão.
+                        Mínimo 100: 1..30 são números de MESA no atalho. */}
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Código do Produto <span className="text-gray-400 font-normal">(atalho do balcão)</span>
+                        </label>
+                        <input
+                            type="number"
+                            name="codigo"
+                            value={(formData as any).codigo ?? ''}
+                            onChange={handleChange}
+                            min={100}
+                            step={1}
+                            placeholder="Ex.: 101"
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        />
+                        <p className="text-[11px] text-gray-500 mt-1">
+                            Opcional. No balcão, digitar este código e apertar ENTER adiciona o produto direto.
+                            <strong> Use 100 ou mais</strong> — os números de 1 a 30 são as mesas.
+                        </p>
                     </div>
 
                     <div>
