@@ -970,8 +970,13 @@ const SideCart: React.FC<{
                     if (setOrderDiscount) setOrderDiscount(0); // Reset discount
                     setLastOrderId(createdOrder.id);
 
-                    // Tela de PIX: so quando a loja ativou E o pagamento e PIX.
-                    if (settings?.pixEnabled && paymentMethod === 'PIX' && settings?.pixKey) {
+                    // Tela de confirmacao para TODAS as formas de pagamento.
+                    // No PIX ela mostra a chave e pede o comprovante; nas demais
+                    // so confirma e oferece o WhatsApp com o resumo pronto.
+                    // Exige a chave so quando o pagamento e PIX.
+                    const mostrarTela = settings?.pixEnabled &&
+                        (paymentMethod !== 'PIX' || !!settings?.pixKey);
+                    if (mostrarTela) {
                         setDadosPix({
                             numeroPedido: createdOrder.dailyOrderNumber,
                             nomeCliente: customerName,
@@ -992,7 +997,9 @@ const SideCart: React.FC<{
                             taxaEntrega: deliveryFee,
                             desconto: orderDiscount,
                             total,
-                            formaPagamento: 'PIX',
+                            formaPagamento: paymentMethod,
+                            trocoPara: paymentMethod === 'Dinheiro' && changeFor
+                                ? `R$ ${Number(changeFor).toFixed(2).replace('.', ',')}` : undefined,
                             pixKey: settings.pixKey,
                             pixKeyType: settings.pixKeyType,
                             pixBeneficiary: settings.pixBeneficiary,
@@ -1252,9 +1259,14 @@ const SideCart: React.FC<{
                                             <div>
                                                 <p className="text-xs font-bold text-text-light">Pagamento via PIX:</p>
                                                 <p className="text-[10px] text-text-dark leading-tight mt-1">
-                                                    {orderType === 'Entrega' 
-                                                        ? 'O motoboy irá gerar o QR Code ou fornecer a chave no momento da entrega.' 
-                                                        : 'Solicite o QR Code ou chave PIX diretamente no balcão.'}
+                                                    {/* Com a tela de PIX ativa, a chave aparece logo apos
+                                                        confirmar — a mensagem antiga dizia que o motoboy
+                                                        geraria o QR Code na entrega, o que nao vale mais. */}
+                                                    {settings?.pixEnabled && settings?.pixKey
+                                                        ? 'A chave PIX aparece na próxima tela, assim que você confirmar o pedido.'
+                                                        : orderType === 'Entrega'
+                                                            ? 'O motoboy irá gerar o QR Code ou fornecer a chave no momento da entrega.'
+                                                            : 'Solicite o QR Code ou chave PIX diretamente no balcão.'}
                                                 </p>
                                             </div>
                                         </div>

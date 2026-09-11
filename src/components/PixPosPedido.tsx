@@ -22,6 +22,11 @@ export const PixPosPedido = ({ aberto, onFechar, dados, modeloResumo, whatsappLo
 
     if (!aberto) return null;
 
+    const forma = (dados.formaPagamento || '').toUpperCase();
+    const ehPix = forma === 'PIX';
+    const ehDinheiro = forma.includes('DINHEIRO');
+    const ehRetirada = dados.tipoPedido === 'Retirada' || dados.tipoPedido === 'Balcão';
+
     const resumo = gerarResumo(dados, modeloResumo);
     const link = linkWhatsapp(whatsappLoja || '', resumo);
 
@@ -60,7 +65,8 @@ export const PixPosPedido = ({ aberto, onFechar, dados, modeloResumo, whatsappLo
                         </p>
                     </div>
 
-                    {/* Chave PIX */}
+                    {/* Chave PIX — so no pagamento em PIX */}
+                    {ehPix && (
                     <div className="bg-teal-50 dark:bg-teal-900/20 border-2 border-teal-200 dark:border-teal-800 rounded-xl p-4">
                         <p className="text-[11px] font-black uppercase tracking-wider text-teal-700 dark:text-teal-400 mb-2">
                             Chave PIX {dados.pixKeyType ? `· ${dados.pixKeyType}` : ''}
@@ -87,12 +93,26 @@ export const PixPosPedido = ({ aberto, onFechar, dados, modeloResumo, whatsappLo
                             </p>
                         )}
                     </div>
+                    )}
 
-                    {/* O pedido do comprovante — tom de "agilizar", nunca de "liberar" */}
+                    {/* O aviso muda com a forma de pagamento. No PIX pedimos o
+                        comprovante com tom de "agilizar", nunca de "liberar". */}
                     <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4">
                         <p className="text-sm text-gray-800 dark:text-gray-200 leading-relaxed">
-                            Depois de pagar, <strong>envie o comprovante no nosso WhatsApp</strong> —
-                            assim confirmamos na hora e seu pedido sai mais rápido. 😊
+                            {ehPix ? (
+                                <>Depois de pagar, <strong>envie o comprovante no nosso WhatsApp</strong> —
+                                assim confirmamos na hora e seu pedido sai mais rápido. 😊</>
+                            ) : ehDinheiro ? (
+                                <>O pagamento é <strong>na entrega, em dinheiro</strong>.
+                                {dados.trocoPara ? <> Vamos levar troco para {dados.trocoPara}.</> : null}
+                                {' '}Qualquer dúvida, é só chamar no WhatsApp. 😊</>
+                            ) : ehRetirada ? (
+                                <>O pagamento é <strong>no balcão</strong>, na hora de retirar.
+                                {' '}Qualquer dúvida, é só chamar no WhatsApp. 😊</>
+                            ) : (
+                                <>O pagamento é <strong>na entrega</strong> — o entregador leva a maquininha.
+                                {' '}Qualquer dúvida, é só chamar no WhatsApp. 😊</>
+                            )}
                         </p>
                     </div>
 
@@ -103,10 +123,12 @@ export const PixPosPedido = ({ aberto, onFechar, dados, modeloResumo, whatsappLo
                         rel="noopener noreferrer"
                         className="w-full flex items-center justify-center gap-2 px-5 py-4 bg-[#25D366] hover:brightness-110 text-white rounded-xl font-black text-base shadow-lg shadow-green-500/25 active:scale-95 transition-all"
                     >
-                        <MessageCircle size={22} /> Enviar comprovante
+                        <MessageCircle size={22} /> {ehPix ? 'Enviar comprovante' : 'Falar no WhatsApp'}
                     </a>
                     <p className="text-[11px] text-center text-gray-500 dark:text-gray-400 -mt-2">
-                        O resumo do pedido já vai escrito. É só anexar o comprovante.
+                        {ehPix
+                            ? 'O resumo do pedido já vai escrito. É só anexar o comprovante.'
+                            : 'O resumo do pedido já vai escrito.'}
                     </p>
 
                     <button

@@ -25,6 +25,8 @@ export interface DadosResumo {
     desconto?: number;
     total: number;
     formaPagamento: string;
+    /** Valor para troco, quando o pagamento e em dinheiro. Ex.: 'R$ 50,00' */
+    trocoPara?: string;
     pixKey?: string;
     pixKeyType?: string;
     pixBeneficiary?: string;
