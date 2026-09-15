@@ -6,12 +6,20 @@ import {
     CONFIG_PADRAO,
     type ConfigEstacao,
     type EscopoImpressao,
+    type EscopoSom,
 } from '../services/estacaoService';
 
 interface Props {
     /** Impressoras que ESTA máquina enxerga (vem do SettingsTab). */
     impressorasDisponiveis: string[];
 }
+
+const ESCOPOS_SOM: { valor: EscopoSom; titulo: string; ajuda: string }[] = [
+    { valor: 'tudo',    titulo: 'Todos',      ajuda: 'Toca em qualquer pedido.' },
+    { valor: 'entrega', titulo: 'So entrega', ajuda: 'So pedidos de entrega.' },
+    { valor: 'salao',   titulo: 'So salao',   ajuda: 'Mesa, retirada e balcao.' },
+    { valor: 'mudo',    titulo: 'Mudo',       ajuda: 'Esta maquina nao toca.' },
+];
 
 const ESCOPOS: { valor: EscopoImpressao; titulo: string; ajuda: string }[] = [
     { valor: 'tudo',  titulo: 'Todos os pedidos',      ajuda: 'Imprime tudo que entrar.' },
@@ -155,6 +163,38 @@ export const EstacaoImpressao = ({ impressorasDisponiveis }: Props) => {
                                 </button>
                             ))}
                         </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            O que esta maquina <strong>toca</strong>
+                        </label>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                            {ESCOPOS_SOM.map(op => (
+                                <button
+                                    key={op.valor}
+                                    type="button"
+                                    onClick={() => alterar('escopoSom', op.valor)}
+                                    className={`text-left p-3 rounded-lg border-2 transition-all ${
+                                        (cfg.escopoSom || 'tudo') === op.valor
+                                            ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                                            : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
+                                    }`}
+                                >
+                                    <span className={`block text-sm font-bold ${
+                                        (cfg.escopoSom || 'tudo') === op.valor
+                                            ? 'text-purple-700 dark:text-purple-300'
+                                            : 'text-gray-900 dark:text-gray-100'
+                                    }`}>{op.titulo}</span>
+                                    <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                        {op.ajuda}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-1.5">
+                            Independente da impressao: a cozinha pode imprimir tudo e so tocar nas entregas.
+                        </p>
                     </div>
 
                     <div className="flex items-center gap-3">

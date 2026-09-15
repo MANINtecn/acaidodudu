@@ -614,7 +614,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
             // N: abre o campo de nome na tela de confirmação (opcional).
             // Útil quando a mesa tem várias pessoas ou é retirada com nome.
-            if (e.key.toUpperCase() === 'N' && avisoAtalho?.tipo === 'enviar' && !nomeAberto) {
+            // N abre o campo de nome. Vale na confirmacao E antes de montar —
+            // antes exigia avisoAtalho==='enviar', entao a tecla nao fazia nada
+            // enquanto o operador ainda estava lancando, e parecia quebrada.
+            if (e.key.toUpperCase() === 'N' && !nomeAberto &&
+                (avisoAtalho?.tipo === 'enviar' || !avisoAtalho)) {
                 e.preventDefault();
                 setNomeAberto(true);
                 // Tenta focar por ~1s: o campo só existe depois do render, e
@@ -1059,14 +1063,39 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
             {/* Dígitos sendo digitados — mostra o que a mesa vai receber. */}
             {teclasMesa && !isCustomItemModalOpen && !isTableModalOpen && !isScaleModalOpen && !isCategoryModalOpen && !isAddonModalOpen && (
-                <div className="fixed bottom-8 right-8 z-[9998] pointer-events-none">
-                    <div className="bg-slate-900 border-4 border-emerald-500 rounded-2xl px-8 py-4 shadow-2xl text-center">
+                <div className="fixed inset-0 z-[9998] flex items-center justify-center pointer-events-none">
+                    <div className="bg-slate-900 border-4 border-emerald-500 rounded-2xl px-10 py-6 shadow-2xl text-center">
                         <span className="block text-[10px] font-black uppercase tracking-widest text-emerald-400">
                             {parseInt(teclasMesa, 10) >= 100 ? 'Código do Produto' : 'Mesa'}
                         </span>
-                        <span className="block text-5xl font-black text-white font-mono leading-none">{teclasMesa}</span>
-                        <span className="block text-[10px] font-bold text-slate-400 mt-1">
-                            {parseInt(teclasMesa, 10) >= 100 ? 'ENTER adiciona ao pedido' : 'ENTER para lançar'}
+                        <span className="block text-6xl font-black text-white font-mono leading-none my-1">{teclasMesa}</span>
+                        {/* Mini-colinha: mostra so o que vale NESTE passo. */}
+                        {settings?.mostrarDicasAtalho !== false && (
+                            <div className="mt-2 pt-2 border-t border-slate-700 flex flex-col gap-0.5">
+                                <span className="text-[11px] font-bold text-slate-300">
+                                    <kbd className="px-1 bg-slate-800 rounded text-emerald-400">ENTER</kbd>
+                                    {parseInt(teclasMesa, 10) >= 100 ? ' adiciona ao pedido' : ' lança na mesa'}
+                                </span>
+                                <span className="text-[10px] text-slate-500">
+                                    <kbd className="px-1 bg-slate-800 rounded">←</kbd> apaga ·
+                                    <kbd className="px-1 bg-slate-800 rounded ml-1">ESC</kbd> cancela
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Mini-colinha do passo inicial: aparece quando nao ha nada digitado
+                nem aviso na tela, para o operador lembrar por onde começar. */}
+            {settings?.mostrarDicasAtalho !== false && !teclasMesa && !avisoAtalho && settings?.isScaleEnabled &&
+             !isCustomItemModalOpen && !isTableModalOpen && !isScaleModalOpen && !isCategoryModalOpen && !isAddonModalOpen && (
+                <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9990] pointer-events-none">
+                    <div className="bg-slate-900/90 border border-slate-700 rounded-lg px-4 py-1.5 shadow-lg backdrop-blur-sm">
+                        <span className="text-[11px] text-slate-400">
+                            Digite o <strong className="text-emerald-400">nº da mesa</strong> ou o
+                            <strong className="text-emerald-400"> código do produto</strong> ·
+                            <kbd className="px-1 bg-slate-800 rounded ml-1 text-slate-300">R</kbd> retirada
                         </span>
                     </div>
                 </div>

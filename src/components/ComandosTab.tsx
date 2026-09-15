@@ -12,15 +12,16 @@ const LARGURA_58MM = 30;
 
 /** Atalhos do sistema. Fonte unica: alimenta a tela E a impressao. */
 const ATALHOS: { tecla: string; oque: string }[] = [
+    { tecla: 'F4', oque: 'Balcao (lancar)' },
+    { tecla: 'F5', oque: 'Pedidos (comandas)' },
+    { tecla: 'F6', oque: 'Esta tela' },
+    { tecla: 'F7', oque: 'Fechar a comanda aberta' },
     { tecla: '100-941', oque: 'Codigo do produto' },
     { tecla: '1-30', oque: 'Numero da mesa' },
     { tecla: 'R', oque: 'Retirada (sem mesa)' },
     { tecla: 'N', oque: 'Nome do cliente' },
     { tecla: 'ENTER', oque: '1x monta / 2x envia' },
     { tecla: 'ESC', oque: 'Cancela tudo' },
-    { tecla: 'F4', oque: 'Ir para Balcao' },
-    { tecla: 'F5', oque: 'Ir para Pedidos' },
-    { tecla: 'F6', oque: 'Esta tela' },
     { tecla: 'D / C / P', oque: 'Dinheiro/Cartao/Pix' },
 ];
 
@@ -107,10 +108,18 @@ export const ComandosTab = ({ menuItems, categories }: ComandosTabProps) => {
         L.push('');
         L.push('FLUXO');
         L.push(linha);
+        L.push('LANCAR');
         L.push('401 ENTER  produto no pedido');
         L.push('  3 ENTER  vai p/ mesa 3');
+        L.push('        N  nome (opcional)');
         L.push('    ENTER  confirma e envia');
-        L.push('       F4  volta ao balcao');
+        L.push('');
+        L.push('FECHAR CONTA');
+        L.push('       F5  aba Pedidos');
+        L.push('  3 ENTER  abre a mesa 3');
+        L.push('       F7  vai pro checkout');
+        L.push('        D  dinheiro (ou C/P)');
+        L.push('    ENTER  finaliza');
         L.push('');
         L.push('Pesou na balanca? Digite');
         L.push('direto o numero da mesa.');

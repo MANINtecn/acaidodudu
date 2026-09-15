@@ -1,14 +1,16 @@
 /**
- * sireneService — alerta sonoro de pedido novo, gerado no proprio app.
+ * sireneService — alerta sonoro de pedido novo.
  *
- * POR QUE NAO USA ARQUIVO:
- * O som anterior vinha de uma URL externa (mixkit.co) com volume fixo em 0.8.
- * Dois problemas: ficava baixo demais para a cozinha, e **dependia de internet**
- * — se a conexao caisse, o alerta simplesmente nao tocava e o pedido passava
- * despercebido.
+ * É o MESMO som que o sistema sempre usou. O que muda é o volume:
+ * antes ficava travado em 0.8 (o máximo de um <audio> é 1.0), e a cozinha
+ * reclamava que era baixo. Aqui o áudio passa por um GainNode do WebAudio,
+ * que amplifica muito além disso.
  *
- * Gerado por WebAudio: funciona offline, o volume vai alem do que um <audio>
- * permite (usamos ganho acumulado) e o padrao sonoro e escolhido pelo cliente.
+ * Sons sintetizados por oscilador foram testados e reprovados — soam
+ * artificiais. Mantido o arquivo real.
+ *
+ * O arquivo é baixado uma vez e fica em memória: se a internet cair depois,
+ * o alerta continua tocando.
  */
 
 export type TipoSirene = 'sino' | 'alarme' | 'campainha';
@@ -17,26 +19,48 @@ export interface OpcaoSirene {
     valor: TipoSirene;
     nome: string;
     descricao: string;
+    url: string;
+    /** Quantas vezes toca seguidas. O alerta pede mais de um toque. */
+    repeticoes?: number;
 }
 
+/** O 'sino' é o som histórico do sistema. Os outros são alternativas. */
 export const SIRENES: OpcaoSirene[] = [
-    { valor: 'sino',      nome: 'Sino',      descricao: 'Dois toques claros. Bom para ambiente calmo.' },
-    { valor: 'alarme',    nome: 'Alarme',    descricao: 'Sobe e desce, tipo sirene. Corta barulho de loja cheia.' },
-    { valor: 'campainha', nome: 'Campainha', descricao: 'Três toques curtos e agudos. Chama atenção rápido.' },
+    {
+        valor: 'sino',
+        nome: 'Padrão',
+        descricao: 'O som que o sistema sempre usou.',
+        url: 'https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3',
+    },
+    {
+        valor: 'campainha',
+        nome: 'Campainha',
+        descricao: 'Toque de campainha, mais longo.',
+        url: 'https://assets.mixkit.co/active_storage/sfx/933/933-preview.mp3',
+    },
+    {
+        valor: 'alarme',
+        nome: 'Alerta',
+        descricao: 'Toca 3 vezes. Para loja barulhenta.',
+        url: 'https://assets.mixkit.co/active_storage/sfx/2870/2870-preview.mp3',
+        repeticoes: 3,
+    },
 ];
 
-/** 1 = volume normal. Acima disso amplificamos além do que um <audio> alcança. */
 export const VOLUME_PADRAO = 3;
 export const VOLUME_MAXIMO = 10;
 
 let ctx: AudioContext | null = null;
+/** Áudio já decodificado, por tipo. Evita rebaixar a cada pedido. */
+const buffers = new Map<TipoSirene, AudioBuffer>();
+/** Elementos <audio> de reserva, caso o WebAudio não esteja disponível. */
+const fallbacks = new Map<TipoSirene, HTMLAudioElement>();
 
 function contexto(): AudioContext | null {
     try {
         const AC = (window as any).AudioContext || (window as any).webkitAudioContext;
         if (!AC) return null;
         if (!ctx || ctx.state === 'closed') ctx = new AC();
-        // O navegador suspende o contexto até haver interação do usuário.
         if (ctx && ctx.state === 'suspended') ctx.resume().catch(() => {});
         return ctx;
     } catch {
@@ -44,85 +68,98 @@ function contexto(): AudioContext | null {
     }
 }
 
-interface Nota {
-    freq: number;
-    inicio: number;    // segundos a partir de agora
-    duracao: number;
-    tipo?: OscillatorType;
-    /** Frequência final, para varredura (efeito de sirene). */
-    freqFinal?: number;
+function urlDe(tipo: TipoSirene): string {
+    return (SIRENES.find(s => s.valor === tipo) || SIRENES[0]).url;
 }
 
-function notasDe(tipo: TipoSirene): Nota[] {
-    switch (tipo) {
-        case 'alarme':
-            // Varredura para cima e para baixo, duas vezes: atravessa ruído.
-            return [
-                { freq: 600, freqFinal: 1200, inicio: 0.00, duracao: 0.35, tipo: 'sawtooth' },
-                { freq: 1200, freqFinal: 600, inicio: 0.35, duracao: 0.35, tipo: 'sawtooth' },
-                { freq: 600, freqFinal: 1200, inicio: 0.75, duracao: 0.35, tipo: 'sawtooth' },
-                { freq: 1200, freqFinal: 600, inicio: 1.10, duracao: 0.35, tipo: 'sawtooth' },
-            ];
-        case 'campainha':
-            return [
-                { freq: 1800, inicio: 0.00, duracao: 0.14, tipo: 'square' },
-                { freq: 1800, inicio: 0.22, duracao: 0.14, tipo: 'square' },
-                { freq: 1800, inicio: 0.44, duracao: 0.20, tipo: 'square' },
-            ];
-        case 'sino':
-        default:
-            // Duas notas com harmônico, lembrando um sino de balcão.
-            return [
-                { freq: 880, inicio: 0.00, duracao: 0.55, tipo: 'sine' },
-                { freq: 1320, inicio: 0.00, duracao: 0.45, tipo: 'sine' },
-                { freq: 880, inicio: 0.45, duracao: 0.55, tipo: 'sine' },
-                { freq: 1320, inicio: 0.45, duracao: 0.45, tipo: 'sine' },
-            ];
+/**
+ * Baixa e decodifica o som. Chamado no boot para o primeiro pedido do dia
+ * não esperar o download.
+ */
+export async function precarregarSirene(tipo: TipoSirene = 'sino'): Promise<void> {
+    if (buffers.has(tipo)) return;
+    const ac = contexto();
+    if (!ac) return;
+    try {
+        const resp = await fetch(urlDe(tipo));
+        const dados = await resp.arrayBuffer();
+        const buffer = await ac.decodeAudioData(dados);
+        buffers.set(tipo, buffer);
+    } catch (err) {
+        console.warn('[Sirene] não foi possível pré-carregar o som:', err);
+    }
+}
+
+/** Reserva: <audio> comum, limitado a volume 1.0. */
+function tocarComElemento(tipo: TipoSirene, volume: number) {
+    try {
+        let el = fallbacks.get(tipo);
+        if (!el) {
+            el = new Audio(urlDe(tipo));
+            fallbacks.set(tipo, el);
+        }
+        el.volume = Math.min(1, volume / VOLUME_MAXIMO + 0.3);
+        el.currentTime = 0;
+        el.play().catch(e => console.warn('[Sirene] bloqueado pelo navegador:', e));
+    } catch (err) {
+        console.warn('[Sirene] falha ao tocar:', err);
     }
 }
 
 /**
- * Toca a sirene.
- * @param tipo  padrão sonoro
+ * Toca o alerta.
  * @param volume 1 = normal · até VOLUME_MAXIMO para ambiente barulhento
  */
 export function tocarSirene(tipo: TipoSirene = 'sino', volume: number = VOLUME_PADRAO): void {
-    const ac = contexto();
-    if (!ac) return;
-
     const nivel = Math.max(0.1, Math.min(VOLUME_MAXIMO, Number(volume) || VOLUME_PADRAO));
+    const ac = contexto();
 
-    // Compressor evita que o volume alto vire estalo/distorção no alto-falante.
-    const compressor = ac.createDynamicsCompressor();
-    compressor.threshold.setValueAtTime(-18, ac.currentTime);
-    compressor.ratio.setValueAtTime(12, ac.currentTime);
-    compressor.connect(ac.destination);
+    if (!ac) {
+        tocarComElemento(tipo, nivel);
+        return;
+    }
 
-    const mestre = ac.createGain();
-    // 0.25 de base: com nivel 3 (padrão) chega perto do limite sem distorcer.
-    mestre.gain.setValueAtTime(Math.min(2.5, 0.25 * nivel), ac.currentTime);
-    mestre.connect(compressor);
+    const buffer = buffers.get(tipo);
+    if (!buffer) {
+        // Ainda não carregou: toca pelo <audio> e já deixa pronto para a próxima.
+        tocarComElemento(tipo, nivel);
+        precarregarSirene(tipo);
+        return;
+    }
 
-    notasDe(tipo).forEach(n => {
-        const osc = ac.createOscillator();
-        const g = ac.createGain();
-        const t0 = ac.currentTime + n.inicio;
-        const t1 = t0 + n.duracao;
+    try {
+        const fonte = ac.createBufferSource();
+        fonte.buffer = buffer;
 
-        osc.type = n.tipo || 'sine';
-        osc.frequency.setValueAtTime(n.freq, t0);
-        if (n.freqFinal) osc.frequency.linearRampToValueAtTime(n.freqFinal, t1);
+        // Compressor: permite volume alto sem o alto-falante estourar.
+        const comp = ac.createDynamicsCompressor();
+        comp.threshold.setValueAtTime(-16, ac.currentTime);
+        comp.knee.setValueAtTime(10, ac.currentTime);
+        comp.ratio.setValueAtTime(12, ac.currentTime);
+        comp.attack.setValueAtTime(0.003, ac.currentTime);
+        comp.release.setValueAtTime(0.2, ac.currentTime);
 
-        // Ataque rápido e queda suave: audível sem estalar.
-        g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(0.9, t0 + 0.015);
-        g.gain.exponentialRampToValueAtTime(0.0001, t1);
+        // É AQUI que passamos do limite de um <audio>: nível 10 ≈ 4x o máximo.
+        const ganho = ac.createGain();
+        ganho.gain.setValueAtTime(0.4 * nivel, ac.currentTime);
 
-        osc.connect(g);
-        g.connect(mestre);
-        osc.start(t0);
-        osc.stop(t1 + 0.02);
-    });
+        ganho.connect(comp);
+        comp.connect(ac.destination);
+
+        // Repete o som N vezes. O agendamento vai no proprio WebAudio (e nao
+        // em setTimeout), entao o intervalo sai exato mesmo com a aba ocupada.
+        const vezes = SIRENES.find(x => x.valor === tipo)?.repeticoes ?? 1;
+        const intervalo = buffer.duration + 0.15;
+        for (let i = 0; i < vezes; i++) {
+            const f = i === 0 ? fonte : ac.createBufferSource();
+            if (i > 0) f.buffer = buffer;
+            f.connect(ganho);
+            f.start(ac.currentTime + i * intervalo);
+        }
+    } catch (err) {
+        console.warn('[Sirene] falha no WebAudio, usando <audio>:', err);
+        tocarComElemento(tipo, nivel);
+    }
 }
 
 /** Usado pelo botão "Ouvir" nas Configurações. */

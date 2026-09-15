@@ -11,6 +11,10 @@ import { carregarConfigEstacao } from './services/estacaoService';
 // de qualquer impressao para o printerService ja encontrar o cache pronto.
 carregarConfigEstacao();
 
+// Baixa o som do alerta uma vez, no boot. Assim o primeiro pedido do dia nao
+// espera o download — e se a internet cair depois, o som continua tocando.
+import('./services/sireneService').then(m => m.precarregarSirene()).catch(() => {});
+
 // --- DOM Exception Mismatch Safeguard (Prevents removeChild / insertBefore crashes from extensions/Google Translate) ---
 if (typeof window !== 'undefined') {
   const originalRemoveChild = Node.prototype.removeChild;

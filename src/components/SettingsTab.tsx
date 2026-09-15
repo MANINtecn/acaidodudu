@@ -445,6 +445,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                         Volume 3 e o normal. Acima disso o som e amplificado — util para cozinha barulhenta.
                         Clique em um som para ouvir.
                     </p>
+
+                    <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3">
+                        <input
+                            type="checkbox"
+                            name="mostrarDicasAtalho"
+                            id="mostrarDicasAtalho"
+                            checked={formData.mostrarDicasAtalho !== false}
+                            onChange={handleCheckboxChange}
+                            className="h-5 w-5 rounded text-purple-600 focus:ring-purple-500 border-gray-300 dark:bg-gray-700 dark:border-gray-600"
+                        />
+                        <div>
+                            <label htmlFor="mostrarDicasAtalho" className="text-sm font-bold text-gray-900 dark:text-gray-100 cursor-pointer">
+                                Mostrar dicas de atalho ao lancar
+                            </label>
+                            <p className="text-[11px] text-gray-500">
+                                Exibe, em tempo real, so as teclas que valem no passo atual. Desmarque quando a equipe ja souber.
+                            </p>
+                        </div>
+                    </div>
                 </div>
 
                 <EstacaoImpressao impressorasDisponiveis={availablePrinters} />

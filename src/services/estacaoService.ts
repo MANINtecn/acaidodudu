@@ -22,6 +22,16 @@ export type EscopoImpressao =
     | 'local'       // só o que foi lançado aqui no balcão/garçom
     | 'nada';       // esta máquina não imprime
 
+/**
+ * O que esta maquina TOCA. Eixo diferente do escopo de impressao: aqui o que
+ * importa e entrega x salao, nao a origem do pedido.
+ */
+export type EscopoSom =
+    | 'tudo'       // toca em qualquer pedido (padrao)
+    | 'entrega'    // so pedidos de entrega
+    | 'salao'      // so mesa/retirada/balcao
+    | 'mudo';      // esta maquina nao toca
+
 export interface ConfigEstacao {
     /** Nome da estação, só para o operador se localizar. Ex.: "Cozinha". */
     nome: string;
@@ -30,6 +40,8 @@ export interface ConfigEstacao {
     /** Impressora de produção DESTA máquina. Vazio = sem via de cozinha. */
     impressoraCozinha: string;
     escopo: EscopoImpressao;
+    /** O que esta maquina toca. Independente do escopo de impressao. */
+    escopoSom?: EscopoSom;
     /** false = ignora tudo isto e usa a configuração do banco (como era antes). */
     ativo: boolean;
 }
@@ -41,6 +53,7 @@ export const CONFIG_PADRAO: ConfigEstacao = {
     impressora: '',
     impressoraCozinha: '',
     escopo: 'tudo',
+    escopoSom: 'tudo',
     ativo: false,
 };
 
@@ -102,6 +115,21 @@ export function estacaoDeveImprimir(origem?: string): boolean {
     const veioDoApp = o === 'WEB' || o === 'APP' || o === 'AI';
 
     return cache.escopo === 'app' ? veioDoApp : !veioDoApp;
+}
+
+/**
+ * Esta maquina deve TOCAR o alerta deste pedido?
+ * Independente da impressao: a cozinha pode imprimir tudo e so tocar nas
+ * entregas, por exemplo.
+ */
+export function estacaoDeveTocar(orderType?: string): boolean {
+    if (!cache.ativo) return true;                  // desligado: nada muda
+    const escopo = cache.escopoSom || 'tudo';
+    if (escopo === 'mudo') return false;
+    if (escopo === 'tudo') return true;
+
+    const ehEntrega = (orderType || '').toLowerCase() === 'entrega';
+    return escopo === 'entrega' ? ehEntrega : !ehEntrega;
 }
 
 /**

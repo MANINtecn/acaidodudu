@@ -210,6 +210,8 @@ export interface Settings {
   sireneTipo?: string;
   /** Volume do alerta. 1 = normal, ate 10 para ambiente barulhento. */
   sireneVolume?: number;
+  /** Mostra a mini-colinha de atalhos durante o lancamento. undefined = mostra. */
+  mostrarDicasAtalho?: boolean;
 
   // ── PIX + comprovante pelo WhatsApp (tela pos-pedido do cliente) ──
   /** Liga a tela com a chave PIX e o botao de enviar comprovante. */

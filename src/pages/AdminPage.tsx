@@ -36,6 +36,7 @@ import { DeliveryZonesManager } from '../components/DeliveryZonesManager';
 import ComandosTab from '../components/ComandosTab';
 import { reservarImpressao, liberarImpressao, liberarTodasAsVias } from '../services/impressaoLockService';
 import { tocarSirene, type TipoSirene } from '../services/sireneService';
+import { estacaoDeveTocar, estacaoDeveImprimir, estacaoAtiva } from '../services/estacaoService';
 import {
     fetchMenuForAdmin,
     createCategory,
@@ -171,7 +172,11 @@ const AdminPage = () => {
             // F4 falhar de forma intermitente: o CounterTab tem outro listener
             // no mesmo window, e o evento podia sair daqui já marcado e ser
             // descartado antes de virar troca de aba. Ver Regra 10.
-            if (e.key !== 'F4' && e.key !== 'F5' && e.key !== 'F6') return;
+            const ehNavegacao = e.key === 'F4' || e.key === 'F5' || e.key === 'F6' || e.key === 'F7';
+            const ehDigito = /^[0-9]$/.test(e.key);
+            const ehEnter = e.key === 'Enter';
+            const ehEsc = e.key === 'Escape';
+            if (!ehNavegacao && !ehDigito && !ehEnter && !ehEsc) return;
 
             if ((e as any).__pdvNav) return;
             (e as any).__pdvNav = true;
@@ -180,13 +185,96 @@ const AdminPage = () => {
             const temModalAberto = isEditOrderModalOpen || isCheckoutModalOpen;
             if (temModalAberto) return;
 
+            // Digitos/Enter/Esc so valem NA ABA PEDIDOS — no Balcao eles sao do
+            // fluxo de lancamento (CounterTab) e nao podem ser sequestrados aqui.
+            if (!ehNavegacao) {
+                if (activeTabRef.current !== 'orders') return;
+
+                const alvo = e.target as HTMLElement | null;
+                const digitando = !!alvo && (
+                    alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.isContentEditable
+                );
+                if (digitando) return;
+
+                if (ehDigito) {
+                    e.preventDefault();
+                    setMesaBuscada(prev => (prev + e.key).slice(0, 2));
+                    return;
+                }
+                if (ehEsc) { e.preventDefault(); setMesaBuscada(''); setComandaAberta(null); return; }
+                if (ehEnter && mesaBuscadaRef.current) {
+                    e.preventDefault();
+                    abrirComandaDaMesa(parseInt(mesaBuscadaRef.current, 10));
+                    setMesaBuscada('');
+                    return;
+                }
+                return;
+            }
+
             e.preventDefault();
+
+            // F7 = checkout da comanda aberta. Fecha a conta sem mouse:
+            // F5 -> numero -> ENTER -> F7 -> (D/C/P) -> ENTER
+            if (e.key === 'F7') {
+                const alvo = comandaAbertaRef.current;
+                if (alvo) {
+                    setCheckoutOrder(alvo);
+                    setIsCheckoutModalOpen(true);
+                } else {
+                    showNotify('Abra uma comanda primeiro: F5, número da mesa e ENTER.', 'warning');
+                }
+                return;
+            }
+
             setActiveTab(e.key === 'F4' ? 'counter' : e.key === 'F5' ? 'orders' : 'comandos');
         };
         window.addEventListener('keydown', aoTeclar);
         return () => window.removeEventListener('keydown', aoTeclar);
     }, [isEditOrderModalOpen, isCheckoutModalOpen]);
     const [checkoutOrder, setCheckoutOrder] = useState<Order | null>(null);
+
+    // ── BUSCA DE COMANDA POR TECLADO (aba Pedidos) ────────────────
+    // Fluxo: F5 -> numero da mesa -> ENTER (abre) -> F7 (checkout).
+    const [mesaBuscada, setMesaBuscada] = useState('');
+    const [comandaAberta, setComandaAberta] = useState<Order | null>(null);
+
+    // Refs espelho: o listener de teclado vive fora do ciclo de render e a
+    // closure fica um ciclo atras. Ler daqui e o que evita a tecla "nao
+    // funcionar as vezes". Ver Regra 10 no claude-acai.md.
+    const activeTabRef = useRef(activeTab);
+    activeTabRef.current = activeTab;
+    const mesaBuscadaRef = useRef(mesaBuscada);
+    mesaBuscadaRef.current = mesaBuscada;
+    const comandaAbertaRef = useRef<Order | null>(comandaAberta);
+    comandaAbertaRef.current = comandaAberta;
+
+    /**
+     * Abre a comanda de uma mesa pelo teclado.
+     * Junta TODOS os pedidos abertos daquela mesa num pedido virtual, do mesmo
+     * jeito que o handleAddItems faz — assim o checkout cobra o total certo.
+     */
+    const abrirComandaDaMesa = useCallback((numeroMesa: number) => {
+        const daMesa = ordersRef.current.filter(o =>
+            o.table_number === numeroMesa &&
+            o.status !== 'Entregue' && o.status !== 'Cancelado'
+        );
+
+        if (daMesa.length === 0) {
+            setComandaAberta(null);
+            showNotify(`Mesa ${numeroMesa} não tem comanda aberta.`, 'warning');
+            return;
+        }
+
+        const comanda: Order = {
+            ...daMesa[0],
+            items: daMesa.flatMap(o => o.items || []),
+            total: daMesa.reduce((soma, o) => soma + (Number(o.total) || 0), 0),
+        };
+
+        setComandaAberta(comanda);
+        setSelectedOrder(comanda);
+        showNotify(`Mesa ${numeroMesa} · R$ ${comanda.total.toFixed(2)} · F7 para fechar`);
+    }, []);
     const [showPrintSplash, setShowPrintSplash] = useState(false);
     const [darkMode, setDarkMode] = useState(() => {
         const saved = localStorage.getItem('theme');
@@ -305,15 +393,18 @@ const AdminPage = () => {
                 }
 
                 // Sound for new orders not seen before
-                const hasNew = ordersData.some(o => !ordersRef.current.find(lo => lo.id === o.id));
-                if (hasNew && notificationSound.current) {
+                const pedidoNovo = ordersData.find(o => !ordersRef.current.find(lo => lo.id === o.id));
+                if (pedidoNovo && notificationSound.current) {
                     console.log(`[Polling] New order(s) detected via polling. Playing sound.`);
-                    // Sirene gerada no app (sireneService): funciona sem internet e o volume
-                    // vai alem do que um <audio> permite. Ver Configuracoes -> Alerta Sonoro.
-                    tocarSirene(
-                        (settingsRef.current?.sireneTipo as TipoSirene) || 'sino',
-                        Number(settingsRef.current?.sireneVolume) || 3
-                    );
+                    // Toca so se ESTA maquina deve tocar este tipo de pedido.
+                    // A cozinha pode querer so entregas; o salao so o salao.
+                    // Ver Configuracoes -> Esta Maquina -> "O que esta maquina toca".
+                    if (estacaoDeveTocar(pedidoNovo.orderType)) {
+                        tocarSirene(
+                            (settingsRef.current?.sireneTipo as TipoSirene) || 'sino',
+                            Number(settingsRef.current?.sireneVolume) || 3
+                        );
+                    }
                 }
             }
 
@@ -345,12 +436,15 @@ const AdminPage = () => {
                 
                 // Play sound for all new orders IMMEDIATELY
                 if (notificationSound.current) {
-                    // Sirene gerada no app (sireneService): funciona sem internet e o volume
-                    // vai alem do que um <audio> permite. Ver Configuracoes -> Alerta Sonoro.
-                    tocarSirene(
-                        (settingsRef.current?.sireneTipo as TipoSirene) || 'sino',
-                        Number(settingsRef.current?.sireneVolume) || 3
-                    );
+                    // Toca so se ESTA maquina deve tocar este tipo de pedido.
+                    // A cozinha pode querer so entregas; o salao so o salao.
+                    // Ver Configuracoes -> Esta Maquina -> "O que esta maquina toca".
+                    if (estacaoDeveTocar((payload.new as any)?.order_type)) {
+                        tocarSirene(
+                            (settingsRef.current?.sireneTipo as TipoSirene) || 'sino',
+                            Number(settingsRef.current?.sireneVolume) || 3
+                        );
+                    }
                 }
 
                 showNotify(`Novo pedido recebido!`, 'success');
@@ -806,7 +900,10 @@ const AdminPage = () => {
             return;
         }
 
-        if (force) {
+        // O splash so aparece se ESTA maquina vai imprimir de fato. Sem isto,
+        // o PC do salao com impressao desativada mostrava "imprimindo..." sem
+        // nada sair. Ver Configuracoes -> Esta Maquina.
+        if (force && (!estacaoAtiva() || estacaoDeveImprimir(order.origin))) {
             setShowPrintSplash(true);
         }
 
@@ -1628,6 +1725,28 @@ const AdminPage = () => {
 
                 {activeTab === 'delivery-zones' && currentStore && (
                     <DeliveryZonesManager storeId={currentStore.id} />
+                )}
+
+                {/* Digitos da busca de comanda por teclado (F5 -> numero -> ENTER) */}
+                {activeTab === 'orders' && mesaBuscada && (
+                    <div className="fixed inset-0 z-[9998] flex items-center justify-center pointer-events-none">
+                        <div className="bg-slate-900 border-4 border-blue-500 rounded-2xl px-10 py-6 shadow-2xl text-center">
+                            <span className="block text-[10px] font-black uppercase tracking-widest text-blue-400">Abrir mesa</span>
+                            <span className="block text-6xl font-black text-white font-mono leading-none my-1">{mesaBuscada}</span>
+                            <span className="block text-[11px] font-bold text-slate-400">ENTER abre · ESC cancela</span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Comanda aberta pelo teclado: lembra que F7 fecha a conta */}
+                {activeTab === 'orders' && comandaAberta && !mesaBuscada && (
+                    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9997] pointer-events-none">
+                        <div className="bg-blue-600 text-white rounded-xl px-5 py-2.5 shadow-xl flex items-center gap-3">
+                            <span className="font-black text-sm">Mesa {comandaAberta.table_number}</span>
+                            <span className="font-mono font-bold">R$ {Number(comandaAberta.total).toFixed(2)}</span>
+                            <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded font-bold">F7 fecha a conta</span>
+                        </div>
+                    </div>
                 )}
 
                 {activeTab === 'comandos' && (

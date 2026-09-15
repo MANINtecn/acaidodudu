@@ -638,6 +638,7 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     autoPrintDineIn: true,   // padrao: imprime sozinho (comportamento historico)
     sireneTipo: 'sino',
     sireneVolume: 3,
+    mostrarDicasAtalho: true,
     pixEnabled: false,
     pixKey: '',
     pixKeyType: 'CNPJ',
@@ -702,6 +703,7 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
         autoPrintDineIn: dbData?.auto_print_dine_in ?? dbData?.autoPrintDineIn ?? defaultSettings.autoPrintDineIn,
         sireneTipo: dbData?.sirene_tipo ?? dbData?.sireneTipo ?? defaultSettings.sireneTipo,
         sireneVolume: Number(dbData?.sirene_volume ?? dbData?.sireneVolume ?? defaultSettings.sireneVolume),
+        mostrarDicasAtalho: dbData?.mostrar_dicas_atalho ?? dbData?.mostrarDicasAtalho ?? defaultSettings.mostrarDicasAtalho,
         pixEnabled: dbData?.pix_enabled ?? dbData?.pixEnabled ?? defaultSettings.pixEnabled,
         pixKey: dbData?.pix_key ?? dbData?.pixKey ?? defaultSettings.pixKey,
         pixKeyType: dbData?.pix_key_type ?? dbData?.pixKeyType ?? defaultSettings.pixKeyType,
@@ -951,7 +953,7 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
         'preferredPrinter', 'printerPaperWidth',
         'printerCompatibilityMode',
         'autoPrintDineIn',
-        'sireneTipo', 'sireneVolume',
+        'sireneTipo', 'sireneVolume', 'mostrarDicasAtalho',
         'pixEnabled', 'pixKey', 'pixKeyType', 'pixBeneficiary',
         'storeWhatsapp', 'pixResumoTemplate'
     ];
