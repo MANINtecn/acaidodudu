@@ -7,6 +7,7 @@ import {
     type ConfigEstacao,
     type EscopoImpressao,
     type EscopoSom,
+    type EscopoJanelas,
 } from '../services/estacaoService';
 
 interface Props {
@@ -19,6 +20,12 @@ const ESCOPOS_SOM: { valor: EscopoSom; titulo: string; ajuda: string }[] = [
     { valor: 'entrega', titulo: 'So entrega', ajuda: 'So pedidos de entrega.' },
     { valor: 'salao',   titulo: 'So salao',   ajuda: 'Mesa, retirada e balcao.' },
     { valor: 'mudo',    titulo: 'Mudo',       ajuda: 'Esta maquina nao toca.' },
+];
+
+const ESCOPOS_JANELAS: { valor: EscopoJanelas; titulo: string; ajuda: string }[] = [
+    { valor: 'tudo',    titulo: 'As duas',    ajuda: 'Entrega e Balcao/Retirada.' },
+    { valor: 'entrega', titulo: 'So entrega', ajuda: 'Esconde o salao.' },
+    { valor: 'salao',   titulo: 'So salao',   ajuda: 'Mesa, retirada e balcao.' },
 ];
 
 const ESCOPOS: { valor: EscopoImpressao; titulo: string; ajuda: string }[] = [
@@ -194,6 +201,39 @@ export const EstacaoImpressao = ({ impressorasDisponiveis }: Props) => {
                         </div>
                         <p className="text-[11px] text-gray-500 mt-1.5">
                             Independente da impressao: a cozinha pode imprimir tudo e so tocar nas entregas.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-2">
+                            Janelas da aba Pedidos
+                        </label>
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+                            {ESCOPOS_JANELAS.map(op => (
+                                <button
+                                    key={op.valor}
+                                    type="button"
+                                    onClick={() => alterar('escopoJanelas', op.valor)}
+                                    className={`text-left p-3 rounded-lg border-2 transition-all ${
+                                        (cfg.escopoJanelas || 'tudo') === op.valor
+                                            ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                                            : 'border-gray-200 dark:border-gray-700 hover:border-emerald-300'
+                                    }`}
+                                >
+                                    <span className={`block text-sm font-bold ${
+                                        (cfg.escopoJanelas || 'tudo') === op.valor
+                                            ? 'text-emerald-700 dark:text-emerald-300'
+                                            : 'text-gray-900 dark:text-gray-100'
+                                    }`}>{op.titulo}</span>
+                                    <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                        {op.ajuda}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-1.5 font-medium">
+                            Atencao: esconder uma coluna nos DOIS computadores faz o pedido
+                            passar despercebido. A aba Pedidos avisa quando algo esta oculto.
                         </p>
                     </div>
 

@@ -32,6 +32,16 @@ export type EscopoSom =
     | 'salao'      // so mesa/retirada/balcao
     | 'mudo';      // esta maquina nao toca
 
+/**
+ * Quais colunas da aba Pedidos esta maquina MOSTRA. Terceiro eixo, ao lado de
+ * impressao e som: o caixa do salao nao precisa ver a fila de entregas, e a
+ * cozinha so recebe do app.
+ */
+export type EscopoJanelas =
+    | 'tudo'       // Entrega + Balcao/Retirada (padrao)
+    | 'entrega'    // so a coluna de Entrega
+    | 'salao';     // so a coluna de Balcao/Retirada
+
 export interface ConfigEstacao {
     /** Nome da estação, só para o operador se localizar. Ex.: "Cozinha". */
     nome: string;
@@ -42,6 +52,8 @@ export interface ConfigEstacao {
     escopo: EscopoImpressao;
     /** O que esta maquina toca. Independente do escopo de impressao. */
     escopoSom?: EscopoSom;
+    /** Quais colunas da aba Pedidos esta maquina mostra. */
+    escopoJanelas?: EscopoJanelas;
     /** false = ignora tudo isto e usa a configuração do banco (como era antes). */
     ativo: boolean;
 }
@@ -54,6 +66,7 @@ export const CONFIG_PADRAO: ConfigEstacao = {
     impressoraCozinha: '',
     escopo: 'tudo',
     escopoSom: 'tudo',
+    escopoJanelas: 'tudo',
     ativo: false,
 };
 
@@ -123,13 +136,76 @@ export function estacaoDeveImprimir(origem?: string): boolean {
  * entregas, por exemplo.
  */
 export function estacaoDeveTocar(orderType?: string): boolean {
-    if (!cache.ativo) return true;                  // desligado: nada muda
+    // AINDA NAO CARREGOU: a config vem do disco por IPC (assincrono). Enquanto
+    // a promessa do boot nao resolve, `cache` e o CONFIG_PADRAO com
+    // ativo=false — e a linha de baixo devolveria `true`, fazendo TODA maquina
+    // tocar nos primeiros segundos apos abrir o app.
+    //
+    // Na duvida, ficar em silencio: um alerta perdido no boot incomoda menos
+    // que a sirene tocando no PC errado. O polling de 30s repete o pedido.
+    if (!estacaoFoiCarregada()) {
+        diagnosticarSom(orderType, false, 'config ainda nao carregou do disco');
+        return false;
+    }
+
+    if (!cache.ativo) {
+        diagnosticarSom(orderType, true, 'config desta maquina esta DESLIGADA (ativo=false)');
+        return true;                                // desligado: nada muda
+    }
+
     const escopo = cache.escopoSom || 'tudo';
-    if (escopo === 'mudo') return false;
-    if (escopo === 'tudo') return true;
+    if (escopo === 'mudo') {
+        diagnosticarSom(orderType, false, 'escopoSom=mudo');
+        return false;
+    }
+    if (escopo === 'tudo') {
+        diagnosticarSom(orderType, true, 'escopoSom=tudo');
+        return true;
+    }
 
     const ehEntrega = (orderType || '').toLowerCase() === 'entrega';
-    return escopo === 'entrega' ? ehEntrega : !ehEntrega;
+    const deve = escopo === 'entrega' ? ehEntrega : !ehEntrega;
+    diagnosticarSom(orderType, deve, `escopoSom=${escopo}, ehEntrega=${ehEntrega}`);
+    return deve;
+}
+
+/**
+ * Log do porque esta maquina tocou (ou nao). Sempre visivel no console —
+ * quando o som sair na maquina errada, esta linha diz exatamente o que ela
+ * leu do disco, sem precisar adivinhar.
+ */
+function diagnosticarSom(orderType: string | undefined, deve: boolean, motivo: string): void {
+    console.log(
+        `[Som] ${deve ? 'TOCA' : 'silencio'} · pedido="${orderType ?? '(sem tipo)'}" · ${motivo}` +
+        ` · estacao="${cache.nome || '(sem nome)'}" ativo=${cache.ativo}` +
+        ` escopoSom=${cache.escopoSom ?? '(indefinido)'} carregada=${estacaoFoiCarregada()}`
+    );
+}
+
+/**
+ * Despeja a config desta maquina no console. Para suporte: pedir ao operador
+ * que abra o console (Ctrl+Shift+I) e rode `window.pdvEstacao()`.
+ */
+export function dumpConfigEstacao(): ConfigEstacao & { carregada: boolean } {
+    const info = { ...cache, carregada: carregado };
+    console.log('[Estacao] configuracao desta maquina:', info);
+    return info;
+}
+
+/**
+ * Esta maquina mostra a coluna de Entrega? E a de Balcao/Retirada?
+ *
+ * ATENCAO: diferente da impressao, aqui NAO existe rede de seguranca no banco.
+ * Se as duas maquinas esconderem a mesma coluna, o pedido fica parado e ninguem
+ * ve. Por isso a aba Pedidos mostra um aviso fixo quando algo esta oculto —
+ * assim "cade o pedido?" vira "esta maquina esta configurada assim", e nao um
+ * chamado de suporte.
+ */
+export function estacaoMostraJanela(janela: 'entrega' | 'salao'): boolean {
+    if (!cache.ativo) return true;                    // desligado: mostra tudo
+    const escopo = cache.escopoJanelas || 'tudo';
+    if (escopo === 'tudo') return true;
+    return escopo === janela;
 }
 
 /**

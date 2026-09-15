@@ -36,7 +36,8 @@ import { DeliveryZonesManager } from '../components/DeliveryZonesManager';
 import ComandosTab from '../components/ComandosTab';
 import { reservarImpressao, liberarImpressao, liberarTodasAsVias } from '../services/impressaoLockService';
 import { tocarSirene, type TipoSirene } from '../services/sireneService';
-import { estacaoDeveTocar, estacaoDeveImprimir, estacaoAtiva } from '../services/estacaoService';
+import { estacaoDeveTocar, estacaoDeveImprimir, estacaoAtiva, estacaoMostraJanela } from '../services/estacaoService';
+import { mesmaMesa, nomeDaComanda } from '../utils/mesaUtils';
 import {
     fetchMenuForAdmin,
     createCategory,
@@ -253,9 +254,18 @@ const AdminPage = () => {
      * Junta TODOS os pedidos abertos daquela mesa num pedido virtual, do mesmo
      * jeito que o handleAddItems faz — assim o checkout cobra o total certo.
      */
+    // Quais colunas da aba Pedidos ESTA maquina mostra (electron-store).
+    // Lido a cada render: e leitura de cache, barata, e assim a tela reage
+    // assim que o operador salva a configuracao.
+    const mostraEntrega = estacaoMostraJanela('entrega');
+    const mostraSalao = estacaoMostraJanela('salao');
+
     const abrirComandaDaMesa = useCallback((numeroMesa: number) => {
+        // mesmaMesa(): o banco devolve table_number como STRING. Com `===`
+        // direto, "1" === 1 era false e isto dizia "mesa nao tem comanda"
+        // com a comanda aberta na tela ao lado.
         const daMesa = ordersRef.current.filter(o =>
-            o.table_number === numeroMesa &&
+            mesmaMesa(o.table_number, numeroMesa) &&
             o.status !== 'Entregue' && o.status !== 'Cancelado'
         );
 
@@ -265,8 +275,14 @@ const AdminPage = () => {
             return;
         }
 
+        // O nome pode vir em qualquer um dos pedidos da mesa, e chega
+        // grudado no numero ("Mesa 1 · TECX SISTEMAS"). nomeDaComanda()
+        // devolve so a parte digitada pelo operador.
+        const nomeReal = nomeDaComanda(daMesa);
+
         const comanda: Order = {
             ...daMesa[0],
+            customerName: nomeReal || daMesa[0].customerName,
             items: daMesa.flatMap(o => o.items || []),
             total: daMesa.reduce((soma, o) => soma + (Number(o.total) || 0), 0),
         };
@@ -1019,7 +1035,7 @@ const AdminPage = () => {
             };
             if (checkoutOrder.table_number) {
                 // MASS UPDATE for Tables
-                await batchUpdateTableOrders(currentStore.id, checkoutOrder.table_number, {
+                await batchUpdateTableOrders(currentStore.id, Number(checkoutOrder.table_number), {
                     status: 'Entregue',
                     paymentMethod: details.method,
                     changeFor: details.method === 'Dinheiro' ? details.amountTendered.toString() : undefined,
@@ -1066,7 +1082,7 @@ const AdminPage = () => {
     const handleAddItems = (order: Order) => {
         // Find if this is a table order and combine all its active sub-orders
         if (order.table_number) {
-            const tableOrders = orders.filter(o => o.table_number === order.table_number && o.status !== 'Entregue' && o.status !== 'Cancelado');
+            const tableOrders = orders.filter(o => mesmaMesa(o.table_number, order.table_number) && o.status !== 'Entregue' && o.status !== 'Cancelado');
             if (tableOrders.length > 0) {
                 const combinedItems = tableOrders.flatMap(o => o.items || []);
                 const combinedTotal = tableOrders.reduce((sum, o) => sum + (o.total || 0), 0);
@@ -1401,7 +1417,16 @@ const AdminPage = () => {
                                 Sair da Cozinha
                             </button>
                         )}
+                        {/* Aviso: esta maquina esconde alguma coluna.
+                            Sem isto o operador acha que o pedido sumiu. */}
+                        {!(mostraEntrega && mostraSalao) && (
+                            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 px-3 py-1.5 rounded-full bg-amber-100 dark:bg-amber-900/40 border border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-200 text-[11px] font-bold shadow-sm pointer-events-none">
+                                Este computador nao mostra {mostraEntrega ? 'Balcao/Retirada' : 'Entrega'}
+                            </div>
+                        )}
+
                         {/* Delivery Column */}
+                        {mostraEntrega && (
                         <div className="flex-1 flex flex-col bg-gray-100 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                             <div className="p-4 bg-blue-600 text-white font-bold text-lg flex justify-between items-center">
                                 <span>Entrega</span>
@@ -1430,8 +1455,10 @@ const AdminPage = () => {
                                 )}
                             </div>
                         </div>
+                        )}
 
                         {/* Counter/Pickup Column */}
+                        {mostraSalao && (
                         <div className="flex-1 flex flex-col bg-gray-100 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                             <div className="p-4 bg-orange-600 text-white font-bold text-lg flex justify-between items-center">
                                 <span>Balcão / Retirada</span>
@@ -1445,7 +1472,7 @@ const AdminPage = () => {
                                     filteredOrders
                                         .filter(o => o.orderType !== 'Entrega' && o.table_number)
                                         .reduce((acc, order) => {
-                                            const tableNum = order.table_number!;
+                                            const tableNum = Number(order.table_number);
                                             if (!acc[tableNum]) acc[tableNum] = [];
                                             acc[tableNum].push(order);
                                             return acc;
@@ -1494,6 +1521,7 @@ const AdminPage = () => {
                             </div>
 
                         </div>
+                        )}
                     </div>
                 )}
 
@@ -1807,7 +1835,7 @@ const AdminPage = () => {
                                 
                                 if (isTable) {
                                     // Fetch current active orders for this table to map items correctly
-                                    const currentTableOrders = orders.filter(o => o.table_number === savedOrder.table_number && o.status !== 'Entregue' && o.status !== 'Cancelado');
+                                    const currentTableOrders = orders.filter(o => mesmaMesa(o.table_number, savedOrder.table_number) && o.status !== 'Entregue' && o.status !== 'Cancelado');
                                     
                                     const originalCartIdsArray = currentTableOrders.flatMap(o => (o.items || []).map(i => i.cartId));
                                     const originalCartIds = new Set(originalCartIdsArray);

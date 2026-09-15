@@ -88,7 +88,8 @@ export interface Order {
     store_id: string;
     printed?: boolean;
     observation?: string;
-    table_number?: number;
+    /** Chega do banco como STRING ("1"). Use mesmaMesa()/Number() para comparar. */
+  table_number?: number | string;
     comandaNumber?: number;
     discount?: number;
     tax?: number;

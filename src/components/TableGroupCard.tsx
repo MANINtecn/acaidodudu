@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { nomeDaComanda } from '../utils/mesaUtils';
 import { Order } from '../types';
 import { Printer, XCircle, CheckCircle, ChevronDown, ChevronUp, PlusCircle, DollarSign } from 'lucide-react';
 
@@ -50,6 +51,10 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
 
     const action = getNextAction(mainStatus);
 
+    // O nome chega grudado no numero ("Mesa 1 · TECX SISTEMAS"). Exibir cru
+    // ao lado de "MESA 1" duplicava: "MESA 1 · MESA 1 · TECX SIS...".
+    const nomeDaMesa = nomeDaComanda(orders);
+
     return (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow p-3 flex flex-col h-full text-xs">
             {/* Header: Table Info */}
@@ -57,6 +62,11 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
                 <div className="flex flex-col">
                     <div className="flex items-center gap-2">
                         <span className="text-base font-bold text-blue-600 dark:text-blue-400 uppercase tracking-tighter">MESA {tableNumber}</span>
+                        {nomeDaMesa && (
+                            <span className="text-base font-bold text-gray-700 dark:text-gray-200 uppercase tracking-tighter truncate max-w-[10rem]" title={nomeDaMesa}>
+                                · {nomeDaMesa}
+                            </span>
+                        )}
                         <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 rounded text-[9px] font-bold uppercase">
                             {orders.length} {orders.length === 1 ? 'Pedido' : 'Pedidos'}
                         </span>

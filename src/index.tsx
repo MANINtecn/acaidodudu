@@ -5,11 +5,19 @@ import './index.css';
 import 'intro.js/introjs.css'; // Base styles (REQUIRED)
 import 'intro.js/themes/introjs-modern.css'; // Modern Theme
 import { registerPWA } from './pwa';
-import { carregarConfigEstacao } from './services/estacaoService';
+import { carregarConfigEstacao, dumpConfigEstacao } from './services/estacaoService';
 
-// Configuracao de impressao DESTA maquina (salao / cozinha). Carregada antes
-// de qualquer impressao para o printerService ja encontrar o cache pronto.
+// Configuracao de impressao/som DESTA maquina (salao / cozinha).
+//
+// A promessa fica solta de proposito: o React nao deve esperar o disco para
+// pintar a tela. Quem depende disto (estacaoDeveTocar) checa
+// estacaoFoiCarregada() e fica em SILENCIO ate a config chegar — antes,
+// enquanto a promessa nao resolvia, toda maquina tocava.
 carregarConfigEstacao();
+
+// Suporte: com o app aberto, Ctrl+Shift+I e `pdvEstacao()` mostram o que ESTA
+// maquina tem salvo no disco. Evita pedir print de tela de configuracao.
+(window as any).pdvEstacao = dumpConfigEstacao;
 
 // Baixa o som do alerta uma vez, no boot. Assim o primeiro pedido do dia nao
 // espera o download — e se a internet cair depois, o som continua tocando.

@@ -3,6 +3,7 @@ import { Plus, Minus, Trash2, Search, X, Bike, ShoppingBag, LogOut, Percent, Sca
 import type { Category, MenuItem, Addon, CartItem, OrderType, PaymentMethod, Settings, OrderStatus, Customer, Order, Promotion } from '../types';
 import { fetchAllOpenOrdersForTable, updateOrder, deleteOrder, fetchCustomerByPhone, upsertCustomer, searchCustomers } from '../services/supabaseService';
 import { normalizeString } from '../utils/searchUtils';
+import { mesmaMesa } from '../utils/mesaUtils';
 import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
 import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, connectScale, getScaleRawLog, clearScaleRawLog, getScaleSnapshot, type ScaleStatus } from '../services/scaleService';
@@ -155,7 +156,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         const statuses: Record<number, OrderStatus> = {};
         activeOrders.forEach(o => {
             if (o.table_number) {
-                statuses[o.table_number] = o.status;
+                statuses[Number(o.table_number)] = o.status;
             }
         });
         return statuses;
@@ -484,7 +485,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // Mesa ocupada = normalmente a segunda rodada da mesma mesa.
             // Somamos, mas deixamos MUITO claro que já havia pedido lá.
             const jaNaMesa = activeOrders
-                .filter(o => o.table_number === numeroMesa)
+                .filter(o => mesmaMesa(o.table_number, numeroMesa))   // banco devolve string
                 .reduce((s, o) => s + (o.total || 0), 0);
             bipar('somou');
             setAvisoAtalho({
@@ -635,9 +636,15 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // N abre o campo de nome. Vale na confirmacao E antes de montar —
             // antes exigia avisoAtalho==='enviar', entao a tecla nao fazia nada
             // enquanto o operador ainda estava lancando, e parecia quebrada.
-            if (e.key.toUpperCase() === 'N' && !nomeAberto &&
+            // REF, nao closure. Com `!nomeAberto` daqui o handler antigo
+            // ainda enxergava true depois de fechar o campo: a condicao falhava,
+            // o `return` no fim do bloco nao rodava, e a tecla seguia para os
+            // blocos de baixo levando preventDefault(). Dava o classico
+            // "primeira vez funciona, segunda nao". Ver Regra 10.
+            if (e.key.toUpperCase() === 'N' && !nomeAbertoRef.current &&
                 (avisoAtalho?.tipo === 'enviar' || !avisoAtalho)) {
                 e.preventDefault();
+                nomeAbertoRef.current = true;   // vale JA, sem esperar o render
                 setNomeAberto(true);
                 // Foco no proximo quadro, depois que o React pintou o campo.
                 // O setInterval anterior ficava re-focando e competia com o

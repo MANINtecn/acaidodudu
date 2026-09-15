@@ -101,7 +101,11 @@ export interface Order {
   store_id: string;
   printed?: boolean;
   observation?: string;
-  table_number?: number;
+  /**
+   * ATENCAO: chega do banco como STRING ("1"), nao number. Comparar sempre
+   * com mesmaMesa()/Number(), nunca com === direto contra number.
+   */
+  table_number?: number | string;
   comandaNumber?: number;
   discount?: number;
   tax?: number;
