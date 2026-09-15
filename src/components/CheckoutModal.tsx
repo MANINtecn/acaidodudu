@@ -27,17 +27,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
     /** Garante que o foco inicial aconteca UMA vez por abertura do modal. */
     const jaFocou = useRef(false);
 
+    // DEPENDER DE order.id (string), NUNCA de `order` (objeto).
+    //
+    // O React compara dependencia por identidade de referencia. O AdminPage
+    // recria o objeto do pedido a cada render — e ele re-renderiza sozinho: o
+    // polling roda a cada 30s e o realtime dispara a cada pedido que entra.
+    // Com `order` na lista, este efeito rodava de novo no meio da digitacao e
+    // o setAmountTendered('') apagava o valor que o operador estava digitando.
+    //
+    // O sintoma era "o campo nao funciona": o clique entrava e o foco tambem,
+    // mas nenhum caractere ficava na tela. Ver claude-acai.md, 1.0.52.
     useEffect(() => {
         if (!isOpen) {
             jaFocou.current = false;   // proxima abertura foca de novo
+            return;
         }
-        if (isOpen) {
-            setMethod(order.paymentMethod || 'Dinheiro');
-            setAmountTendered('');
-            setDiscount('');
-            setTax('');
-        }
-    }, [isOpen, order]);
+        setMethod(order.paymentMethod || 'Dinheiro');
+        setAmountTendered('');
+        setDiscount('');
+        setTax('');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, order?.id]);
 
     if (!isOpen) return null;
 
