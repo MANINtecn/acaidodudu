@@ -184,6 +184,21 @@ const AdminPage = () => {
 
             // Não sequestra a tecla com um modal aberto (checkout, editar pedido...).
             const temModalAberto = isEditOrderModalOpen || isCheckoutModalOpen;
+
+            // ESC e a EXCECAO: ele FECHA o modal. Antes o guard abaixo saia
+            // primeiro e o ESC global nao agia; a unica saida era o ESC do
+            // proprio modal, que depende de foco no container. Sem saida, o
+            // operador ia para o Balcao com o checkout montado por tras.
+            if (ehEsc && temModalAberto) {
+                e.preventDefault();
+                if (isCheckoutModalOpen) {
+                    setIsCheckoutModalOpen(false);
+                    setCheckoutOrder(null);
+                }
+                if (isEditOrderModalOpen) setIsEditOrderModalOpen(false);
+                return;
+            }
+
             if (temModalAberto) return;
 
             // Digitos/Enter/Esc so valem NA ABA PEDIDOS — no Balcao eles sao do
@@ -1910,7 +1925,13 @@ const AdminPage = () => {
                 checkoutOrder && (
                     <CheckoutModal
                         isOpen={isCheckoutModalOpen}
-                        onClose={() => setIsCheckoutModalOpen(false)}
+                        onClose={() => {
+                            // Limpar TAMBEM o pedido: so fechar deixava o
+                            // checkoutOrder preenchido e o modal montado por
+                            // tras (o bloco `checkoutOrder && (...)` acima).
+                            setIsCheckoutModalOpen(false);
+                            setCheckoutOrder(null);
+                        }}
                         onConfirm={handleConfirmCheckout}
                         order={checkoutOrder}
                     />

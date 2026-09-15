@@ -131,6 +131,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                             <DollarSign className="text-green-600" />
                             Checkout
                         </h2>
+                        <p className="text-[11px] font-bold text-gray-400 dark:text-gray-500 mt-0.5">
+                            ESC cancela · D/C/P forma de pagamento · ENTER finaliza
+                        </p>
                         <p className="text-sm text-gray-500 dark:text-gray-400">
                             Pedido #{order.dailyOrderNumber} • {order.customerName}
                         </p>
