@@ -720,6 +720,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // Marcamos o próprio evento: um KeyboardEvent nativo é único por tecla
     // pressionada, então a segunda passagem reconhece e ignora.
 
+    // Rede de seguranca: o campo de nome so existe dentro do aviso 'enviar'.
+    // Se sobrar `nomeAberto` sem esse aviso, o estado e impossivel — e antes
+    // deixava a tela coberta pela pelicula. Reseta em vez de travar.
+    useEffect(() => {
+        if (nomeAberto && avisoAtalho?.tipo !== 'enviar') setNomeAberto(false);
+    }, [nomeAberto, avisoAtalho]);
+
     // O aviso some sozinho. O de confirmação fica até o operador decidir.
     useEffect(() => {
         // 'confirmar' e 'enviar' aguardam decisão do operador: não somem sozinhos.
@@ -1086,8 +1093,23 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             {/* AVISO DO ATALHO DE TECLADO — grande e no meio da tela, para o
                 operador enxergar sem tirar os olhos da balança. */}
             {avisoAtalho && !isCustomItemModalOpen && !isTableModalOpen && !isScaleModalOpen && !isCategoryModalOpen && !isAddonModalOpen && (
-                <div className={`fixed inset-0 z-[9998] flex items-center justify-center p-4 ${nomeAberto ? '' : 'pointer-events-none'}`}>
-                    <div className={`px-8 py-6 rounded-2xl shadow-2xl border-4 text-center max-w-lg animate-fade-in ${
+                // pointer-events-none SEMPRE no overlay. Antes ele virava
+                // clicavel quando o campo de nome abria (`nomeAberto ? '' :`),
+                // e como e `fixed inset-0 z-[9998]` cobria o app inteiro: uma
+                // "pelicula" invisivel que engolia todo clique fora da caixa.
+                // Quem precisa de clique e a CAIXA, nao a tela toda.
+                <div
+                    className="fixed inset-0 z-[9998] flex items-center justify-center p-4 pointer-events-none"
+                    onClick={() => {
+                        // Clique fora fecha, igual aos outros modais deste
+                        // arquivo. Sem isto, perder o foco do campo deixava o
+                        // operador sem nenhuma saida pelo mouse.
+                        if (nomeAberto) { setNomeAberto(false); setAvisoAtalho(null); }
+                    }}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        className={`pointer-events-auto px-8 py-6 rounded-2xl shadow-2xl border-4 text-center max-w-lg animate-fade-in ${
                         avisoAtalho.tipo === 'enviar'    ? 'bg-blue-600 border-blue-300 text-white' :
                         avisoAtalho.tipo === 'ok'        ? 'bg-emerald-600 border-emerald-300 text-white' :
                         avisoAtalho.tipo === 'somou'     ? 'bg-amber-500 border-amber-200 text-slate-900' :
