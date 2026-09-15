@@ -13,7 +13,7 @@
     "electron:dev": "concurrently \"npm run dev\" \"electron .\"",
     "lint:atalhos": "node scripts/checar-atalhos.cjs",
     "build:bot": "esbuild servidor.ts --bundle --platform=node --format=cjs --outfile=servidor.cjs --external:electron --external:path --external:fs --external:os --external:http",
-    "electron:build": "npm run lint:atalhos && npm run build:bot && vite build --base=./ && electron-builder --win nsis"
+    "electron:build": "npm run lint:atalhos && npm run build:bot && vite build --base=./ --mode electron && electron-builder --win nsis"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.3",

@@ -3,13 +3,32 @@ import react from '@vitejs/plugin-react'
 import legacy from '@vitejs/plugin-legacy'
 import { VitePWA } from 'vite-plugin-pwa'
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   base: './',
   plugins: [
     react(),
-    legacy({
-      targets: ['defaults', 'not IE 11', 'chrome >= 49', 'android >= 5'],
-    }),
+    // LEGACY SO NO SITE, NUNCA NO ELECTRON.
+    //
+    // O .exe carrega por file:// (main.js: loadFile). Nesse protocolo a flag
+    // window.__vite_is_modern_browser nem sempre e definida, e o script inline
+    // do plugin injeta o bundle legacy POR CIMA do moderno:
+    //
+    //     if (window.__vite_is_modern_browser) return;   // nao retorna
+    //
+    // Resultado: DOIS AdminPage rodando ao mesmo tempo, com dois pollings,
+    // dois realtime, dois caches de estacao e dois listeners de teclado.
+    // Foi a causa de: sirene tocando com escopo "mudo", impressao em 2 vias,
+    // campo de nome travando "as vezes" e o checkout "travado por tras".
+    // Visivel no console: a mesma linha duas vezes, uma de AdminPage-*.js e
+    // outra de AdminPage-legacy-*.js.
+    //
+    // O Electron 31 embute o Chrome 126: nunca precisou de legacy.
+    // O site (Vercel) continua com ele, para celular antigo abrir o cardapio.
+    ...(mode === 'electron' ? [] : [
+      legacy({
+        targets: ['defaults', 'not IE 11', 'chrome >= 49', 'android >= 5'],
+      }),
+    ]),
     VitePWA({
       registerType: 'autoUpdate',
       injectRegister: 'auto',
@@ -66,4 +85,4 @@ export default defineConfig({
       }
     })
   ]
-})
+}))
