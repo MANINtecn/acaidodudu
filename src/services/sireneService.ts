@@ -50,6 +50,22 @@ export const SIRENES: OpcaoSirene[] = [
 export const VOLUME_PADRAO = 3;
 export const VOLUME_MAXIMO = 10;
 
+/**
+ * Compressor: protege o alto-falante SEM achatar o controle de volume.
+ *
+ * Antes era threshold -16dB / ratio 12:1, ligado sempre: qualquer ganho acima
+ * de -16dB virava o mesmo patamar, entao volume 1 e volume 10 soavam iguais e
+ * o controle nao fazia efeito (variacao real: 1.21x).
+ *
+ * Desligar nos niveis baixos foi pior: criava um DEGRAU no nivel 4, onde o som
+ * despencava 6x ao subir o controle.
+ *
+ * Com threshold alto e ratio suave ele so age perto do estouro. A curva sobe
+ * sempre, varia 3.24x e o teto fica em ~1.30 (nao distorce).
+ */
+const COMPRESSOR_THRESHOLD = -1;
+const COMPRESSOR_RATIO = 4;
+
 let ctx: AudioContext | null = null;
 /** Áudio já decodificado, por tipo. Evita rebaixar a cada pedido. */
 const buffers = new Map<TipoSirene, AudioBuffer>();
@@ -98,7 +114,10 @@ function tocarComElemento(tipo: TipoSirene, volume: number) {
             el = new Audio(urlDe(tipo));
             fallbacks.set(tipo, el);
         }
-        el.volume = Math.min(1, volume / VOLUME_MAXIMO + 0.3);
+        // Sem o piso de +0.3 que existia antes: ele fazia o nivel 1 (0.4) e o
+        // nivel 3 (0.6) soarem quase iguais, anulando o controle. Agora o
+        // volume escolhido vale direto, com um minimo audivel de 0.08.
+        el.volume = Math.max(0.08, Math.min(1, volume / VOLUME_MAXIMO));
         el.currentTime = 0;
         el.play().catch(e => console.warn('[Sirene] bloqueado pelo navegador:', e));
     } catch (err) {
@@ -131,17 +150,19 @@ export function tocarSirene(tipo: TipoSirene = 'sino', volume: number = VOLUME_P
         const fonte = ac.createBufferSource();
         fonte.buffer = buffer;
 
-        // Compressor: permite volume alto sem o alto-falante estourar.
-        const comp = ac.createDynamicsCompressor();
-        comp.threshold.setValueAtTime(-16, ac.currentTime);
-        comp.knee.setValueAtTime(10, ac.currentTime);
-        comp.ratio.setValueAtTime(12, ac.currentTime);
-        comp.attack.setValueAtTime(0.003, ac.currentTime);
-        comp.release.setValueAtTime(0.2, ac.currentTime);
-
         // É AQUI que passamos do limite de um <audio>: nível 10 ≈ 4x o máximo.
         const ganho = ac.createGain();
         ganho.gain.setValueAtTime(0.4 * nivel, ac.currentTime);
+
+        // Compressor sempre ligado, mas so atuando perto do estouro: assim
+        // ele protege o alto-falante sem achatar o controle de volume.
+        // Ver claude-acai.md, 1.0.49.
+        const comp = ac.createDynamicsCompressor();
+        comp.threshold.setValueAtTime(COMPRESSOR_THRESHOLD, ac.currentTime);
+        comp.knee.setValueAtTime(6, ac.currentTime);
+        comp.ratio.setValueAtTime(COMPRESSOR_RATIO, ac.currentTime);
+        comp.attack.setValueAtTime(0.003, ac.currentTime);
+        comp.release.setValueAtTime(0.2, ac.currentTime);
 
         ganho.connect(comp);
         comp.connect(ac.destination);
