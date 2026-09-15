@@ -516,6 +516,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     modalAbertoRef.current = isTableModalOpen || isCustomItemModalOpen ||
                              isScaleModalOpen || isCategoryModalOpen || isAddonModalOpen;
 
+    // Espelho do campo de nome, tambem atualizado no corpo do render.
+    // Sem isto o handler lia `nomeAberto` da closure (um ciclo atras), nao saia
+    // cedo, e o preventDefault() abaixo engolia as teclas — o campo abria mas
+    // nao aceitava digitar nem clique. Ver Regra 10.
+    const nomeAbertoRef = useRef(false);
+    nomeAbertoRef.current = nomeAberto;
+
     // Captura das teclas. Ignorada enquanto o foco está num campo de texto
     // (o operador pode estar digitando nome/observação) e com modal aberto.
     useEffect(() => {
@@ -534,6 +541,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // antigo não sabia que o modal tinha aberto e o preventDefault()
             // abaixo engolia as teclas — foi o que travou a digitação no
             // "Item Avulso".
+            // Campo de nome aberto: TODAS as teclas sao dele. O proprio input
+            // trata ENTER e ESC no onKeyDown.
+            if (nomeAbertoRef.current) return;
+
             if (digitando || modalAbertoRef.current) return;
 
             // F4/F5/F6 sao da NAVEGACAO (AdminPage). Sair antes de marcar o
@@ -628,15 +639,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 (avisoAtalho?.tipo === 'enviar' || !avisoAtalho)) {
                 e.preventDefault();
                 setNomeAberto(true);
-                // Tenta focar por ~1s: o campo só existe depois do render, e
-                // 50ms fixos às vezes não bastavam — o campo abria sem foco e
-                // parecia bloqueado.
-                let tentativas = 0;
-                const focar = setInterval(() => {
-                    const campo = campoNomeRef.current;
-                    if (campo) { campo.focus(); campo.select(); clearInterval(focar); }
-                    else if (++tentativas > 20) clearInterval(focar);
-                }, 50);
+                // Foco no proximo quadro, depois que o React pintou o campo.
+                // O setInterval anterior ficava re-focando e competia com o
+                // clique do usuario; aqui e uma vez so.
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => campoNomeRef.current?.focus());
+                });
                 return;
             }
 
@@ -1091,6 +1099,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                 <div className="mt-4">
                                     <input
                                         ref={campoNomeRef}
+                                        autoFocus
                                         type="text"
                                         value={customerName}
                                         onChange={(e) => setCustomerName(e.target.value)}
