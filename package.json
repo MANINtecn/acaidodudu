@@ -1,7 +1,7 @@
 {
   "name": "acai-do-dudu",
   "private": true,
-  "version": "1.0.43",
+  "version": "1.0.44",
   "description": "Sistema de PDV Açaí do Dudu",
   "author": "TECX SISTEMAS",
   "main": "main.js",

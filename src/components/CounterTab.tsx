@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, memo, useRef, useCallback } from 'react';
 import { Plus, Minus, Trash2, Search, X, Bike, ShoppingBag, LogOut, Percent, Scale, Grid, ChevronDown } from 'lucide-react';
 import type { Category, MenuItem, Addon, CartItem, OrderType, PaymentMethod, Settings, OrderStatus, Customer, Order, Promotion } from '../types';
-import { fetchOpenOrderForTable, fetchCustomerByPhone, upsertCustomer, searchCustomers } from '../services/supabaseService';
+import { fetchAllOpenOrdersForTable, updateOrder, deleteOrder, fetchCustomerByPhone, upsertCustomer, searchCustomers } from '../services/supabaseService';
 import { normalizeString } from '../utils/searchUtils';
 import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
@@ -190,6 +190,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     }, []);
 
     const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
+    /**
+     * Pedidos abertos da mesa, como estavam ao abrir. Sao a referencia para
+     * distribuir os itens de volta no salvamento: cada item sabe de qual
+     * sub-pedido veio pelo cartId.
+     */
+    const [pedidosDaMesa, setPedidosDaMesa] = useState<Order[]>([]);
 
     // Custom Item State
     const [customItemName, setCustomItemName] = useState('');
@@ -554,6 +560,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     e.preventDefault();
                     setCart([]);
                     setSelectedTable('');
+                    setPedidosDaMesa([]);
                     setCustomerName('');
                     setNomeAberto(false);
                     setAvisoAtalho({ tipo: 'erro', titulo: 'Cancelado', detalhe: 'Nada foi enviado.' });
@@ -861,12 +868,17 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         setIsTableModalOpen(false);
         setIsProcessing(true);
         try {
-            const existingOrder = await fetchOpenOrderForTable(storeId, parseInt(tableNum));
-            if (existingOrder) {
-                setCart(existingOrder.items);
-                setCurrentOrderId(existingOrder.id || null);
-                setCustomerName(existingOrder.customerName);
+            // Carrega TODOS os pedidos abertos da mesa, nao so o ultimo.
+            // Antes usava fetchOpenOrderForTable, que tem .limit(1): a comanda
+            // aparecia incompleta e excluir aqui nao refletia na aba Pedidos.
+            const abertos = await fetchAllOpenOrdersForTable(storeId, parseInt(tableNum));
+            if (abertos.length > 0) {
+                setPedidosDaMesa(abertos);
+                setCart(abertos.flatMap(o => o.items || []));
+                setCurrentOrderId(abertos[0].id || null);
+                setCustomerName(abertos[0].customerName);
             } else {
+                setPedidosDaMesa([]);
                 setCurrentOrderId(null);
                 setCustomerName(`Mesa ${tableNum}`);
                 setCart([]);
@@ -969,12 +981,66 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 printed: false
             };
 
-            await onOrderComplete(orderData);
+            // MESA COM PEDIDOS ABERTOS: nao sobrescrever tudo num id so.
+            // Distribui igual ao onSave do EditOrderModal (AdminPage), que ja
+            // roda em producao: itens novos viram sub-pedido novo, os que ja
+            // existiam voltam para o pedido de origem pelo cartId, e o
+            // sub-pedido que ficou vazio e deletado.
+            if (pedidosDaMesa.length > 0 && orderType === 'Balcão' && selectedTable) {
+                const idsOriginais = new Set(
+                    pedidosDaMesa.flatMap(o => (o.items || []).map(i => i.cartId))
+                );
+                const itensNovos = cart.filter(i => !idsOriginais.has(i.cartId));
+                const itensExistentes = cart.filter(i => idsOriginais.has(i.cartId));
+
+                const valorDe = (itens: CartItem[]) => itens.reduce((soma, item) => {
+                    const adicionais = (item.selectedAddons || [])
+                        .reduce((a: number, x: any) => a + (Number(x.price) || 0), 0);
+                    return soma + ((Number(item.price) || 0) + adicionais) * (Number(item.quantity) || 1);
+                }, 0);
+
+                // A. Itens novos viram um sub-pedido proprio (dispara impressao).
+                if (itensNovos.length > 0) {
+                    await onOrderComplete({
+                        ...orderData,
+                        id: undefined,
+                        items: itensNovos,
+                        total: valorDe(itensNovos),
+                        printed: false,
+                        status: 'Novo',
+                    });
+                }
+
+                // B. Os demais voltam para o pedido de onde vieram.
+                for (const pedido of pedidosDaMesa) {
+                    const idsDoPedido = new Set((pedido.items || []).map(i => i.cartId));
+                    const meusItens = itensExistentes.filter(i => idsDoPedido.has(i.cartId));
+
+                    if ((pedido.items || []).length > 0 && meusItens.length === 0) {
+                        // Todos os itens deste sub-pedido foram removidos.
+                        await deleteOrder(pedido.id!);
+                    } else if (meusItens.length > 0) {
+                        await updateOrder(pedido.id!, {
+                            ...pedido,
+                            items: meusItens,
+                            total: valorDe(meusItens) + (Number(pedido.deliveryFee) || 0),
+                        });
+                    }
+                }
+
+                showNotify('Comanda da mesa atualizada! ✅');
+            } else {
+                await onOrderComplete(orderData);
+            }
+
             setCart([]);
             setSelectedTable('');
             setCurrentOrderId(null);
+            setPedidosDaMesa([]);
             setCustomerName('');
-            showNotify(isAvulso ? 'Venda Avulsa registrada! 💰' : 'Pedido salvo com sucesso! ✅');
+            if (!(pedidosDaMesa.length > 0 && orderType === 'Balcão' && selectedTable)) {
+                showNotify(isAvulso ? 'Venda Avulsa registrada! 💰' : 'Pedido salvo com sucesso! ✅');
+            }
         } catch (error) {
             console.error(error);
             showNotify('Erro ao salvar pedido.', 'error');
