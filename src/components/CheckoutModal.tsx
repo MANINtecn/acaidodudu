@@ -26,6 +26,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
     const [isProcessing, setIsProcessing] = useState(false);
     /** Garante que o foco inicial aconteca UMA vez por abertura do modal. */
     const jaFocou = useRef(false);
+    /** Container do modal. Ref ESTAVEL — ver o comentario do useEffect abaixo. */
+    const containerRef = useRef<HTMLDivElement>(null);
+    /** Campo "Valor Recebido": e ele que recebe o foco, nao o container. */
+    const campoValorRef = useRef<HTMLInputElement>(null);
 
     // DEPENDER DE order.id (string), NUNCA de `order` (objeto).
     //
@@ -48,6 +52,28 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
         setTax('');
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, order?.id]);
+
+    // FOCO INICIAL — aqui, nunca num callback ref.
+    //
+    // Um callback ref (`ref={(el) => ...}`) sem useCallback e recriado a cada
+    // render. O React entao chama o ref ANTIGO com `null` e o novo com o
+    // elemento — e nesse instante o foco do documento se perde. O campo estava
+    // focado, o elemento e "re-apresentado", o foco cai no body.
+    //
+    // Como este modal nao e memo e recebe `onClose` como arrow inline, ele
+    // re-renderiza junto com o AdminPage — que re-renderiza sozinho pelo
+    // polling de 30s e pelo realtime. Dai o relato: "passa uns segundos e o
+    // campo para". Minimizar "resolvia" porque o remount refazia tudo.
+    useEffect(() => {
+        if (!isOpen || jaFocou.current) return;
+        jaFocou.current = true;
+        // Proximo quadro: o React ja pintou os campos.
+        requestAnimationFrame(() => {
+            // Dinheiro ja chega com o cursor no valor recebido; nas outras
+            // formas basta o container, para D/C/P e ENTER funcionarem.
+            (campoValorRef.current ?? containerRef.current)?.focus();
+        });
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -121,17 +147,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
             className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
             onKeyDown={aoTeclar}
             tabIndex={-1}
-            ref={(el) => {
-                // Focar SO na abertura. Antes era `el?.focus()` direto, que roda
-                // a cada render — e o React re-renderiza a cada tecla digitada.
-                // Resultado: o foco era roubado do campo de volta para o
-                // container, parecendo um "tab" forcado, e o operador nao
-                // conseguia digitar o valor no fechamento da conta.
-                if (el && !jaFocou.current) {
-                    jaFocou.current = true;
-                    el.focus();
-                }
-            }}
+            ref={containerRef}
         >
             <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
                 {/* Header */}
@@ -212,12 +228,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                                 <div className="relative">
                                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500">R$</span>
                                     <input
+                                        ref={campoValorRef}
                                         type="number"
                                         value={amountTendered}
                                         onChange={e => setAmountTendered(e.target.value)}
+                                        onFocus={e => e.target.select()}
                                         className="w-full pl-10 pr-4 py-3 text-lg font-bold border rounded-lg focus:ring-2 focus:ring-green-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
                                         placeholder="0.00"
-                                        autoFocus
                                     />
                                 </div>
                             </div>
