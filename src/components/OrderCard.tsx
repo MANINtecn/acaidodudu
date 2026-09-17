@@ -106,6 +106,15 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onPrint, onCancel, onDelet
             {/* Customer Info */}
             <div className="mb-3 border-b border-gray-100 dark:border-gray-700 pb-2">
                 <h3 className="font-bold text-sm text-gray-800 dark:text-gray-100 truncate">{order.customerName}</h3>
+                {/* Selo RETIRADA: mesmo criterio do ehColunaEntrega no AdminPage —
+                    Balcao sem mesa, veio do site — pra nao confundir com Entrega
+                    de verdade na mesma coluna. Ver claude-acai.md, 17/09/2026. */}
+                {order.orderType === 'Balcão' && !order.table_number &&
+                    (order.origin === 'WEB' || order.origin === 'APP' || order.origin === 'AI') && (
+                    <span className="inline-block mt-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                        Retirada
+                    </span>
+                )}
                 {order.orderType === 'Entrega' && (
                     <div className="mt-1">
                         <p className="text-xs text-gray-600 dark:text-gray-400 leading-tight">

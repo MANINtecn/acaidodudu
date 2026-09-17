@@ -194,6 +194,11 @@ const AdminPage = () => {
                 if (isCheckoutModalOpen) {
                     setIsCheckoutModalOpen(false);
                     setCheckoutOrder(null);
+                    // Fechar o checkout de uma comanda de mesa tambem limpa o
+                    // badge "Mesa N · F7 fecha a conta" — senao ele ficava na
+                    // tela mesmo com a mesa fechada, exigindo um ESC extra so
+                    // pra sumir.
+                    setComandaAberta(null);
                 }
                 if (isEditOrderModalOpen) setIsEditOrderModalOpen(false);
                 return;
@@ -1087,6 +1092,9 @@ const AdminPage = () => {
             await loadData(true);
             setIsCheckoutModalOpen(false);
             setCheckoutOrder(null);
+            // Comanda fechou: some tambem o badge "Mesa N · F7 fecha a
+            // conta" — a mesa esta livre, nao ha o que fechar mais.
+            setComandaAberta(null);
 
         } catch (error) {
             console.error("Checkout error:", error);
@@ -1189,6 +1197,33 @@ const AdminPage = () => {
         }
     }, [currentStore?.id, handlePrintOrder, loadData]);
 
+
+    // Retirada aparece na coluna ENTREGA, nao mais em Balcao/Retirada — pedido
+    // do Icaro (17/09/2026). So exibicao: orderType/origin continuam gravados
+    // como sempre foram — impressao (usa `origin`) e relatorios nao mudam.
+    //
+    // DESCOBERTA no teste: o botao "Retirar" do site (CustomerPageModern e
+    // CustomerPageClassic) grava orderType='Balcao', NUNCA 'Retirada' — assim
+    // desde antes desta mudanca, em producao ha meses. So o tipo interno
+    // 'Retirada' (lancado manual no CounterTab, ou script de teste
+    // --retirada) usa esse valor de verdade.
+    //
+    // Decisao do Icaro: NAO mudar o que e gravado (risco pro fluxo do site em
+    // producao). Em vez disso, o filtro reconhece pela COMBINACAO que ja
+    // existe: Balcao SEM mesa = ninguem esta numa mesa fisica = veio do site
+    // pra retirar. Balcao COM mesa continua sendo mesa de verdade.
+    const ehColunaEntrega = (o: Order) => {
+        if (o.orderType === 'Entrega' || o.orderType === 'Retirada') return true;
+        // Balcao sem mesa tem 2 origens com a MESMA assinatura de dado:
+        //   - cliente clicou "Retirar" no site (origin WEB/APP/AI) -> Entrega
+        //   - venda avulsa batida no caixa fisico (origin 'BALCÃO')-> continua Balcao
+        // `origin` e o unico campo que distingue os dois. Ver claude-acai.md.
+        if (o.orderType === 'Balcão' && !o.table_number) {
+            const veioDoSite = o.origin === 'WEB' || o.origin === 'APP' || o.origin === 'AI';
+            return veioDoSite;
+        }
+        return false;
+    };
 
     const filteredOrders = useMemo(() => {
         return orders.filter(o => {
@@ -1446,11 +1481,11 @@ const AdminPage = () => {
                             <div className="p-4 bg-blue-600 text-white font-bold text-lg flex justify-between items-center">
                                 <span>Entrega</span>
                                 <span className="bg-white text-blue-600 px-2 py-1 rounded-full text-sm">
-                                    {filteredOrders.filter(o => o.orderType === 'Entrega').length}
+                                    {filteredOrders.filter(ehColunaEntrega).length}
                                 </span>
                             </div>
                             <div className="p-4 overflow-y-auto flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4 content-start scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-                                {filteredOrders.filter(o => o.orderType === 'Entrega').map(order => (
+                                {filteredOrders.filter(ehColunaEntrega).map(order => (
                                     <OrderCard
                                         key={order.id}
                                         order={order}
@@ -1465,7 +1500,7 @@ const AdminPage = () => {
                                         onEdit={handleAddItems}
                                     />
                                 ))}
-                                {filteredOrders.filter(o => o.orderType === 'Entrega').length === 0 && (
+                                {filteredOrders.filter(ehColunaEntrega).length === 0 && (
                                     <div className="text-center text-gray-500 dark:text-gray-400 mt-10">Sem pedidos de entrega.</div>
                                 )}
                             </div>
@@ -1476,16 +1511,16 @@ const AdminPage = () => {
                         {mostraSalao && (
                         <div className="flex-1 flex flex-col bg-gray-100 dark:bg-gray-800/50 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
                             <div className="p-4 bg-orange-600 text-white font-bold text-lg flex justify-between items-center">
-                                <span>Balcão / Retirada</span>
+                                <span>Balcão</span>
                                 <span className="bg-white text-orange-600 px-2 py-1 rounded-full text-sm">
-                                    {filteredOrders.filter(o => o.orderType !== 'Entrega').length}
+                                    {filteredOrders.filter(o => !ehColunaEntrega(o)).length}
                                 </span>
                             </div>
                             <div className="p-4 overflow-y-auto flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-2 2xl:grid-cols-3 gap-4 content-start scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
                                 {/* 1. Render Grouped Tables */}
                                 {Object.entries(
                                     filteredOrders
-                                        .filter(o => o.orderType !== 'Entrega' && o.table_number)
+                                        .filter(o => !ehColunaEntrega(o) && o.table_number)
                                         .reduce((acc, order) => {
                                             const tableNum = Number(order.table_number);
                                             if (!acc[tableNum]) acc[tableNum] = [];
@@ -1513,7 +1548,7 @@ const AdminPage = () => {
                                 ))}
 
                                 {/* 2. Render Individual (Non-Table) Counter/Pickup Orders */}
-                                {filteredOrders.filter(o => o.orderType !== 'Entrega' && !o.table_number).map(order => (
+                                {filteredOrders.filter(o => !ehColunaEntrega(o) && !o.table_number).map(order => (
                                     <OrderCard
                                         key={order.id}
                                         order={order}
@@ -1931,6 +1966,7 @@ const AdminPage = () => {
                             // tras (o bloco `checkoutOrder && (...)` acima).
                             setIsCheckoutModalOpen(false);
                             setCheckoutOrder(null);
+                            setComandaAberta(null);
                         }}
                         onConfirm={handleConfirmCheckout}
                         order={checkoutOrder}
