@@ -1506,6 +1506,55 @@ const ItemDetailModal: React.FC<{
     );
 };
 
+const LandingPhoneField: React.FC<{ onPhoneSubmit: (phone: string) => void; isLoading: boolean }> = ({ onPhoneSubmit, isLoading }) => {
+    const [phone, setPhone] = useState('');
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (phone.replace(/\D/g, '').length >= 8) {
+            onPhoneSubmit(phone);
+        }
+    };
+
+    const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value.replace(/\D/g, '');
+        if (value.length <= 9) {
+            setPhone(value);
+        } else {
+            let formatted = value.slice(0, 11);
+            if (formatted.length > 2) formatted = `(${formatted.slice(0, 2)}) ${formatted.slice(2)}`;
+            if (formatted.length > 9) formatted = `${formatted.slice(0, 9)}-${formatted.slice(9)}`;
+            setPhone(formatted);
+        }
+    };
+
+    return (
+        <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col items-center gap-1 mt-1">
+            <div className="w-full flex items-center gap-2 bg-gradient-to-r from-amber-500/10 via-yellow-400/10 to-amber-500/10 border-2 border-amber-400/70 rounded-xl px-3 py-2 shadow-[0_0_15px_rgba(251,191,36,0.35)] focus-within:border-amber-300 focus-within:shadow-[0_0_20px_rgba(251,191,36,0.5)] transition-all">
+                <Star size={16} className="text-amber-400 shrink-0 fill-amber-400" />
+                <input
+                    type="tel"
+                    value={phone}
+                    onChange={handlePhoneChange}
+                    placeholder="Seu telefone (WhatsApp)"
+                    maxLength={15}
+                    className="flex-grow bg-transparent border-none text-sm font-bold text-amber-950 placeholder-amber-700/50 focus:outline-none focus:ring-0"
+                />
+                <button
+                    type="submit"
+                    disabled={isLoading || phone.replace(/\D/g, '').length < 8}
+                    className="shrink-0 bg-gradient-to-r from-amber-500 to-orange-500 text-white text-xs font-black uppercase tracking-wide px-4 py-1.5 rounded-lg disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-[0_2px_8px_rgba(251,191,36,0.4)]"
+                >
+                    {isLoading ? '...' : 'Entrar'}
+                </button>
+            </div>
+            <p className="text-[11px] text-amber-900 dark:text-amber-950 text-center px-2 leading-tight font-bold">
+                🎁 Clientes que ja pediram ganham desconto especial aqui!
+            </p>
+        </form>
+    );
+};
+
 const CustomerRecognitionBar: React.FC<{ onPhoneSubmit: (phone: string) => void; isLoading: boolean }> = ({ onPhoneSubmit, isLoading }) => {
     const [phone, setPhone] = useState('');
 
@@ -1976,12 +2025,17 @@ const CustomerPage: React.FC = () => {
     }, [lastOrder]);
 
     // Onboarding Tour Logic - Wait for items to load
+    //
+    // DESATIVADO a pedido do Icaro (17/09/2026): o tour cobria a tela toda
+    // na primeira visita, escondendo o campo de fidelidade novo e nao fazia
+    // mais sentido nessa versao. `false &&` em vez de apagar o bloco, para
+    // ser facil religar se um dia quiserem trazer de volta.
     useEffect(() => {
         const hasSeenOnboarding = localStorage.getItem('hasSeenOnboarding');
-        
+
         // Wait for menuItems to be populated before starting the tour
         // Using `menu.menuItems` as the correct source of truth
-        if (!hasSeenOnboarding && menu.menuItems.length > 0) {
+        if (false && !hasSeenOnboarding && menu.menuItems.length > 0) {
             // Small delay to ensure DOM is fully painted
             const timer = setTimeout(() => {
                 introJs()
@@ -2444,7 +2498,7 @@ const CustomerPage: React.FC = () => {
 
     if (viewMode === 'landing') {
         return (
-            <div className="bg-background min-h-screen text-text-light font-sans flex flex-col relative overflow-y-auto">
+            <div className="bg-background h-[100dvh] text-text-light font-sans flex flex-col relative overflow-hidden">
                 {/* Header Logo & Actions */}
                 <div className="absolute top-4 left-4 right-4 z-20 flex justify-between items-start pointer-events-none">
                     {currentStore?.logo_url ? (
@@ -2464,10 +2518,10 @@ const CustomerPage: React.FC = () => {
                 </div>
 
                 {/* Hero Image */}
-                <div className="relative h-[55vh] w-full bg-black rounded-b-[40px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.8)]">
-                    <img 
-                        src="/acai_boat_hero.jpg" 
-                        alt="Açaí Hero" 
+                <div className="relative flex-1 min-h-[200px] max-h-[320px] w-full bg-black rounded-b-[40px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.8)]">
+                    <img
+                        src={settings?.heroImageUrl || '/acai_boat_hero.jpg'}
+                        alt="Açaí Hero"
                         className="w-full h-full object-cover opacity-100 brightness-110 saturate-110"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11]/20 to-black/20"></div>
@@ -2484,8 +2538,8 @@ const CustomerPage: React.FC = () => {
                     </div>
                 </div>
 
-                <div className="flex-1 flex flex-col items-center justify-start mt-2 px-4 pb-24 z-10">
-                    <div className="grid grid-cols-3 gap-3 md:gap-5 w-full max-w-2xl mb-8">
+                <div className="shrink-0 overflow-y-auto flex flex-col items-center justify-start mt-1 px-4 pb-2 z-10">
+                    <div className="grid grid-cols-3 gap-2 md:gap-5 w-full max-w-2xl mb-4 sm:mb-8">
                         {(settings?.modernGroups || []).map((group: any) => (
                             <button
                                 key={group.id}
@@ -2493,7 +2547,7 @@ const CustomerPage: React.FC = () => {
                                     setSelectedGroup(group);
                                     setViewMode('filtered');
                                 }}
-                                className="relative flex items-center justify-center h-36 md:h-44 rounded-2xl overflow-hidden group transition-all duration-300 hover:scale-105 active:scale-95 p-[4px] bg-gradient-to-b from-orange-500 via-amber-400 to-purple-600 shadow-[0_0_25px_rgba(249,115,22,0.5)] hover:shadow-[0_0_30px_rgba(168,85,247,0.6)]"
+                                className="relative flex items-center justify-center h-16 sm:h-32 md:h-40 rounded-2xl overflow-hidden group transition-all duration-300 hover:scale-105 active:scale-95 p-[4px] bg-gradient-to-b from-orange-500 via-amber-400 to-purple-600 shadow-[0_0_25px_rgba(249,115,22,0.5)] hover:shadow-[0_0_30px_rgba(168,85,247,0.6)]"
                             >
                                 <div className="w-full h-full bg-gray-950 rounded-[12px] overflow-hidden relative flex items-center justify-center">
                                     {group.image && (
@@ -2510,11 +2564,18 @@ const CustomerPage: React.FC = () => {
 
                     <button 
                         onClick={() => setViewMode('all')}
-                        className="w-full max-w-sm bg-gradient-to-r from-red-600 via-orange-500 to-amber-500 text-white font-black text-sm uppercase tracking-wider py-4 px-6 rounded-xl border border-red-400/40 shadow-[0_0_25px_rgba(239,68,68,0.4)] hover:shadow-[0_0_30px_rgba(249,115,22,0.6)] hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
+                        className="w-full max-w-sm bg-gradient-to-r from-red-600 via-orange-500 to-amber-500 text-white font-black text-sm uppercase tracking-wider py-3 sm:py-4 px-6 rounded-xl border border-red-400/40 shadow-[0_0_25px_rgba(239,68,68,0.4)] hover:shadow-[0_0_30px_rgba(249,115,22,0.6)] hover:brightness-110 active:scale-95 transition-all flex items-center justify-center gap-2"
                     >
                         <span>Ver Cardápio Completo</span>
                         <LucideArrowRight size={18} />
                     </button>
+
+                    {/* Fidelidade: campo simples, cliente informa o telefone e o
+                        sistema reconhece quem ja pediu antes (nome/endereco
+                        salvos + desconto de fidelidade). Reusa a mesma logica
+                        do Classic (handleHeroPhoneSubmit) — so a casca visual
+                        e nova, discreta, conforme referencia do Icaro. */}
+                    <LandingPhoneField onPhoneSubmit={handleHeroPhoneSubmit} isLoading={isSearchingCustomer} />
                 </div>
 
                 <DraggableCart onClick={() => setIsCartOpen(true)} itemCount={cart.length} isAnimating={false} />
@@ -2550,6 +2611,42 @@ const CustomerPage: React.FC = () => {
                     pendingReward={pendingReward}
                     dynamicDeliveryFee={dynamicDeliveryFee}
                 />
+
+                {/* Fidelidade: os modais de reconhecimento/cadastro precisam
+                    existir AQUI tambem, nao so no return do modo cardapio.
+                    `viewMode === 'landing'` tem um return proprio (linha
+                    ~2500) que sai da funcao ANTES de chegar nos modais lah
+                    embaixo — LandingPhoneField chama handleHeroPhoneSubmit,
+                    que chama setShowNewCustomerModal(true)/setShowRecognitionModal(true)
+                    corretamente, mas o componente nunca era renderizado
+                    porque a arvore de baixo nunca era alcancada.
+                    Confirmado com Playwright: o estado mudava (logs
+                    confirmavam), mas 0 elementos do modal apareciam no DOM.
+                    Ver claude-acai.md. */}
+                <LoyaltyProfileModal
+                    isOpen={showRecognitionModal}
+                    onClose={() => setShowRecognitionModal(false)}
+                    customer={recognizedCustomer}
+                    lastOrder={lastOrder}
+                    onRepeatOrder={handleRepeatOrder}
+                    onNewOrder={handleNewOrderWithCustomer}
+                    isLoadingRepeat={isRepeatingOrder}
+                    storeId={currentStore?.id || ''}
+                    onTriggerReward={() => setShowRewardCelebration(true)}
+                    isStoreOpen={isStoreOpen}
+                    onUpdateAddress={handleUpdateCustomerAddress}
+                    pendingReward={pendingReward}
+                    dynamicDeliveryFee={dynamicDeliveryFee}
+                />
+
+                <NewCustomerModal
+                    isOpen={showNewCustomerModal}
+                    onClose={() => setShowNewCustomerModal(false)}
+                    onProceed={() => {
+                        setShowNewCustomerModal(false);
+                        setIsCartOpen(true);
+                    }}
+                />
             </div>
         );
     }
@@ -2573,7 +2670,7 @@ const CustomerPage: React.FC = () => {
                 
                 <DiscountBanner settings={settings} />
                 <RaffleBanner settings={settings} />
-                
+
                 <div className="px-4 py-2 border-t border-purple-500/20">
                     <div className="relative w-full p-[1px] rounded-xl bg-gradient-to-r from-purple-600/60 via-orange-500/60 to-amber-500/60 shadow-[0_0_15px_rgba(168,85,247,0.25)] focus-within:shadow-[0_0_20px_rgba(249,115,22,0.4)] transition-all">
                         <div className="relative w-full bg-[#120a1f] rounded-[11px] flex items-center">
