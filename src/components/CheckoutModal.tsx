@@ -233,6 +233,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                                         value={amountTendered}
                                         onChange={e => setAmountTendered(e.target.value)}
                                         onFocus={e => e.target.select()}
+                                        onKeyDown={e => {
+                                            // ENTER dentro do campo tambem finaliza. Sem isto
+                                            // so funcionava ENTER fora do campo (o aoTeclar do
+                                            // container ignora dígitos/ENTER quando o alvo e
+                                            // um INPUT — guarda `digitando`), entao o operador
+                                            // digitava o valor e precisava clicar fora antes
+                                            // de apertar ENTER.
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                if (!isProcessing) handleConfirm();
+                                            }
+                                        }}
                                         className="w-full pl-10 pr-4 py-3 text-lg font-bold border rounded-lg focus:ring-2 focus:ring-green-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
                                         placeholder="0.00"
                                     />
