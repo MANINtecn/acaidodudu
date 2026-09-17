@@ -216,6 +216,13 @@ export interface Settings {
   sireneVolume?: number;
   /** Mostra a mini-colinha de atalhos durante o lancamento. undefined = mostra. */
   mostrarDicasAtalho?: boolean;
+  /**
+   * Layout do grid de mesas na aba Balcao.
+   * 'padrao'       = grade numerada, como sempre foi (undefined tambem cai aqui).
+   * 'personalizado' = cartoes com nome do cliente, 8 visiveis + scroll.
+   * So muda a EXIBICAO — TOTAL_MESAS e handleSelectTable sao os mesmos.
+   */
+  modeloMesas?: 'padrao' | 'personalizado';
 
   // ── PIX + comprovante pelo WhatsApp (tela pos-pedido do cliente) ──
   /** Liga a tela com a chave PIX e o botao de enviar comprovante. */

@@ -464,6 +464,50 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                             </p>
                         </div>
                     </div>
+
+                    <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                        <label className="block text-sm font-bold text-gray-900 dark:text-gray-100 mb-2">
+                            Layout das mesas (aba Balcao)
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setFormData(prev => ({ ...prev, modeloMesas: 'padrao' }))}
+                                className={`text-left p-3 rounded-lg border-2 transition-all ${
+                                    (formData.modeloMesas || 'padrao') === 'padrao'
+                                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                                        : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
+                                }`}
+                            >
+                                <span className={`block text-sm font-bold ${
+                                    (formData.modeloMesas || 'padrao') === 'padrao'
+                                        ? 'text-purple-700 dark:text-purple-300'
+                                        : 'text-gray-900 dark:text-gray-100'
+                                }`}>Modelo 1 · Convencional</span>
+                                <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                    Grade numerada, como e hoje.
+                                </span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setFormData(prev => ({ ...prev, modeloMesas: 'personalizado' }))}
+                                className={`text-left p-3 rounded-lg border-2 transition-all ${
+                                    formData.modeloMesas === 'personalizado'
+                                        ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                                        : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'
+                                }`}
+                            >
+                                <span className={`block text-sm font-bold ${
+                                    formData.modeloMesas === 'personalizado'
+                                        ? 'text-purple-700 dark:text-purple-300'
+                                        : 'text-gray-900 dark:text-gray-100'
+                                }`}>Modelo 2 · Personalizado</span>
+                                <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                    Cartoes com nome do cliente, 8 visiveis + rolagem.
+                                </span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <EstacaoImpressao impressorasDisponiveis={availablePrinters} />
