@@ -3,10 +3,17 @@ import { Plus, Minus, Trash2, Search, X, Bike, ShoppingBag, LogOut, Percent, Sca
 import type { Category, MenuItem, Addon, CartItem, OrderType, PaymentMethod, Settings, OrderStatus, Customer, Order, Promotion } from '../types';
 import { fetchAllOpenOrdersForTable, updateOrder, deleteOrder, fetchCustomerByPhone, upsertCustomer, searchCustomers } from '../services/supabaseService';
 import { normalizeString } from '../utils/searchUtils';
-import { mesmaMesa } from '../utils/mesaUtils';
+import { mesmaMesa, nomeDaComanda } from '../utils/mesaUtils';
 import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
 import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, connectScale, getScaleRawLog, clearScaleRawLog, getScaleSnapshot, type ScaleStatus } from '../services/scaleService';
+
+/**
+ * Total de mesas do sistema. ERA const local dentro de lancarPesoNaMesa — por
+ * isso os dois grids de selecao tinham `30` hardcoded, sem enxergar essa
+ * constante. Agora e uma so, no modulo, para os 3 pontos nunca divergirem.
+ */
+const TOTAL_MESAS = 30;
 
 interface CounterTabProps {
     categories: Category[];
@@ -408,8 +415,6 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
      * pediu a conta: reabrimos a mesa e lançamos.
      */
     const lancarPesoNaMesa = (numeroMesa: number, forcarReabertura = false) => {
-        const TOTAL_MESAS = 30;
-
         if (numeroMesa < 1 || numeroMesa > TOTAL_MESAS) {
             bipar('erro');
             setAvisoAtalho({ tipo: 'erro', titulo: `Mesa ${numeroMesa} não existe`, detalhe: `As mesas vão de 1 a ${TOTAL_MESAS}.` });
@@ -1558,26 +1563,59 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center justify-between">
                                 Selecione a Mesa {selectedTable && <span className="text-orange-600">Mesa {selectedTable} selecionada</span>}
                             </h4>
-                            <div className="grid grid-cols-5 gap-2">
-                                {Array.from({ length: 30 }, (_, i) => i + 1).map(num => {
-                                    const status = tableStatuses[num];
-                                    const isSelected = selectedTable === num.toString().padStart(2, '0');
-                                    let statusColor = isSelected 
-                                        ? 'bg-orange-500 text-white border-orange-500 shadow-md scale-105' 
-                                        : (status 
-                                            ? 'bg-red-50 dark:bg-red-900/20 text-red-600 border-red-100 dark:border-red-900/30' 
-                                            : 'bg-white dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-100 dark:border-gray-600 hover:border-orange-200');
-                                    return (
-                                        <button 
-                                            key={num} 
-                                            onClick={() => handleSelectTable(num.toString().padStart(2, '0'))} 
-                                            className={`aspect-square rounded-xl font-black text-sm border-2 transition-all flex items-center justify-center ${statusColor}`}
-                                        >
-                                            {num}
-                                        </button>
-                                    );
-                                })}
-                            </div>
+                            {settings?.modeloMesas === 'personalizado' ? (
+                                // MODELO 2: cada mesa e uma LINHA INTEIRA (nao mais um
+                                // quadrado num grid-cols-5). Pega o "quadrado" que seria
+                                // a mesa e estica na largura toda — cabe "MESA 01 - NOME".
+                                // Sem altura maxima aqui: quem rola e o container pai
+                                // (overflow-y-auto, ja existente), entao a mesa 9+ some da
+                                // vista mas continua alcancavel descendo a pagina.
+                                <div className="space-y-2">
+                                    {Array.from({ length: TOTAL_MESAS }, (_, i) => i + 1).map(num => {
+                                        const status = tableStatuses[num];
+                                        const isSelected = selectedTable === num.toString().padStart(2, '0');
+                                        const nome = nomeDaComanda(
+                                            activeOrders.filter(o => mesmaMesa(o.table_number, num))
+                                        );
+                                        let statusColor = isSelected
+                                            ? 'bg-orange-500 text-white border-orange-500 shadow-md'
+                                            : (status
+                                                ? 'bg-red-50 dark:bg-red-900/20 text-red-600 border-red-100 dark:border-red-900/30'
+                                                : 'bg-white dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-100 dark:border-gray-600 hover:border-orange-200');
+                                        return (
+                                            <button
+                                                key={num}
+                                                onClick={() => handleSelectTable(num.toString().padStart(2, '0'))}
+                                                className={`w-full rounded-xl font-black text-sm border-2 transition-all flex items-center px-4 py-3 truncate ${statusColor}`}
+                                            >
+                                                MESA {num.toString().padStart(2, '0')}{nome ? ` - ${nome}` : ''}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                // MODELO 1: grade numerada, como sempre foi.
+                                <div className="grid grid-cols-5 gap-2">
+                                    {Array.from({ length: TOTAL_MESAS }, (_, i) => i + 1).map(num => {
+                                        const status = tableStatuses[num];
+                                        const isSelected = selectedTable === num.toString().padStart(2, '0');
+                                        let statusColor = isSelected 
+                                            ? 'bg-orange-500 text-white border-orange-500 shadow-md scale-105' 
+                                            : (status 
+                                                ? 'bg-red-50 dark:bg-red-900/20 text-red-600 border-red-100 dark:border-red-900/30' 
+                                                : 'bg-white dark:bg-gray-700/50 text-gray-600 dark:text-gray-300 border-gray-100 dark:border-gray-600 hover:border-orange-200');
+                                        return (
+                                            <button 
+                                                key={num} 
+                                                onClick={() => handleSelectTable(num.toString().padStart(2, '0'))} 
+                                                className={`aspect-square rounded-xl font-black text-sm border-2 transition-all flex items-center justify-center ${statusColor}`}
+                                            >
+                                                {num}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1735,7 +1773,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             <button onClick={() => setIsTableModalOpen(false)}><X /></button>
                         </div>
                         <div className="grid grid-cols-5 gap-3">
-                            {Array.from({ length: 30 }, (_, i) => i + 1).map(num => {
+                            {Array.from({ length: TOTAL_MESAS }, (_, i) => i + 1).map(num => {
                                 const status = tableStatuses[num];
                                 const isSelected = selectedTable === num.toString().padStart(2, '0');
                                 let statusColor = isSelected ? 'border-primary bg-primary/10 text-primary' : (status ? 'border-red-500 bg-red-100 text-red-700' : 'border-green-200 bg-green-50 text-green-700');
