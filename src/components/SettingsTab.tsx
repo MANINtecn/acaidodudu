@@ -20,7 +20,7 @@ import { Settings, Category } from '../types';
 import EstacaoImpressao from './EstacaoImpressao';
 import PixWhatsappConfig from './PixWhatsappConfig';
 import { SIRENES, testarSirene, VOLUME_MAXIMO, type TipoSirene } from '../services/sireneService';
-import { uploadLogoToStorage } from '../services/supabaseService';
+import { uploadLogoToStorage, uploadHeroImageToStorage } from '../services/supabaseService';
 import { printOrder, generateReceiptText } from '../services/printerService';
 import { requestSerialPort } from '../services/scaleService';
 import { UpdateManager } from './UpdateManager';
@@ -145,6 +145,38 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                         } catch (error) {
                                             console.error(error);
                                             alert('Erro ao enviar logo');
+                                        } finally {
+                                            setLoading(false);
+                                        }
+                                    }
+                                }} className="hidden" disabled={loading} />
+                            </label>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Foto de destaque (tela inicial do cardapio)
+                        </label>
+                        <p className="text-[11px] text-gray-500 mb-2">
+                            Aparece grande no topo, ao abrir o site. Se nao trocar, usa a foto padrao.
+                        </p>
+                        <div className="flex items-center gap-4">
+                            {formData.heroImageUrl && (
+                                <img src={formData.heroImageUrl} alt="Foto de destaque" className="w-24 h-16 object-cover rounded-lg bg-gray-100" />
+                            )}
+                            <label className="cursor-pointer bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-600 dark:text-gray-300 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
+                                <Upload size={20} />
+                                {loading ? 'Enviando...' : 'Escolher Foto'}
+                                <input type="file" accept="image/*" onChange={async (e) => {
+                                    if (e.target.files && e.target.files[0]) {
+                                        setLoading(true);
+                                        try {
+                                            const url = await uploadHeroImageToStorage(settings.store_id || 'general', e.target.files[0]);
+                                            if (url) setFormData(prev => ({ ...prev, heroImageUrl: url }));
+                                        } catch (error) {
+                                            console.error(error);
+                                            alert('Erro ao enviar a foto');
                                         } finally {
                                             setLoading(false);
                                         }

@@ -190,6 +190,8 @@ export interface Settings {
   isAppDiscountEnabled: boolean;
   appDiscountPercentage: number;
   logoUrl?: string;
+  /** Foto grande da tela inicial (Moderna). Vazio = usa /acai_boat_hero.jpg. */
+  heroImageUrl?: string;
   isRaffleEnabled?: boolean;
   rafflePrizeValue?: number;
   raffleDrawDate?: string;

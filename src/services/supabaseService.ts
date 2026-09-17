@@ -607,6 +607,25 @@ export const uploadLogoToStorage = async (storeId: string, file: File): Promise<
     return data.publicUrl;
 };
 
+/** Mesmo mecanismo da logo -- so muda o prefixo do arquivo no bucket. */
+export const uploadHeroImageToStorage = async (storeId: string, file: File): Promise<string> => {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `hero_${Date.now()}.${fileExt}`;
+    const filePath = `${storeId}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+        .from('assets')
+        .upload(filePath, file, { upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage
+        .from('assets')
+        .getPublicUrl(filePath);
+
+    return data.publicUrl;
+};
+
 const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     openingTime: '18:00',
     closingTime: '23:59',
@@ -619,6 +638,7 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     isAppDiscountEnabled: false,
     appDiscountPercentage: 0,
     logoUrl: '',
+    heroImageUrl: '',
     storefrontTheme: 'classic',
     modernGroups: [
         { id: 1, name: 'AÇAÍ', image: '', categories: [] },
@@ -668,7 +688,8 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
     const fullData = {
         ...defaultSettings,
         ...(dbData || {}),
-        logoUrl: storeData?.logo_url || dbData?.logo_url || dbData?.logoUrl
+        logoUrl: storeData?.logo_url || dbData?.logo_url || dbData?.logoUrl,
+        heroImageUrl: dbData?.hero_image_url ?? dbData?.heroImageUrl ?? defaultSettings.heroImageUrl
     };
 
     return {
@@ -798,7 +819,7 @@ export const fetchSettings = async (storeId: string): Promise<Settings> => {
     return result;
 };
 
-export const fetchPublicSettings = async (storeId: string): Promise<Pick<Settings, 'modernGroups' | 'storefrontTheme' | 'openingTime' | 'closingTime' | 'manualStatus' | 'comboPrice' | 'webhookNewOrderUrl' | 'webhookInProductionUrl' | 'webhookOutForDeliveryUrl' | 'webhookArrivedAtDoorUrl' | 'isAppDiscountEnabled' | 'appDiscountPercentage' | 'logoUrl' | 'isRaffleEnabled' | 'rafflePrizeValue' | 'raffleDrawDate' | 'lastRaffleWinner' | 'isRatingEnabled' | 'deliveryFee' | 'courier_access_code' | 'defaultDDD' | 'isBotEnabled' | 'printerCompatibilityMode' | 'kitchenPrinter' | 'kitchenPrinterPaperWidth' | 'barPrinter' | 'barPrinterPaperWidth' | 'courierPrinter' | 'courierPrinterPaperWidth'>> => {
+export const fetchPublicSettings = async (storeId: string): Promise<Pick<Settings, 'modernGroups' | 'storefrontTheme' | 'openingTime' | 'closingTime' | 'manualStatus' | 'comboPrice' | 'webhookNewOrderUrl' | 'webhookInProductionUrl' | 'webhookOutForDeliveryUrl' | 'webhookArrivedAtDoorUrl' | 'isAppDiscountEnabled' | 'appDiscountPercentage' | 'logoUrl' | 'heroImageUrl' | 'isRaffleEnabled' | 'rafflePrizeValue' | 'raffleDrawDate' | 'lastRaffleWinner' | 'isRatingEnabled' | 'deliveryFee' | 'courier_access_code' | 'defaultDDD' | 'isBotEnabled' | 'printerCompatibilityMode' | 'kitchenPrinter' | 'kitchenPrinterPaperWidth' | 'barPrinter' | 'barPrinterPaperWidth' | 'courierPrinter' | 'courierPrinterPaperWidth'>> => {
     const { data, error } = await supabase
         .from('settings')
         .select('*')
@@ -955,7 +976,7 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
         'preferredPrinter', 'printerPaperWidth',
         'printerCompatibilityMode',
         'autoPrintDineIn',
-        'sireneTipo', 'sireneVolume', 'mostrarDicasAtalho', 'modeloMesas',
+        'sireneTipo', 'sireneVolume', 'mostrarDicasAtalho', 'modeloMesas', 'heroImageUrl',
         'pixEnabled', 'pixKey', 'pixKeyType', 'pixBeneficiary',
         'storeWhatsapp', 'pixResumoTemplate'
     ];
