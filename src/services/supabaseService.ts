@@ -112,14 +112,22 @@ export const mapMenuItemFromDB = (item: any, addons?: Addon[]): MenuItem => {
         selectedAddons: hydratedAddons,
         addons: (itemSpecificAddonIds === null)
             ? (addons?.filter((a: any) => a.categoryId === (item.category_id || item.categoryId)) || [])
-            : []
+            : [],
+        // Campos fiscais (NFC-e) -- colunas existem desde add_fiscal_config.sql
+        // mas nunca tinham sido mapeadas para o app (ficavam mortas). 21/09/2026.
+        unidadeFiscal: item.unidade_fiscal ?? item.unidadeFiscal,
+        origemFiscal: item.origem_fiscal ?? item.origemFiscal,
+        cfopFiscal: item.cfop_fiscal ?? item.cfopFiscal,
+        csosnFiscal: item.csosn_fiscal ?? item.csosnFiscal,
     };
 };
 
 export const mapMenuItemToDB = (item: Partial<MenuItem>) => {
-    const { 
-        id, categoryId, isAvailable, eligibleForCombo, isCombo, 
-        selectedAddons, allowedAddons, addons, ...rest 
+    const {
+        id, categoryId, isAvailable, eligibleForCombo, isCombo,
+        selectedAddons, allowedAddons, addons,
+        unidadeFiscal, origemFiscal, cfopFiscal, csosnFiscal,
+        ...rest
     } = item as any;
 
     const payload: any = { ...rest };
@@ -129,6 +137,11 @@ export const mapMenuItemToDB = (item: Partial<MenuItem>) => {
     if (isCombo !== undefined) payload.is_combo = isCombo;
     if (selectedAddons !== undefined) payload.selected_addons = Array.isArray(selectedAddons) ? selectedAddons.map((a: any) => a.id) : selectedAddons;
     if (allowedAddons !== undefined) payload.allowed_addons = allowedAddons;
+    // Campos fiscais (NFC-e) -- ver mapMenuItemFromDB.
+    if (unidadeFiscal !== undefined) payload.unidade_fiscal = unidadeFiscal;
+    if (origemFiscal !== undefined) payload.origem_fiscal = origemFiscal;
+    if (cfopFiscal !== undefined) payload.cfop_fiscal = cfopFiscal;
+    if (csosnFiscal !== undefined) payload.csosn_fiscal = csosnFiscal;
 
     // Remove any remaining camelCase or virtual fields that might be in rest
     delete payload.categoryId;
@@ -136,7 +149,7 @@ export const mapMenuItemToDB = (item: Partial<MenuItem>) => {
     delete payload.eligibleForCombo;
     delete payload.isCombo;
     delete payload.isSelected;
-    
+
     return payload;
 };
 

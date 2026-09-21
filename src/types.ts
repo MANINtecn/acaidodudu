@@ -72,8 +72,11 @@ export interface MenuItem {
   pricePerKg?: number;
   /**
    * Campos fiscais (NFC-e). `ncm` e OBRIGATORIO para emitir — sem ele a
-   * nota nao sai. Levantamento de 09/09: 33 dos 73 produtos estao sem NCM,
-   * o contador precisa definir antes da Fase 2 (emissao).
+   * nota nao sai. Levantamento de 21/09/2026, cruzando com os XMLs reais
+   * do Multipedidos: NENHUM dos 73 produtos tinha NCM preenchido (pior do
+   * que o "33 sem NCM" de 09/09). Preenchido em lote nesta data para os
+   * produtos com correspondencia confirmada nos XMLs reais -- ver
+   * claude-acai.md, "Preenchimento fiscal em lote a partir dos XMLs reais".
    */
   ncm?: string;
   cest?: string;
@@ -81,6 +84,17 @@ export interface MenuItem {
   unidadeFiscal?: string;
   /** 0 = nacional — padrao para produto de sorveteria/alimenticio. */
   origemFiscal?: number;
+  /**
+   * CFOP e CSOSN mudam POR PRODUTO, nao sao um padrao unico da loja --
+   * achado dos XMLs reais (21/09/2026): açai e bebidas industrializadas
+   * usam CSOSN 500 (Substituicao Tributaria, ICMS ja retido na industria),
+   * mas sorvete/churros/canjica usam CSOSN 102 (normal). Confirmado com o
+   * contador (CS Contabilidade, 21/09/2026: "sim, correto"). Quando vazio,
+   * o gerador de XML (Fase 2) cai no cfop_padrao/csosn_padrao de
+   * fiscal_config -- mas isso so serve para os itens fora do regime de ST.
+   */
+  cfopFiscal?: string;
+  csosnFiscal?: string;
 }
 
 export interface CartItem extends MenuItem {
