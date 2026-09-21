@@ -26,11 +26,25 @@ interface CounterTabProps {
     activeOrders: Order[];
     onBack?: () => void;
     promotions?: Promotion[];
+    /**
+     * Muda de valor sempre que o F3 (global, no AdminPage) pede foco no
+     * campo de busca. Numero em vez de boolean para o useEffect disparar
+     * mesmo se o F3 for apertado duas vezes seguidas sem nada mudar entre.
+     */
+    focusSearchSignal?: number;
 }
 
-export const CounterTab = memo(({ categories, menuItems, addons, settings, storeId, onOrderComplete, initialTable, activeOrders, onBack, promotions }: CounterTabProps) => {
+export const CounterTab = memo(({ categories, menuItems, addons, settings, storeId, onOrderComplete, initialTable, activeOrders, onBack, promotions, focusSearchSignal }: CounterTabProps) => {
     const [selectedCategoryId, setSelectedCategoryId] = useState<number>(categories[0]?.id || 0);
     const [searchTerm, setSearchTerm] = useState('');
+    /** Input de busca de produto. F3 (AdminPage) foca aqui via focusSearchSignal. */
+    const buscaProdutoRef = useRef<HTMLInputElement>(null);
+
+    // Foca a busca sempre que o sinal mudar. So no numero, nao no mount —
+    // undefined/0 iniciais nao devem roubar o foco sozinhos.
+    useEffect(() => {
+        if (focusSearchSignal) buscaProdutoRef.current?.focus();
+    }, [focusSearchSignal]);
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
     const [orderType, setOrderType] = useState<OrderType>('Balcão');
@@ -1404,6 +1418,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-blue-400" size={18} />
                         <input 
+                            ref={buscaProdutoRef}
                             type="text" 
                             placeholder="Buscar produto..." 
                             value={searchTerm} 
