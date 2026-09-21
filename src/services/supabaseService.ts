@@ -442,7 +442,28 @@ export const updateOrderStatus = async (orderId: string, status: Order['status']
         .eq('id', orderId)
         .select(ORDER_COLUMNS);
     if (error) throw error;
-    return data ? data.map(mapOrderFromDB) : [];
+
+    const updatedOrders = data ? data.map(mapOrderFromDB) : [];
+
+    // Estorno de pontos ao cancelar -- regra fechada com o Ikarus,
+    // 21/09/2026: "pedido for cancelado a gente retira o ponto". Mesma
+    // condicao do credito (creditarPontosDoPedido, em createOrder): so
+    // modelo 'pontos', so pedidos WEB/APP, nunca bloqueando a operacao de
+    // cancelar se o estorno falhar (roda em background, so loga erro).
+    if (status === 'Cancelado' && updatedOrders[0]) {
+        const order = updatedOrders[0];
+        const ehDoSite = order.origin === 'WEB' || order.origin === 'APP';
+        if (ehDoSite && order.phone && order.store_id) {
+            fetchPublicSettings(order.store_id).then(settings => {
+                if (settings.loyaltyModel === 'pontos') {
+                    estornarPontosDoPedido(orderId, order.phone!, order.store_id, order.total)
+                        .catch(e => console.error('Error reverting loyalty points on cancel:', e));
+                }
+            }).catch(e => console.error('Error fetching settings for loyalty revert:', e));
+        }
+    }
+
+    return updatedOrders;
 };
 
 
@@ -647,6 +668,62 @@ export const creditarPontosDoPedido = async (
             store_id: storeId,
             phone: sanitizedPhone,
             points_balance: atual + pontos,
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'store_id,phone' });
+    if (upsertError) throw upsertError;
+};
+
+/**
+ * Estorna os pontos de um pedido CANCELADO -- regra fechada com o Ikarus,
+ * 21/09/2026: "pedido for cancelado a gente retira o ponto". So faz sentido
+ * para pedidos que de fato geraram "ganho" antes (mesma condicao de
+ * creditarPontosDoPedido: modelo 'pontos' + origin WEB/APP), chamado de
+ * updateOrderStatus ao mudar o status para 'Cancelado'.
+ *
+ * Idempotente pelo mesmo padrao do credito: um segundo INDEX unico em
+ * loyalty_points_ledger (tipo='estorno' + order_id) recusa um segundo
+ * estorno do mesmo pedido -- ver estender_loyalty_estorno_unico.sql.
+ *
+ * O saldo nunca fica negativo (Math.max(0, ...)): se o cliente ja gastou os
+ * pontos daquele pedido em outro resgate antes do cancelamento, o estorno
+ * so zera o que ainda sobra, nao empresta saldo futuro.
+ */
+export const estornarPontosDoPedido = async (
+    orderId: string,
+    phone: string,
+    storeId: string,
+    valorPago: number
+): Promise<void> => {
+    const pontos = calcularPontosGanhos(valorPago);
+    if (pontos <= 0) return;
+
+    const sanitizedPhone = phone.replace(/\D/g, '');
+
+    // 1. Tenta registrar o estorno. Se este pedido ja tiver um "estorno"
+    //    (UNIQUE INDEX), o insert falha e paramos sem tocar no saldo de novo.
+    const { error: ledgerError } = await supabase
+        .from('loyalty_points_ledger')
+        .insert({
+            store_id: storeId,
+            phone: sanitizedPhone,
+            tipo: 'estorno',
+            points: -pontos,
+            order_id: orderId,
+        });
+
+    if (ledgerError) {
+        if (ledgerError.code === '23505') return; // ja estornado antes, ok
+        throw ledgerError;
+    }
+
+    // 2. Retira do saldo, sem deixar negativo.
+    const atual = await fetchCustomerPointsBalance(sanitizedPhone, storeId);
+    const { error: upsertError } = await supabase
+        .from('customer_loyalty_points')
+        .upsert({
+            store_id: storeId,
+            phone: sanitizedPhone,
+            points_balance: Math.max(0, atual - pontos),
             updated_at: new Date().toISOString(),
         }, { onConflict: 'store_id,phone' });
     if (upsertError) throw upsertError;
