@@ -1529,9 +1529,20 @@ const LandingPhoneField: React.FC<{ onPhoneSubmit: (phone: string) => void; isLo
     };
 
     return (
-        <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col items-center gap-1 mt-1">
-            <div className="w-full flex items-center gap-2 bg-gradient-to-r from-amber-500/10 via-yellow-400/10 to-amber-500/10 border-2 border-amber-400/70 rounded-xl px-3 py-2 shadow-[0_0_15px_rgba(251,191,36,0.35)] focus-within:border-amber-300 focus-within:shadow-[0_0_20px_rgba(251,191,36,0.5)] transition-all">
-                <Star size={16} className="text-amber-400 shrink-0 fill-amber-400" />
+        <form onSubmit={handleSubmit} className="w-full max-w-sm flex flex-col items-center gap-0 mt-1 rounded-2xl overflow-hidden border-2 border-amber-400/80 shadow-[0_0_25px_rgba(251,191,36,0.45)]">
+            {/* Faixa de topo com a palavra FIDELIDADE em destaque -- pedido do
+                Ikarus (inicio desta sessao, retomado em 21/09/2026): o campo
+                de telefone ja existia, mas precisava de mais destaque visual
+                e da palavra "FIDELIDADE" explicita na descricao. */}
+            <div className="w-full bg-gradient-to-r from-amber-500 to-orange-500 px-3 py-1.5 flex items-center justify-center gap-1.5">
+                <Star size={14} className="text-white fill-white shrink-0" />
+                <span className="text-white text-xs font-black uppercase tracking-widest drop-shadow-sm">
+                    Programa de Fidelidade
+                </span>
+                <Star size={14} className="text-white fill-white shrink-0" />
+            </div>
+
+            <div className="w-full flex items-center gap-2 bg-gradient-to-r from-amber-500/10 via-yellow-400/10 to-amber-500/10 px-3 py-2.5">
                 <input
                     type="tel"
                     value={phone}
@@ -1548,8 +1559,8 @@ const LandingPhoneField: React.FC<{ onPhoneSubmit: (phone: string) => void; isLo
                     {isLoading ? '...' : 'Entrar'}
                 </button>
             </div>
-            <p className="text-[11px] text-amber-900 dark:text-amber-950 text-center px-2 leading-tight font-bold">
-                🎁 Clientes que ja pediram ganham desconto especial aqui!
+            <p className="w-full text-[11px] text-amber-900 dark:text-amber-950 text-center px-2 pb-2 leading-tight font-bold bg-amber-400/10">
+                🎁 Informe seu telefone e entre na Fidelidade: clientes que ja pediram ganham desconto especial aqui!
             </p>
         </form>
     );
