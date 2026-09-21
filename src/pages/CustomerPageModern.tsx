@@ -1637,39 +1637,144 @@ const CustomerRecognitionBar: React.FC<{ onPhoneSubmit: (phone: string) => void;
 
 
 
+/**
+ * Cliente novo (telefone sem cadastro). Duas telas:
+ * 1) Boas-vindas, com a opcao de preencher dados ou so olhar o cardapio.
+ * 2) Formulario (nome, endereco, numero, referencia — telefone ja veio do
+ *    campo da landing, trava aqui). Ao salvar, o cliente e criado no banco
+ *    e o app abre a MESMA tela de fidelidade que um cliente ja cadastrado
+ *    veria — pedido do Icaro, 21/09/2026: "preenchendo, ele ja vai ser
+ *    redirecionado para a pagina de Fidelidade [...] quando ele chegar no
+ *    carrinho, as informacoes ja vao estar la, tudo preenchida."
+ *
+ * Antes disto o botao "Preencher meus dados" abria o CARRINHO VAZIO — sem
+ * nenhum campo, porque o formulario de dados so existia dentro do carrinho
+ * com item. Confirmado com auditoria (Playwright + screenshot real).
+ */
 const NewCustomerModal: React.FC<{
     isOpen: boolean;
     onClose: () => void;
-    onProceed: () => void;
-}> = ({ isOpen, onClose, onProceed }) => {
+    phone: string;
+    onSaved: (dados: { name: string; address: string; houseNumber: string; referencePoint: string }) => void;
+    isSaving: boolean;
+}> = ({ isOpen, onClose, phone, onSaved, isSaving }) => {
+    const [etapa, setEtapa] = useState<'boasvindas' | 'formulario'>('boasvindas');
+    const [name, setName] = useState('');
+    const [address, setAddress] = useState('');
+    const [houseNumber, setHouseNumber] = useState('');
+    const [referencePoint, setReferencePoint] = useState('');
+
+    // Reseta ao fechar/reabrir — sem isto, dados de uma tentativa anterior
+    // (ex.: cliente fechou e reabriu o modal com outro telefone) vazariam.
+    useEffect(() => {
+        if (!isOpen) {
+            setEtapa('boasvindas');
+            setName('');
+            setAddress('');
+            setHouseNumber('');
+            setReferencePoint('');
+        }
+    }, [isOpen]);
+
     if (!isOpen) return null;
 
+    const formValido = name.trim().length >= 2 && address.trim().length >= 3 && houseNumber.trim().length >= 1;
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!formValido || isSaving) return;
+        onSaved({ name: name.trim(), address: address.trim(), houseNumber: houseNumber.trim(), referencePoint: referencePoint.trim() });
+    };
+
+    if (etapa === 'boasvindas') {
+        return (
+            <div className="fixed inset-0 bg-black bg-opacity-80 z-[70] flex items-center justify-center p-4 animate-fade-in">
+                <div className="bg-surface rounded-xl p-6 max-w-sm w-full shadow-2xl border border-primary text-center relative">
+                    <button onClick={onClose} className="absolute top-3 right-3 text-gray-400 hover:text-white">
+                        <LucideX className="w-5 h-5" />
+                    </button>
+                    <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
+                    </div>
+                    <h2 className="text-2xl font-display text-primary mb-2">Bem-vindo(a)!</h2>
+                    <p className="text-white text-base mb-6">
+                        Parece que é sua primeira vez por aqui. Que tal já preencher seus dados para agilizar seu pedido? Vai ficar tudo salvo para a próxima!
+                    </p>
+                    <div className="space-y-3">
+                        <button
+                            onClick={() => setEtapa('formulario')}
+                            className="w-full py-3 bg-primary hover:bg-primary-dark text-background font-bold rounded-lg text-base transition-transform transform hover:scale-105 shadow-lg"
+                        >
+                            Preencher meus dados
+                        </button>
+                        <button
+                            onClick={onClose}
+                            className="w-full py-2 bg-transparent text-text-light hover:text-white text-sm font-medium transition-colors"
+                        >
+                            Só dar uma olhadinha no cardápio
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-80 z-[70] flex items-center justify-center p-4 animate-fade-in">
-            <div className="bg-surface rounded-xl p-6 max-w-sm w-full shadow-2xl border border-primary text-center relative">
+        <div className="fixed inset-0 bg-black bg-opacity-80 z-[70] flex items-center justify-center p-4 animate-fade-in overflow-y-auto">
+            <div className="bg-surface rounded-xl p-6 max-w-sm w-full shadow-2xl border border-primary relative my-8">
                 <button onClick={onClose} className="absolute top-3 right-3 text-gray-400 hover:text-white">
                     <LucideX className="w-5 h-5" />
                 </button>
-                <div className="w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mx-auto mb-4 animate-bounce">
-                </div>
-                <h2 className="text-2xl font-display text-primary mb-2">Bem-vindo(a)!</h2>
-                <p className="text-white text-base mb-6">
-                    Parece que é sua primeira vez por aqui. Que tal já preencher seus dados para agilizar seu pedido? Vai ficar tudo salvo para a próxima!
-                </p>
-                <div className="space-y-3">
+                <h2 className="text-xl font-display text-primary mb-1">Seus dados</h2>
+                <p className="text-text-light text-xs mb-4">Só precisa preencher uma vez. Fica salvo pro seu próximo pedido.</p>
+                <form onSubmit={handleSubmit} className="space-y-3">
+                    <input
+                        type="text"
+                        placeholder="Seu nome"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        className="w-full p-2.5 bg-background border border-gray-700 rounded-lg text-text-light focus:border-primary outline-none text-sm"
+                        autoFocus
+                        required
+                    />
+                    <input
+                        type="tel"
+                        value={phone}
+                        disabled
+                        className="w-full p-2.5 bg-background/50 border border-gray-800 rounded-lg text-gray-500 outline-none text-sm cursor-not-allowed"
+                    />
+                    <input
+                        type="text"
+                        placeholder="Endereço (Rua/Avenida)"
+                        value={address}
+                        onChange={e => setAddress(e.target.value)}
+                        className="w-full p-2.5 bg-background border border-gray-700 rounded-lg text-text-light focus:border-primary outline-none text-sm"
+                        required
+                    />
+                    <div className="flex gap-2">
+                        <input
+                            type="text"
+                            placeholder="Número"
+                            value={houseNumber}
+                            onChange={e => setHouseNumber(e.target.value)}
+                            className="w-1/3 p-2.5 bg-background border border-gray-700 rounded-lg text-text-light focus:border-primary outline-none text-sm"
+                            required
+                        />
+                        <input
+                            type="text"
+                            placeholder="Referência (opcional)"
+                            value={referencePoint}
+                            onChange={e => setReferencePoint(e.target.value)}
+                            className="w-2/3 p-2.5 bg-background border border-gray-700 rounded-lg text-text-light focus:border-primary outline-none text-sm"
+                        />
+                    </div>
                     <button
-                        onClick={onProceed}
-                        className="w-full py-3 bg-primary hover:bg-primary-dark text-background font-bold rounded-lg text-base transition-transform transform hover:scale-105 shadow-lg"
+                        type="submit"
+                        disabled={!formValido || isSaving}
+                        className="w-full py-3 bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-background font-bold rounded-lg text-sm transition-colors"
                     >
-                        Preencher meus dados
+                        {isSaving ? 'Salvando...' : 'Continuar'}
                     </button>
-                    <button
-                        onClick={onClose}
-                        className="w-full py-2 bg-transparent text-text-light hover:text-white text-sm font-medium transition-colors"
-                    >
-                        Só dar uma olhadinha no cardápio
-                    </button>
-                </div>
+                </form>
             </div>
         </div>
     );
@@ -1765,6 +1870,7 @@ const CustomerPage: React.FC = () => {
     const [showRecognitionModal, setShowRecognitionModal] = useState(false);
     const [showNewCustomerModal, setShowNewCustomerModal] = useState(false); // New state
     const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
+    const [isSavingNewCustomer, setIsSavingNewCustomer] = useState(false);
     const [isRepeatingOrder, setIsRepeatingOrder] = useState(false);
     
     // Modern Landing Page State
@@ -2013,6 +2119,59 @@ const CustomerPage: React.FC = () => {
             console.error("Error searching customer:", error);
         } finally {
             setIsSearchingCustomer(false);
+        }
+    };
+
+    /**
+     * Cliente novo preencheu o formulario dentro do NewCustomerModal.
+     * Salva no banco (upsertCustomer) e abre a MESMA tela de fidelidade que
+     * um cliente ja cadastrado veria — pedido do Icaro, 21/09/2026. Ao
+     * chegar no carrinho depois, os dados ja estao preenchidos (customerName/
+     * phone/address ja setados aqui, igual ao branch de cliente reconhecido).
+     */
+    const handleNewCustomerSaved = async (dados: { name: string; address: string; houseNumber: string; referencePoint: string }) => {
+        if (!currentStore) return;
+        setIsSavingNewCustomer(true);
+        try {
+            const sanitizedPhone = phone.replace(/\D/g, '');
+            const fullAddress = `${dados.address}, ${dados.houseNumber}`;
+
+            const created = await upsertCustomer({
+                store_id: currentStore.id,
+                phone: sanitizedPhone,
+                name: dados.name,
+                address: fullAddress,
+                reference_point: dados.referencePoint || undefined,
+            });
+
+            // Popula os mesmos estados que o branch de cliente RECONHECIDO usa,
+            // para o carrinho ja vir preenchido quando o cliente chegar nele.
+            setCustomerName(dados.name);
+            setPhone(sanitizedPhone);
+            setAddress(dados.address);
+            setHouseNumber(dados.houseNumber);
+            setReferencePoint(dados.referencePoint);
+
+            if (created) {
+                setRecognizedCustomer(created);
+            } else {
+                // upsertCustomer falhou silenciosamente (ver seu proprio log) —
+                // mesmo assim seguimos com os dados locais, para nao travar o
+                // cliente. Um objeto minimo mantem o LoyaltyProfileModal aberto.
+                setRecognizedCustomer({
+                    id: '', store_id: currentStore.id, phone: sanitizedPhone,
+                    name: dados.name, address: fullAddress, reference_point: dados.referencePoint,
+                    total_orders: 0,
+                });
+            }
+
+            setShowNewCustomerModal(false);
+            setShowRecognitionModal(true);
+        } catch (error) {
+            console.error('Error saving new customer:', error);
+            alert('Não foi possível salvar seus dados. Tente novamente.');
+        } finally {
+            setIsSavingNewCustomer(false);
         }
     };
 
@@ -2642,10 +2801,9 @@ const CustomerPage: React.FC = () => {
                 <NewCustomerModal
                     isOpen={showNewCustomerModal}
                     onClose={() => setShowNewCustomerModal(false)}
-                    onProceed={() => {
-                        setShowNewCustomerModal(false);
-                        setIsCartOpen(true);
-                    }}
+                    phone={phone}
+                    onSaved={handleNewCustomerSaved}
+                    isSaving={isSavingNewCustomer}
                 />
             </div>
         );
@@ -2841,10 +2999,9 @@ const CustomerPage: React.FC = () => {
             <NewCustomerModal
                 isOpen={showNewCustomerModal}
                 onClose={() => setShowNewCustomerModal(false)}
-                onProceed={() => {
-                    setShowNewCustomerModal(false);
-                    setIsCartOpen(true);
-                }}
+                phone={phone}
+                onSaved={handleNewCustomerSaved}
+                isSaving={isSavingNewCustomer}
             />
             {selectedItem && (
                 <ItemDetailModal
