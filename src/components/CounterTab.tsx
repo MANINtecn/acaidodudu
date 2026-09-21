@@ -820,12 +820,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         
         setIsSearchingCustomer(true);
         try {
-            let phoneToSearch = query.replace(/\D/g, '');
-            // Auto-DDD logic for direct submission (Enter key or Button)
+            const phoneToSearch = query.replace(/\D/g, '');
+            // `fetchCustomerByPhone` ja' resolve DDD/9o digito internamente
+            // (canonicalPhone) -- so passa o default da loja para o caso de
+            // busca sem DDD nenhum.
             const defaultDDD = settings?.defaultDDD || '32';
-            if (phoneToSearch.length <= 9 && phoneToSearch.length >= 8) phoneToSearch = `${defaultDDD}${phoneToSearch}`;
-            
-            const customer = await fetchCustomerByPhone(phoneToSearch, storeId);
+            const customer = await fetchCustomerByPhone(phoneToSearch, storeId, defaultDDD);
             if (customer) {
                 populateCustomerData(customer);
                 setIsExistingCustomer(true);

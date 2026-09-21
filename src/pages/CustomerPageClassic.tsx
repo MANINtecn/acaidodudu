@@ -7,9 +7,9 @@ import {
     OrderType, PaymentMethod, CartItem, DeliveryZone 
 } from '../types';
 import { 
-    rateOrder, fetchPublicSettings, fetchActivePromotions, createOrder, triggerWebhook, 
-    fetchMenuForCustomer, fetchCustomerByPhone, fetchLastOrderByPhone, fetchCustomerLoyaltyHistory, 
-    redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones
+    rateOrder, fetchPublicSettings, fetchActivePromotions, createOrder, triggerWebhook,
+    fetchMenuForCustomer, fetchCustomerByPhone, fetchLastOrderByPhone, fetchCustomerLoyaltyHistory,
+    redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones, canonicalPhone
 } from '../services/supabaseService';
 import { 
     ShoppingCart as LucideShoppingCart, X as LucideX, 
@@ -1739,6 +1739,11 @@ const CustomerPage: React.FC = () => {
         }
     };
 
+    /** Resgate no modelo de PONTOS -- ver mesma logica em CustomerPageModern.tsx. */
+    const handleRedeemPointsReward = (item: MenuItem) => {
+        setPendingReward({ type: 'item', item });
+    };
+
 
     // Lifted State
     const [customerName, setCustomerName] = useState('');
@@ -1830,18 +1835,21 @@ const CustomerPage: React.FC = () => {
         }
         setIsSearchingCustomer(true);
 
-        // Normalize Phone: Prepend '32' if missing (assuming 8 or 9 digits means no DDD)
-        let sanitizedPhone = phoneInput.replace(/\D/g, '');
-        if (sanitizedPhone.length === 8 || sanitizedPhone.length === 9) {
-            sanitizedPhone = '32' + sanitizedPhone;
-        }
+        // Normalize Phone -- 21/09/2026 (Ikarus): `canonicalPhone` colapsa
+        // com/sem DDD e com/sem 9o digito no MESMO cadastro, sem nunca trocar
+        // o DDD que o cliente realmente digitou (cliente de outro estado nao
+        // pode virar outro cliente por coincidencia do numero local). O
+        // default (DDD 32, Minas) so entra quando ele digita sem DDD nenhum.
+        // Ver mesma correcao em CustomerPageModern.tsx e claude-acai.md.
+        const defaultDDD = settings?.defaultDDD || '32';
+        const sanitizedPhone = canonicalPhone(phoneInput, defaultDDD);
         console.log("handleHeroPhoneSubmit: Sanitized phone:", sanitizedPhone);
 
         // Update state with normalized phone
         setPhone(sanitizedPhone);
 
         try {
-            const customer = await fetchCustomerByPhone(sanitizedPhone, currentStore.id);
+            const customer = await fetchCustomerByPhone(sanitizedPhone, currentStore.id, defaultDDD);
             if (customer) {
                 setRecognizedCustomer(customer);
 
@@ -2506,6 +2514,7 @@ const CustomerPage: React.FC = () => {
                 onUpdateAddress={handleUpdateCustomerAddress}
                 pendingReward={pendingReward}
                 dynamicDeliveryFee={dynamicDeliveryFee}
+                onRedeemPointsReward={handleRedeemPointsReward}
             />
 
             <NewCustomerModal

@@ -11,6 +11,46 @@ const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
 
 export const isSupabaseConfigured = !!SUPABASE_URL && !!SUPABASE_ANON_KEY;
 
+/**
+ * Chave canonica de telefone -- 21/09/2026 (Ikarus).
+ *
+ * O cliente pode digitar o mesmo numero de 4 formas diferentes e todas
+ * precisam bater no MESMO cadastro, DESDE QUE o DDD seja o mesmo:
+ *   32920007226  (DDD + 9 + local)
+ *   3220007226   (DDD + local, sem o 9)
+ *   920007226    (9 + local, sem DDD -- so cabe assumir o DDD da loja)
+ *   20007226     (so o local -- so cabe assumir o DDD da loja)
+ *
+ * CUIDADO (Ikarus, 21/09/2026): "vai ter gente que vai pedir com telefone de
+ * outro estado". Por isso o DDD digitado pelo cliente e SEMPRE respeitado
+ * quando ele digita 10+ digitos -- nunca trocamos por outro DDD so porque
+ * bate com o numero local de outra pessoa. O default (DDD da loja) so entra
+ * quando o cliente digitou pouco (8-9 digitos), sem DDD nenhum -- aí a unica
+ * saida razoavel e assumir a regiao da loja.
+ *
+ * O valor salvo no banco e SEMPRE `DDD(2) + local(8)` = 10 digitos --
+ * nunca inclui o 9o digito. Isso colapsa a ambiguidade do 9o digito DENTRO
+ * do mesmo DDD, sem nunca juntar clientes de DDDs diferentes.
+ */
+export function canonicalPhone(rawPhone: string, defaultDDD: string = '32'): string {
+    let digits = (rawPhone || '').replace(/\D/g, '');
+    // Remove "55" do Brasil na frente, se sobrar DDD+9+local (13) ou DDD+local (12).
+    if (digits.startsWith('55') && (digits.length === 13 || digits.length === 12)) {
+        digits = digits.substring(2);
+    }
+    if (digits.length <= 8) {
+        // So o numero local, sem DDD algum -- nao ha o que fazer alem de
+        // assumir a regiao da loja.
+        return defaultDDD + digits.slice(-8);
+    }
+    const local = digits.slice(-8); // ultimos 8 digitos = numero local, sem o 9
+    const resto = digits.slice(0, -8); // o que sobra antes: DDD, ou DDD+9
+    // "resto" tem o DDD REAL que o cliente digitou (ex: "11" de Sao Paulo,
+    // "21" do Rio) -- nunca trocamos por defaultDDD quando ele existe.
+    const ddd = resto.length >= 2 ? resto.slice(0, 2) : defaultDDD;
+    return ddd + local;
+}
+
 const supabaseUrlForClient = SUPABASE_URL || 'https://placeholder.supabase.co';
 const supabaseKeyForClient = SUPABASE_ANON_KEY || 'placeholder';
 
@@ -717,23 +757,37 @@ export const rateOrder = async (orderId: string, rating: number, feedback?: stri
     return data;
 };
 
-export const fetchCustomerByPhone = async (phone: string, storeId: string): Promise<Customer | null> => {
-    let sanitizedPhone = phone.replace(/\D/g, '');
-    if (sanitizedPhone.startsWith('55') && sanitizedPhone.length > 11) {
-        sanitizedPhone = sanitizedPhone.substring(2);
-    }
+/**
+ * Busca por telefone tolerante a com/sem DDD e com/sem 9o digito -- mas
+ * NUNCA troca o DDD que o cliente digitou (Ikarus, 21/09/2026: "vai ter
+ * gente que vai pedir com telefone de outro estado" -- um cliente de SP com
+ * numero local igual a um de TO nao pode virar o mesmo cadastro).
+ *
+ * Estrategia: gera a chave canonica (`canonicalPhone`, usando o DDD da
+ * propria loja so quando o cliente digitou sem DDD) e busca por ela E pela
+ * variacao com o 9 na frente do local, cobrindo cadastros antigos que podem
+ * ter ficado salvos em qualquer um dos dois formatos antes desta correcao.
+ * Nunca busca so pelo sufixo de 8 digitos (isso juntaria DDDs diferentes).
+ */
+export const fetchCustomerByPhone = async (phone: string, storeId: string, defaultDDD: string = '32'): Promise<Customer | null> => {
+    const canon = canonicalPhone(phone, defaultDDD); // DDD(2) + local(8) = 10 digitos
+    if (canon.length !== 10) return null;
+    const ddd = canon.slice(0, 2);
+    const local8 = canon.slice(2);
+    const comNove = `${ddd}9${local8}`; // formato antigo, possivel em cadastros anteriores
+
     const { data, error } = await supabase
         .from('customers')
         .select('*')
-        .eq('phone', sanitizedPhone)
+        .in('phone', [canon, comNove])
         .eq('store_id', storeId)
-        .single();
+        .order('created_at', { ascending: false });
 
-    if (error && error.code !== 'PGRST116') {
+    if (error) {
         console.error('Error fetching customer:', error);
         return null;
     }
-    return data;
+    return (data && data.length > 0) ? data[0] : null;
 };
 
 export const searchCustomers = async (query: string, storeId: string): Promise<Customer[]> => {
@@ -1625,11 +1679,13 @@ export const fetchEligibleCustomersForRaffle = async (storeId: string, startDate
     return Array.from(uniqueCustomers.values());
 };
 
-export const upsertCustomer = async (customerData: Partial<Customer>) => {
-    // Sanitize phone if present
+export const upsertCustomer = async (customerData: Partial<Customer>, defaultDDD: string = '32') => {
+    // Grava sempre na forma canonica (DDD+local, 10 digitos, sem o 9o
+    // digito) -- e o que faz "32920007226", "3220007226", "920007226" e
+    // "20007226" virarem o MESMO registro em vez de 4 clientes diferentes.
     const payload = { ...customerData };
     if (payload.phone) {
-        payload.phone = payload.phone.replace(/\D/g, '');
+        payload.phone = canonicalPhone(payload.phone, defaultDDD);
     }
 
     // Ensure store_id is present

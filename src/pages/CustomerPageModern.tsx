@@ -10,9 +10,9 @@ import {
     OrderType, PaymentMethod, CartItem, DeliveryZone 
 } from '../types';
 import { 
-    rateOrder, fetchPublicSettings, fetchActivePromotions, createOrder, triggerWebhook, 
-    fetchMenuForCustomer, fetchCustomerByPhone, fetchLastOrderByPhone, fetchCustomerLoyaltyHistory, 
-    redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones
+    rateOrder, fetchPublicSettings, fetchActivePromotions, createOrder, triggerWebhook,
+    fetchMenuForCustomer, fetchCustomerByPhone, fetchLastOrderByPhone, fetchCustomerLoyaltyHistory,
+    redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones, canonicalPhone
 } from '../services/supabaseService';
 import { 
     ShoppingCart as LucideShoppingCart, X as LucideX, 
@@ -1951,6 +1951,18 @@ const CustomerPage: React.FC = () => {
         }
     };
 
+    /**
+     * Resgate no modelo de PONTOS -- o debito do saldo ja aconteceu dentro
+     * do LoyaltyProfileModal (resgatarPontos), aqui so entregamos o item ao
+     * mesmo mecanismo de pendingReward que o modelo de selo usa, para cair
+     * no carrinho com price=0 quando o cliente abrir o cardapio. Pedido do
+     * Ikarus, 21/09/2026: "a partir dali, que ele resgata e vai para o
+     * carrinho" -- tudo dentro da aba de fidelidade, nunca no carrinho.
+     */
+    const handleRedeemPointsReward = (item: MenuItem) => {
+        setPendingReward({ type: 'item', item });
+    };
+
 
     // Lifted State
     const [customerName, setCustomerName] = useState('');
@@ -2042,18 +2054,23 @@ const CustomerPage: React.FC = () => {
         }
         setIsSearchingCustomer(true);
 
-        // Normalize Phone: Prepend '32' if missing (assuming 8 or 9 digits means no DDD)
-        let sanitizedPhone = phoneInput.replace(/\D/g, '');
-        if (sanitizedPhone.length === 8 || sanitizedPhone.length === 9) {
-            sanitizedPhone = '32' + sanitizedPhone;
-        }
+        // Normalize Phone -- 21/09/2026 (Ikarus): a loja e' de Minas (DDD 32,
+        // NAO 63 -- essa era a config certa, a correcao anterior tinha errado
+        // ao mudar para Tocantins). O bug real nao era o DDD, era o cliente
+        // poder digitar com/sem DDD e com/sem o 9o digito e cair em 4 valores
+        // diferentes no banco. `canonicalPhone` resolve isso colapsando as
+        // variacoes SEM jamais trocar o DDD que o cliente realmente digitou
+        // (gente de fora do estado tambem pede -- nao pode virar outro cliente
+        // so por coincidencia do numero local). Ver claude-acai.md.
+        const defaultDDD = settings?.defaultDDD || '32';
+        const sanitizedPhone = canonicalPhone(phoneInput, defaultDDD);
         console.log("handleHeroPhoneSubmit: Sanitized phone:", sanitizedPhone);
 
         // Update state with normalized phone
         setPhone(sanitizedPhone);
 
         try {
-            const customer = await fetchCustomerByPhone(sanitizedPhone, currentStore.id);
+            const customer = await fetchCustomerByPhone(sanitizedPhone, currentStore.id, defaultDDD);
             if (customer) {
                 setRecognizedCustomer(customer);
 
@@ -2133,7 +2150,11 @@ const CustomerPage: React.FC = () => {
         if (!currentStore) return;
         setIsSavingNewCustomer(true);
         try {
-            const sanitizedPhone = phone.replace(/\D/g, '');
+            // `phone` ja veio canonicalizado do handleHeroPhoneSubmit, mas
+            // canonicaliza de novo aqui por seguranca (defesa em profundidade
+            // -- nunca gravar um formato diferente do que a busca usa).
+            const defaultDDD = settings?.defaultDDD || '32';
+            const sanitizedPhone = canonicalPhone(phone, defaultDDD);
             const fullAddress = `${dados.address}, ${dados.houseNumber}`;
 
             const created = await upsertCustomer({
@@ -2796,6 +2817,7 @@ const CustomerPage: React.FC = () => {
                     onUpdateAddress={handleUpdateCustomerAddress}
                     pendingReward={pendingReward}
                     dynamicDeliveryFee={dynamicDeliveryFee}
+                    onRedeemPointsReward={handleRedeemPointsReward}
                 />
 
                 <NewCustomerModal
@@ -2994,6 +3016,7 @@ const CustomerPage: React.FC = () => {
                 onUpdateAddress={handleUpdateCustomerAddress}
                 pendingReward={pendingReward}
                 dynamicDeliveryFee={dynamicDeliveryFee}
+                onRedeemPointsReward={handleRedeemPointsReward}
             />
 
             <NewCustomerModal
