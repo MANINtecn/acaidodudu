@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { X as LucideX, History as LucideHistory, Utensils as LucideUtensils, MapPin } from 'lucide-react';
-import { fetchCustomerLoyaltyHistory, submitBolaoGuess, fetchBolaoGuessByPhone, fetchPublicSettings } from '../services/supabaseService';
+import { X as LucideX, History as LucideHistory, Utensils as LucideUtensils, MapPin, Gift as LucideGift } from 'lucide-react';
+import {
+    fetchCustomerLoyaltyHistory, submitBolaoGuess, fetchBolaoGuessByPhone, fetchPublicSettings,
+    fetchLoyaltyRewardItems, fetchCustomerPointsBalance, resgatarPontos,
+} from '../services/supabaseService';
+import type { LoyaltyRewardItem } from '../types';
 
 
 // Types (Inlined for stability)
@@ -94,13 +98,21 @@ interface LoyaltyProfileModalProps {
     onTriggerReward: () => void;
     pendingReward: PendingReward;
     dynamicDeliveryFee: number | null;
+    /**
+     * Chamado quando o cliente resgata um produto no modelo de PONTOS. O
+     * pai (CustomerPageModern/Classic) faz o mesmo que faz para o resgate
+     * por selo: fecha este modal, seta pendingReward e reabre no carrinho —
+     * pedido do Ikarus, 21/09/2026: "resgata e vai para o carrinho", sempre
+     * dentro da aba de fidelidade, nunca direto no carrinho.
+     */
+    onRedeemPointsReward?: (item: MenuItem) => void;
 }
 
 // lastOrder/onRepeatOrder/isLoadingRepeat continuam no contrato de props
 // (CustomerPageModern ainda os usa para o mecanismo de repetir pedido em
 // outro lugar), mas este modal nao mostra mais o ultimo pedido nem tem
 // botao de repetir — pedido do Icaro, 21/09/2026. Recebidos e ignorados.
-const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClose, customer, onNewOrder, storeId, isStoreOpen, onUpdateAddress, onTriggerReward, pendingReward }) => {
+const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClose, customer, onNewOrder, storeId, isStoreOpen, onUpdateAddress, onTriggerReward, pendingReward, onRedeemPointsReward }) => {
     const [loyaltyHistory, setLoyaltyHistory] = useState<Order[]>([]);
     const [isLoadingLoyalty, setIsLoadingLoyalty] = useState(true);
 
@@ -118,6 +130,15 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
     const [bolaoStatus, setBolaoStatus] = useState<'loading' | 'open' | 'closed' | 'not_started'>('loading');
     const [bolaoStartTime, setBolaoStartTime] = useState<number | null>(null);
     const [countdown, setCountdown] = useState<string>('');
+
+    // ── Modelo de fidelidade por PONTOS (21/09/2026) ──
+    // 'selo' e' o padrao ate confirmarmos qual modelo a loja usa, para nunca
+    // piscar a tela errada por uma fracao de segundo.
+    const [loyaltyModel, setLoyaltyModel] = useState<'selo' | 'pontos'>('selo');
+    const [pointsBalance, setPointsBalance] = useState(0);
+    const [rewardItems, setRewardItems] = useState<LoyaltyRewardItem[]>([]);
+    const [isLoadingPoints, setIsLoadingPoints] = useState(true);
+    const [redeemingItemId, setRedeemingItemId] = useState<string | null>(null);
 
     useEffect(() => {
         if (isOpen && customer && storeId) {
@@ -217,14 +238,70 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
         }
     }, [isOpen, pendingReward]);
 
+    // Descobre qual modelo a loja usa e, se for 'pontos', busca saldo do
+    // cliente + produtos resgataveis configurados. So faz a query pesada
+    // (historico de selos) quando o modelo realmente for 'selo'.
     useEffect(() => {
-        if (isOpen && customer && storeId) {
-            setIsLoadingLoyalty(true);
-            fetchCustomerLoyaltyHistory(customer.phone, storeId)
-                .then(orders => setLoyaltyHistory(orders || []))
-                .catch(err => console.error("Failed to fetch loyalty:", err))
-                .finally(() => setIsLoadingLoyalty(false));
+        if (!isOpen || !customer || !storeId) return;
+        let cancelado = false;
 
+        fetchPublicSettings(storeId)
+            .then(settings => {
+                if (cancelado) return;
+                const modelo = settings.loyaltyModel === 'pontos' ? 'pontos' : 'selo';
+                setLoyaltyModel(modelo);
+
+                if (modelo === 'pontos') {
+                    setIsLoadingPoints(true);
+                    Promise.all([
+                        fetchCustomerPointsBalance(customer.phone, storeId),
+                        fetchLoyaltyRewardItems(storeId),
+                    ])
+                        .then(([saldo, itens]) => {
+                            if (cancelado) return;
+                            setPointsBalance(saldo);
+                            setRewardItems(itens);
+                        })
+                        .catch(err => console.error('[Fidelidade] erro ao carregar pontos:', err))
+                        .finally(() => { if (!cancelado) setIsLoadingPoints(false); });
+                }
+            })
+            .catch(err => console.error('[Fidelidade] erro ao carregar configuracao:', err));
+
+        return () => { cancelado = true; };
+    }, [isOpen, customer, storeId]);
+
+    const handleResgatarPontos = async (reward: LoyaltyRewardItem) => {
+        if (!customer || redeemingItemId) return;
+        if (pointsBalance < reward.points_cost) return; // botao ja fica desabilitado, dupla checagem
+        setRedeemingItemId(reward.id);
+        try {
+            await resgatarPontos(customer.phone, storeId, reward.id, reward.points_cost);
+            setPointsBalance(prev => prev - reward.points_cost);
+            onRedeemPointsReward?.({
+                id: reward.menu_item_id,
+                name: reward.menu_item_name,
+                description: 'Resgatado com pontos de fidelidade',
+                price: 0,
+                categoryId: -1,
+                eligibleForCombo: false,
+                isCombo: false,
+                selectedAddons: [],
+                store_id: storeId,
+                isAvailable: true,
+            });
+        } catch (err: any) {
+            console.error('[Fidelidade] erro ao resgatar pontos:', err);
+            alert(err?.message || 'Não foi possível resgatar. Tente novamente.');
+        } finally {
+            setRedeemingItemId(null);
+        }
+    };
+
+    // Formulario de endereco/pagamento independe do modelo de fidelidade —
+    // sempre inicializa ao abrir o modal.
+    useEffect(() => {
+        if (isOpen && customer) {
             const parts = (customer.address || '').split(',');
             if (parts.length > 1) {
                 setEditAddress(parts[0].trim());
@@ -234,9 +311,20 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                 setEditNumber('');
             }
             setEditReference(customer.reference_point || '');
-
         }
-    }, [isOpen, customer, storeId]);
+    }, [isOpen, customer]);
+
+    // Historico de selos so e' buscado quando o modelo ativo for 'selo' —
+    // evita uma query cara e desnecessaria quando a loja usa pontos.
+    useEffect(() => {
+        if (isOpen && customer && storeId && loyaltyModel === 'selo') {
+            setIsLoadingLoyalty(true);
+            fetchCustomerLoyaltyHistory(customer.phone, storeId)
+                .then(orders => setLoyaltyHistory(orders || []))
+                .catch(err => console.error("Failed to fetch loyalty:", err))
+                .finally(() => setIsLoadingLoyalty(false));
+        }
+    }, [isOpen, customer, storeId, loyaltyModel]);
 
     const totalStamps = loyaltyHistory.length;
     const currentProgress = totalStamps % 10;
@@ -512,69 +600,128 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                         {/* Status do pedido em tempo real removido — pedido do Icaro,
                             21/09/2026. Este modal nao acompanha mais o ultimo pedido. */}
 
-                        <h3 className="text-xl font-display text-white mb-1 flex items-center gap-2">
-                            Fidelidade Açaí do Dudu
-                        </h3>
-                        <p className="text-xs text-gray-400 mb-6">Junte 10 selos e ganhe R$ 20,00 ou um X-Tudo!</p>
+                        {loyaltyModel === 'pontos' ? (
+                            <>
+                                <h3 className="text-xl font-display text-white mb-1 flex items-center gap-2">
+                                    <LucideGift size={20} className="text-yellow-400" /> Fidelidade Açaí do Dudu
+                                </h3>
+                                <p className="text-xs text-gray-400 mb-6">Acumule pontos a cada pedido e troque por produtos!</p>
 
-                        <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-4 border border-white/10 shadow-inner flex-grow flex flex-col justify-center min-h-[300px]">
-                            {isLoadingLoyalty ? (
-                                <div className="flex flex-col items-center justify-center h-40">
-                                    <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mb-2"></div>
-                                    <p className="text-gray-400 text-xs">Buscando seus selos...</p>
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="grid grid-cols-5 gap-3 mb-4">
-                                        {Array.from({ length: 10 }).map((_, i) => {
-                                            const filled = i < currentProgress;
-                                            return (
-                                                <div key={i} className={`aspect-square rounded-full flex items-center justify-center border-2 transition-all duration-500 ${filled ? 'bg-yellow-500 border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.5)] transform scale-110' : 'bg-gray-800/50 border-gray-700'}`}>
-                                                    {filled ? (
-                                                        <span className="text-black text-xs font-bold font-mono">✓</span>
-                                                    ) : (
-                                                        <span className="text-gray-600 text-xs font-mono">{i + 1}</span>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                    <div className="text-center">
-                                        <p className="text-sm font-bold text-white mb-1">
-                                            {currentProgress} / 10 Selos
-                                        </p>
-                                        <div className="w-full bg-gray-700/50 rounded-full h-2 overflow-hidden">
-                                            <div
-                                                className="bg-yellow-500 h-full transition-all duration-1000 ease-out"
-                                                style={{ width: `${(currentProgress / 10) * 100}%` }}
-                                            ></div>
+                                <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-5 border border-white/10 shadow-inner mb-4 text-center">
+                                    {isLoadingPoints ? (
+                                        <div className="flex flex-col items-center justify-center h-16">
+                                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-2"></div>
                                         </div>
-                                        <p className="text-[10px] text-yellow-400 font-bold mt-2 uppercase tracking-wide">Pedidos acima de R$ 35,00 pontuam.</p>
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                                    ) : (
+                                        <>
+                                            <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1">Seu saldo</p>
+                                            <p className="text-4xl font-black text-yellow-400">{pointsBalance}</p>
+                                            <p className="text-[10px] text-gray-500 uppercase tracking-wide">pontos</p>
+                                        </>
+                                    )}
+                                </div>
 
-                        <div className="mt-6">
-                            {rewardsAvailable > 0 ? (
-                                <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-xl p-4 text-center animate-pulse-slow">
-                                    <p className="text-yellow-400 font-bold mb-2">Você tem {rewardsAvailable} recompensa(s) disponível!</p>
-                                    <button
-                                        onClick={() => {
-                                            onClose();
-                                            onTriggerReward();
-                                        }}
-                                        className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-black uppercase tracking-wide rounded-xl shadow-lg transform hover:scale-105 transition-all text-sm"
-                                    >
-                                        RESGATAR PRÊMIO AGORA
-                                    </button>
+                                <div className="flex-grow flex flex-col gap-2 overflow-y-auto">
+                                    {!isLoadingPoints && rewardItems.length === 0 && (
+                                        <p className="text-sm text-gray-500 text-center py-6">
+                                            Nenhum produto resgatável configurado ainda.
+                                        </p>
+                                    )}
+                                    {rewardItems.map(reward => {
+                                        const podeResgatar = pointsBalance >= reward.points_cost;
+                                        const resgatando = redeemingItemId === reward.id;
+                                        return (
+                                            <div
+                                                key={reward.id}
+                                                className={`rounded-xl p-3 border flex items-center justify-between gap-3 transition-all ${
+                                                    podeResgatar
+                                                        ? 'border-yellow-500/40 bg-yellow-500/5'
+                                                        : 'border-gray-700 bg-black/20 opacity-60'
+                                                }`}
+                                            >
+                                                <div className="min-w-0">
+                                                    <p className="text-sm font-bold text-white truncate">{reward.menu_item_name}</p>
+                                                    <p className="text-[11px] text-yellow-400 font-bold">{reward.points_cost} pontos</p>
+                                                </div>
+                                                <button
+                                                    onClick={() => handleResgatarPontos(reward)}
+                                                    disabled={!podeResgatar || resgatando}
+                                                    className="shrink-0 px-3 py-2 bg-yellow-500 hover:bg-yellow-400 disabled:bg-gray-700 disabled:text-gray-500 text-black text-xs font-black rounded-lg transition-all active:scale-95 uppercase tracking-wide"
+                                                >
+                                                    {resgatando ? '...' : 'Resgatar'}
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
                                 </div>
-                            ) : (
-                                <div className="text-center p-4 opacity-50">
-                                    <p className="text-sm text-gray-400">Faltam {10 - currentProgress} selos para seu prêmio.</p>
+                            </>
+                        ) : (
+                            <>
+                                <h3 className="text-xl font-display text-white mb-1 flex items-center gap-2">
+                                    Fidelidade Açaí do Dudu
+                                </h3>
+                                <p className="text-xs text-gray-400 mb-6">Junte 10 selos e ganhe R$ 20,00 ou um X-Tudo!</p>
+
+                                <div className="bg-white/5 backdrop-blur-sm rounded-2xl p-4 border border-white/10 shadow-inner flex-grow flex flex-col justify-center min-h-[300px]">
+                                    {isLoadingLoyalty ? (
+                                        <div className="flex flex-col items-center justify-center h-40">
+                                            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary mb-2"></div>
+                                            <p className="text-gray-400 text-xs">Buscando seus selos...</p>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <div className="grid grid-cols-5 gap-3 mb-4">
+                                                {Array.from({ length: 10 }).map((_, i) => {
+                                                    const filled = i < currentProgress;
+                                                    return (
+                                                        <div key={i} className={`aspect-square rounded-full flex items-center justify-center border-2 transition-all duration-500 ${filled ? 'bg-yellow-500 border-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.5)] transform scale-110' : 'bg-gray-800/50 border-gray-700'}`}>
+                                                            {filled ? (
+                                                                <span className="text-black text-xs font-bold font-mono">✓</span>
+                                                            ) : (
+                                                                <span className="text-gray-600 text-xs font-mono">{i + 1}</span>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                            <div className="text-center">
+                                                <p className="text-sm font-bold text-white mb-1">
+                                                    {currentProgress} / 10 Selos
+                                                </p>
+                                                <div className="w-full bg-gray-700/50 rounded-full h-2 overflow-hidden">
+                                                    <div
+                                                        className="bg-yellow-500 h-full transition-all duration-1000 ease-out"
+                                                        style={{ width: `${(currentProgress / 10) * 100}%` }}
+                                                    ></div>
+                                                </div>
+                                                <p className="text-[10px] text-yellow-400 font-bold mt-2 uppercase tracking-wide">Pedidos acima de R$ 35,00 pontuam.</p>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
-                            )}
-                        </div>
+
+                                <div className="mt-6">
+                                    {rewardsAvailable > 0 ? (
+                                        <div className="bg-yellow-500/10 border border-yellow-500/50 rounded-xl p-4 text-center animate-pulse-slow">
+                                            <p className="text-yellow-400 font-bold mb-2">Você tem {rewardsAvailable} recompensa(s) disponível!</p>
+                                            <button
+                                                onClick={() => {
+                                                    onClose();
+                                                    onTriggerReward();
+                                                }}
+                                                className="w-full py-3 bg-yellow-500 hover:bg-yellow-400 text-black font-black uppercase tracking-wide rounded-xl shadow-lg transform hover:scale-105 transition-all text-sm"
+                                            >
+                                                RESGATAR PRÊMIO AGORA
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center p-4 opacity-50">
+                                            <p className="text-sm text-gray-400">Faltam {10 - currentProgress} selos para seu prêmio.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </>
+                        )}
                     </div>
                 </div>
             </div>
