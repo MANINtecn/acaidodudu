@@ -25,7 +25,8 @@ import {
     X as LucideX,
     Search,
     MapPin,
-    Keyboard
+    Keyboard,
+    FileText as FileTextIcon
 } from 'lucide-react';
 import { normalizeString } from '../utils/searchUtils';
 import CounterTab from '../components/CounterTab';
@@ -34,6 +35,8 @@ import { AdsTab } from '../components/AdsTab';
 import { ReviewsTab } from '../components/ReviewsTab';
 import { DeliveryZonesManager } from '../components/DeliveryZonesManager';
 import ComandosTab from '../components/ComandosTab';
+import FidelidadeTab from '../components/FidelidadeTab';
+import FiscalTab from '../components/FiscalTab';
 import { reservarImpressao, liberarImpressao, liberarTodasAsVias } from '../services/impressaoLockService';
 import { tocarSirene, type TipoSirene } from '../services/sireneService';
 import { estacaoDeveTocar, estacaoDeveImprimir, estacaoAtiva, estacaoMostraJanela } from '../services/estacaoService';
@@ -117,7 +120,9 @@ const AdminPage = () => {
     const showNotify = (message: string, type: NotificationType = 'success') => {
         setNotification({ show: true, message, type });
     };
-    const [activeTab, setActiveTab] = useState<'orders' | 'kitchen' | 'menu' | 'settings' | 'promotions' | 'cash' | 'addons' | 'counter' | 'raffle' | 'ads' | 'reviews' | 'history' | 'couriers' | 'whatsapp-bot' | 'delivery-zones' | 'comandos'>('orders');
+    const [activeTab, setActiveTab] = useState<'orders' | 'kitchen' | 'menu' | 'settings' | 'promotions' | 'cash' | 'addons' | 'counter' | 'raffle' | 'ads' | 'reviews' | 'history' | 'couriers' | 'whatsapp-bot' | 'delivery-zones' | 'comandos' | 'fidelidade' | 'fiscal'>('orders');
+    /** Muda a cada F3, pedindo ao CounterTab para focar a busca de produto. */
+    const [focusSearchSignal, setFocusSearchSignal] = useState(0);
     const [menuSubTab, setMenuSubTab] = useState<'items' | 'addons'>('items');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [showUtilityMenu, setShowUtilityMenu] = useState(false);
@@ -173,7 +178,7 @@ const AdminPage = () => {
             // F4 falhar de forma intermitente: o CounterTab tem outro listener
             // no mesmo window, e o evento podia sair daqui já marcado e ser
             // descartado antes de virar troca de aba. Ver Regra 10.
-            const ehNavegacao = e.key === 'F4' || e.key === 'F5' || e.key === 'F6' || e.key === 'F7';
+            const ehNavegacao = e.key === 'F3' || e.key === 'F4' || e.key === 'F5' || e.key === 'F6' || e.key === 'F7';
             const ehDigito = /^[0-9]$/.test(e.key);
             const ehEnter = e.key === 'Enter';
             const ehEsc = e.key === 'Escape';
@@ -233,6 +238,15 @@ const AdminPage = () => {
             }
 
             e.preventDefault();
+
+            // F3 = ir direto para o Balcao com foco no campo de busca de
+            // produto, de QUALQUER aba (Pedidos, Comandos...). Pedido do
+            // Icaro — atalho rapido para comecar a lancar um pedido.
+            if (e.key === 'F3') {
+                setActiveTab('counter');
+                setFocusSearchSignal(prev => prev + 1);
+                return;
+            }
 
             // F7 = checkout da comanda aberta. Fecha a conta sem mouse:
             // F5 -> numero -> ENTER -> F7 -> (D/C/P) -> ENTER
@@ -1341,6 +1355,12 @@ const AdminPage = () => {
                     <button onClick={() => setActiveTab('delivery-zones')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'delivery-zones' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <MapPin size={20} /> Taxas de Entrega
                     </button>
+                    <button onClick={() => setActiveTab('fidelidade')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'fidelidade' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                        <Gift size={20} /> Fidelidade
+                    </button>
+                    <button onClick={() => setActiveTab('fiscal')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'fiscal' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                        <FileTextIcon size={20} /> Nota Fiscal
+                    </button>
                     <button onClick={() => setActiveTab('comandos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'comandos' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <Keyboard size={20} /> Comandos <span className="ml-auto text-[10px] font-mono opacity-50">F6</span>
                     </button>
@@ -1453,6 +1473,7 @@ const AdminPage = () => {
                         activeOrders={orders}
                         onOrderComplete={handleCounterOrderComplete}
                         promotions={promotions}
+                        focusSearchSignal={focusSearchSignal}
                     />
                 )}
 
@@ -1829,6 +1850,19 @@ const AdminPage = () => {
 
                 {activeTab === 'comandos' && (
                     <ComandosTab menuItems={menuItems} categories={categories} />
+                )}
+
+                {activeTab === 'fidelidade' && currentStore && (
+                    <FidelidadeTab
+                        storeId={currentStore.id}
+                        settings={settings}
+                        menuItems={menuItems}
+                        onSettingsChanged={(novo) => setSettings(prev => prev ? { ...prev, ...novo } : prev)}
+                    />
+                )}
+
+                {activeTab === 'fiscal' && currentStore && (
+                    <FiscalTab storeId={currentStore.id} />
                 )}
 
                 {activeTab === 'reviews' && currentStore && (
