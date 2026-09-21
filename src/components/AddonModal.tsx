@@ -119,6 +119,24 @@ export const AddonModal: React.FC<AddonModalProps> = ({
                         <p className="text-xs text-gray-500 mt-1">Se selecionado, aparecerá apenas para itens desta categoria.</p>
                     </div>
 
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo (Opcional)</label>
+                        <select
+                            name="addonGroup"
+                            value={formData.addonGroup || ''}
+                            onChange={(e) => setFormData(prev => ({ ...prev, addonGroup: (e.target.value || undefined) as 'sabor' | 'calda' | undefined }))}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        >
+                            <option value="">Genérico (lista única, como sempre foi)</option>
+                            <option value="sabor">Sabor</option>
+                            <option value="calda">Calda</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                            Marque Sabor/Calda só nos complementos do Milkshake -- o cliente escolhe 1 sabor,
+                            depois 1 calda, em 2 passos. Deixe em branco para continuar como lista única.
+                        </p>
+                    </div>
+
                     <div className="flex items-center">
                         <input
                             type="checkbox"

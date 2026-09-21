@@ -1286,8 +1286,29 @@ const ItemDetailModal: React.FC<{
     };
 
     const relevantAddons = (item.selectedAddons && item.selectedAddons.length > 0) ? item.selectedAddons : (item.addons || []);
-    const isOptionRequired = relevantAddons.length > 0;
-    const hasMandatorySelection = isOptionRequired && selectedAddons.length === 0;
+
+    // Fluxo em 2 passos (Sabor -> Calda), mesma logica de CustomerPageModern.tsx
+    // -- pedido do Ikarus, 21/09/2026, especifico para Milkshake.
+    const saboresDisponiveis = relevantAddons.filter(a => a.addonGroup === 'sabor');
+    const caldasDisponiveis = relevantAddons.filter(a => a.addonGroup === 'calda');
+    const usaFluxoSaborCalda = saboresDisponiveis.length > 0 && caldasDisponiveis.length > 0;
+    const outrosAddons = usaFluxoSaborCalda ? [] : relevantAddons;
+
+    const saborEscolhido = selectedAddons.find(a => a.addonGroup === 'sabor');
+    const caldaEscolhida = selectedAddons.find(a => a.addonGroup === 'calda');
+
+    const handleRadioSelect = (addon: Addon) => {
+        setSelectedAddons(prev => {
+            const semEsseGrupo = prev.filter(a => a.addonGroup !== addon.addonGroup);
+            const jaEstavaSelecionado = prev.some(a => a.id === addon.id);
+            return jaEstavaSelecionado ? semEsseGrupo : [...semEsseGrupo, addon];
+        });
+    };
+
+    const isOptionRequired = usaFluxoSaborCalda ? true : outrosAddons.length > 0;
+    const hasMandatorySelection = usaFluxoSaborCalda
+        ? (!saborEscolhido || !caldaEscolhida)
+        : (isOptionRequired && selectedAddons.length === 0);
 
     const handleAddToCart = () => {
         if (hasMandatorySelection) {
@@ -1366,14 +1387,90 @@ const ItemDetailModal: React.FC<{
                         )}
                     </div>
 
-                    {relevantAddons.length > 0 && (
+                    {usaFluxoSaborCalda ? (
+                        <>
+                            <div className="space-y-3">
+                                <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
+                                    <span>1. Escolha o sabor</span>
+                                    <span className="text-[10px] text-amber-400 font-bold uppercase">(1 sabor)</span>
+                                </h3>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {saboresDisponiveis.map(addon => {
+                                        const isUnavailable = addon.isAvailable === false;
+                                        const isSelected = saborEscolhido?.id === addon.id;
+                                        return (
+                                            <button
+                                                key={addon.id}
+                                                disabled={isUnavailable}
+                                                onClick={() => handleRadioSelect(addon)}
+                                                className={`flex items-center p-3 rounded-2xl border transition-all text-left
+                                                    ${isSelected
+                                                        ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
+                                                        : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
+                                                    ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                                            >
+                                                <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors
+                                                    ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
+                                                    {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
+                                                </div>
+                                                <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
+                                                    {sanitizeHtmlEntities(addon.name)}
+                                                </span>
+                                                <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
+                                                    + R$ {addon.price.toFixed(2)}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {saborEscolhido && (
+                                <div className="space-y-3 animate-fade-in">
+                                    <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
+                                        <span>2. Escolha a calda</span>
+                                        <span className="text-[10px] text-amber-400 font-bold uppercase">(1 calda)</span>
+                                    </h3>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {caldasDisponiveis.map(addon => {
+                                            const isUnavailable = addon.isAvailable === false;
+                                            const isSelected = caldaEscolhida?.id === addon.id;
+                                            return (
+                                                <button
+                                                    key={addon.id}
+                                                    disabled={isUnavailable}
+                                                    onClick={() => handleRadioSelect(addon)}
+                                                    className={`flex items-center p-3 rounded-2xl border transition-all text-left
+                                                        ${isSelected
+                                                            ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
+                                                            : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
+                                                        ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                                                >
+                                                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors
+                                                        ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
+                                                        {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
+                                                    </div>
+                                                    <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
+                                                        {sanitizeHtmlEntities(addon.name)}
+                                                    </span>
+                                                    <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
+                                                        + R$ {addon.price.toFixed(2)}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </>
+                    ) : outrosAddons.length > 0 && (
                         <div className="space-y-3">
                             <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
                                 <span>Escolha seu sabor / adicionais</span>
                                 <span className="text-[10px] text-amber-400 font-bold uppercase">(Mínimo 1 opção)</span>
                             </h3>
                             <div className="grid grid-cols-1 gap-2">
-                                {relevantAddons.map(addon => {
+                                {outrosAddons.map(addon => {
                                     const isUnavailable = addon.isAvailable === false;
                                     const isSelected = selectedAddons.some(a => a.id === addon.id);
                                     return (
@@ -1382,8 +1479,8 @@ const ItemDetailModal: React.FC<{
                                             disabled={isUnavailable}
                                             onClick={() => handleAddonToggle(addon)}
                                             className={`flex items-center p-3 rounded-2xl border transition-all text-left
-                                                ${isSelected 
-                                                    ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]' 
+                                                ${isSelected
+                                                    ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
                                                     : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
                                                 ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
                                         >
@@ -1408,13 +1505,15 @@ const ItemDetailModal: React.FC<{
                 <div className="p-4 bg-[#100620] border-t border-purple-500/30 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
                     {hasMandatorySelection && (
                         <div className="mb-3 p-2 bg-amber-500/20 border border-amber-500/50 rounded-xl text-center text-xs font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
-                            Selecione pelo menos 1 opção / sabor para continuar
+                            {usaFluxoSaborCalda
+                                ? (!saborEscolhido ? 'Escolha o sabor para continuar' : 'Escolha a calda para continuar')
+                                : 'Selecione pelo menos 1 opção / sabor para continuar'}
                         </div>
                     )}
                     <div className="flex items-center gap-4 mb-3">
                         <div className="flex items-center bg-[#1a0c33] rounded-xl p-1 border border-purple-500/30">
-                            <button 
-                                onClick={() => setQuantity(Math.max(1, quantity - 1))} 
+                            <button
+                                onClick={() => setQuantity(Math.max(1, quantity - 1))}
                                 className="w-10 h-10 flex items-center justify-center text-amber-400 bg-[#130826] rounded-lg hover:bg-[#201040] active:scale-90 transition-all font-black text-xl border border-purple-500/30"
                             >
                                 <LucideMinus size={18} />
@@ -1443,7 +1542,9 @@ const ItemDetailModal: React.FC<{
                                 : 'bg-gradient-to-r from-orange-500 via-amber-500 to-purple-600 hover:brightness-110 active:scale-[0.98] text-white shadow-orange-500/20'
                         }`}
                     >
-                        <span>{hasMandatorySelection ? 'Escolha 1 Sabor / Opção' : 'Adicionar ao Pedido'}</span>
+                        <span>{hasMandatorySelection
+                            ? (usaFluxoSaborCalda ? (!saborEscolhido ? 'Escolha o Sabor' : 'Escolha a Calda') : 'Escolha 1 Sabor / Opção')
+                            : 'Adicionar ao Pedido'}</span>
                         <LucideArrowRight size={18} />
                     </button>
                 </div>
