@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Category, MenuItem, Addon, Order, Settings, Store, Customer, CashSession, CashTransaction, Promotion } from '../types';
+import { Category, MenuItem, Addon, Order, Settings, Store, Customer, CashSession, CashTransaction, Promotion, LoyaltyRewardItem, FiscalConfig } from '../types';
 
 import { storage } from './firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
@@ -453,6 +453,194 @@ export const getNextDailyOrderNumber = async (storeId: string): Promise<number> 
     return (data?.daily_order_number || 0) + 1;
 };
 
+/**
+ * Fidelidade por pontos — regra fechada com o Icaro (17/09/2026):
+ * a cada faixa de R$15, 1 ponto; arredonda para cima quando faltam <= 4
+ * para o proximo multiplo de 15 (ex.: R$26 a R$40 = 2 pontos, nao so
+ * a partir de R$41). Resgate (produto gratis) NAO soma para esta conta —
+ * quem chama esta funcao deve passar so o valor efetivamente pago.
+ */
+export function calcularPontosGanhos(valorPago: number): number {
+    if (valorPago < 11) return 0;
+    const base = Math.floor(valorPago / 15);
+    const resto = valorPago % 15;
+    return resto >= 11 ? base + 1 : base;
+}
+
+/** Os ate 4 produtos resgataveis configurados pela loja. */
+/**
+ * Configuracao fiscal da loja (NFC-e) — 1 linha por loja, tabela
+ * `fiscal_config`. Ver claude-acai.md, "ARQUITETURA TECNICA DA NFC-e".
+ * `null` quando a loja ainda nao tem config salva (primeira vez na tela).
+ */
+export const fetchFiscalConfig = async (storeId: string): Promise<FiscalConfig | null> => {
+    const { data, error } = await supabase
+        .from('fiscal_config')
+        .select('*')
+        .eq('store_id', storeId)
+        .maybeSingle();
+    if (error) throw error;
+    return data;
+};
+
+/**
+ * Salva a configuracao fiscal. Upsert por `store_id` (UNIQUE na tabela) —
+ * cria na primeira vez, atualiza depois. NUNCA inclui `csc_token` vindo do
+ * front sem o usuario ter digitado de novo (ver FiscalTab: campo de senha
+ * so envia se preenchido, para nao sobrescrever com vazio sem querer).
+ */
+export const saveFiscalConfig = async (
+    storeId: string,
+    config: Partial<Omit<FiscalConfig, 'id' | 'store_id'>>
+): Promise<FiscalConfig> => {
+    const { data, error } = await supabase
+        .from('fiscal_config')
+        .upsert({ ...config, store_id: storeId, updated_at: new Date().toISOString() }, { onConflict: 'store_id' })
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+};
+
+export const fetchLoyaltyRewardItems = async (storeId: string): Promise<LoyaltyRewardItem[]> => {
+    const { data, error } = await supabase
+        .from('loyalty_reward_items')
+        .select('*')
+        .eq('store_id', storeId)
+        .eq('is_active', true)
+        .order('created_at', { ascending: true });
+    if (error) throw error;
+    return data || [];
+};
+
+/**
+ * Substitui a lista de produtos resgataveis da loja (no maximo 4, checado
+ * na tela — aqui so grava o que vier). Apaga os antigos e insere os novos:
+ * mais simples que fazer diff, e a lista e pequena (ate 4 linhas).
+ */
+export const saveLoyaltyRewardItems = async (
+    storeId: string,
+    items: { menu_item_id: number; points_cost: number; menu_item_name: string; menu_item_price: number }[]
+): Promise<void> => {
+    const { error: delError } = await supabase
+        .from('loyalty_reward_items')
+        .delete()
+        .eq('store_id', storeId);
+    if (delError) throw delError;
+
+    if (items.length === 0) return;
+
+    const { error: insError } = await supabase
+        .from('loyalty_reward_items')
+        .insert(items.map(i => ({ ...i, store_id: storeId, is_active: true })));
+    if (insError) throw insError;
+};
+
+/** Saldo de pontos do cliente nesta loja. 0 se nunca teve registro. */
+export const fetchCustomerPointsBalance = async (phone: string, storeId: string): Promise<number> => {
+    const sanitizedPhone = phone.replace(/\D/g, '');
+    const { data, error } = await supabase
+        .from('customer_loyalty_points')
+        .select('points_balance')
+        .eq('store_id', storeId)
+        .eq('phone', sanitizedPhone)
+        .maybeSingle();
+    if (error) throw error;
+    return data?.points_balance ?? 0;
+};
+
+/**
+ * Credita os pontos ganhos por um pedido ja PAGO. So chamar para pedidos
+ * origin WEB/APP (regra fechada com o Icaro: balcao nao soma pontos).
+ * Idempotente: o UNIQUE INDEX em loyalty_points_ledger(order_id) recusa um
+ * segundo "ganho" para o mesmo pedido, entao chamar 2x nao duplica saldo.
+ */
+export const creditarPontosDoPedido = async (
+    orderId: string,
+    phone: string,
+    storeId: string,
+    valorPago: number
+): Promise<void> => {
+    const pontos = calcularPontosGanhos(valorPago);
+    if (pontos <= 0) return;
+
+    const sanitizedPhone = phone.replace(/\D/g, '');
+
+    // 1. Tenta registrar o lancamento. Se o pedido ja tiver um "ganho"
+    //    (UNIQUE INDEX), o insert falha e paramos aqui sem tocar no saldo —
+    //    e assim que a idempotencia funciona.
+    const { error: ledgerError } = await supabase
+        .from('loyalty_points_ledger')
+        .insert({
+            store_id: storeId,
+            phone: sanitizedPhone,
+            tipo: 'ganho',
+            points: pontos,
+            order_id: orderId,
+        });
+
+    if (ledgerError) {
+        if (ledgerError.code === '23505') return; // ja creditado antes, ok
+        throw ledgerError;
+    }
+
+    // 2. Soma no saldo. upsert com valor absoluto exigiria ler antes —
+    //    mais simples e seguro: le o saldo atual e grava a soma, protegido
+    //    pelo passo 1 (so chega aqui uma vez por pedido).
+    const atual = await fetchCustomerPointsBalance(sanitizedPhone, storeId);
+    const { error: upsertError } = await supabase
+        .from('customer_loyalty_points')
+        .upsert({
+            store_id: storeId,
+            phone: sanitizedPhone,
+            points_balance: atual + pontos,
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'store_id,phone' });
+    if (upsertError) throw upsertError;
+};
+
+/**
+ * Resgata um produto por pontos: debita o saldo e registra o ledger.
+ * Lanca erro se o saldo for insuficiente (checagem no banco, nao so na
+ * tela — evita corrida entre duas abas do mesmo cliente).
+ */
+export const resgatarPontos = async (
+    phone: string,
+    storeId: string,
+    rewardItemId: string,
+    pointsCost: number,
+    orderId?: string
+): Promise<void> => {
+    const sanitizedPhone = phone.replace(/\D/g, '');
+    const atual = await fetchCustomerPointsBalance(sanitizedPhone, storeId);
+
+    if (atual < pointsCost) {
+        throw new Error(`Saldo insuficiente: tem ${atual} pontos, precisa de ${pointsCost}.`);
+    }
+
+    const { error: upsertError } = await supabase
+        .from('customer_loyalty_points')
+        .upsert({
+            store_id: storeId,
+            phone: sanitizedPhone,
+            points_balance: atual - pointsCost,
+            updated_at: new Date().toISOString(),
+        }, { onConflict: 'store_id,phone' });
+    if (upsertError) throw upsertError;
+
+    const { error: ledgerError } = await supabase
+        .from('loyalty_points_ledger')
+        .insert({
+            store_id: storeId,
+            phone: sanitizedPhone,
+            tipo: 'resgate',
+            points: -pointsCost,
+            reward_item_id: rewardItemId,
+            order_id: orderId,
+        });
+    if (ledgerError) throw ledgerError;
+};
+
 export const createOrder = async (order: any) => {
     const dbOrder = mapOrderToDB(order);
     
@@ -482,6 +670,15 @@ export const createOrder = async (order: any) => {
                     customer_phone: frontendOrder.phone,
                     phone: frontendOrder.phone
                 }).catch(e => console.error("Error triggering new order webhook:", e));
+            }
+
+            // Fidelidade por pontos: so quando o modelo estiver ativo, so
+            // pedidos do site/app (nao balcao), e nunca bloqueando a venda
+            // se der erro -- fidelidade e bonus, nao pode derrubar pedido.
+            const ehDoSite = frontendOrder.origin === 'WEB' || frontendOrder.origin === 'APP';
+            if (settings.loyaltyModel === 'pontos' && ehDoSite && frontendOrder.phone && frontendOrder.id) {
+                creditarPontosDoPedido(frontendOrder.id, frontendOrder.phone, order.store_id, frontendOrder.total)
+                    .catch(e => console.error("Error crediting loyalty points:", e));
             }
         }).catch(e => console.error("Error fetching settings for webhook:", e));
     }
@@ -639,6 +836,7 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     appDiscountPercentage: 0,
     logoUrl: '',
     heroImageUrl: '',
+    loyaltyModel: 'selo',
     storefrontTheme: 'classic',
     modernGroups: [
         { id: 1, name: 'AÇAÍ', image: '', categories: [] },
@@ -689,7 +887,8 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
         ...defaultSettings,
         ...(dbData || {}),
         logoUrl: storeData?.logo_url || dbData?.logo_url || dbData?.logoUrl,
-        heroImageUrl: dbData?.hero_image_url ?? dbData?.heroImageUrl ?? defaultSettings.heroImageUrl
+        heroImageUrl: dbData?.hero_image_url ?? dbData?.heroImageUrl ?? defaultSettings.heroImageUrl,
+        loyaltyModel: dbData?.loyalty_model ?? dbData?.loyaltyModel ?? defaultSettings.loyaltyModel
     };
 
     return {
@@ -819,7 +1018,7 @@ export const fetchSettings = async (storeId: string): Promise<Settings> => {
     return result;
 };
 
-export const fetchPublicSettings = async (storeId: string): Promise<Pick<Settings, 'modernGroups' | 'storefrontTheme' | 'openingTime' | 'closingTime' | 'manualStatus' | 'comboPrice' | 'webhookNewOrderUrl' | 'webhookInProductionUrl' | 'webhookOutForDeliveryUrl' | 'webhookArrivedAtDoorUrl' | 'isAppDiscountEnabled' | 'appDiscountPercentage' | 'logoUrl' | 'heroImageUrl' | 'isRaffleEnabled' | 'rafflePrizeValue' | 'raffleDrawDate' | 'lastRaffleWinner' | 'isRatingEnabled' | 'deliveryFee' | 'courier_access_code' | 'defaultDDD' | 'isBotEnabled' | 'printerCompatibilityMode' | 'kitchenPrinter' | 'kitchenPrinterPaperWidth' | 'barPrinter' | 'barPrinterPaperWidth' | 'courierPrinter' | 'courierPrinterPaperWidth'>> => {
+export const fetchPublicSettings = async (storeId: string): Promise<Pick<Settings, 'modernGroups' | 'storefrontTheme' | 'openingTime' | 'closingTime' | 'manualStatus' | 'comboPrice' | 'webhookNewOrderUrl' | 'webhookInProductionUrl' | 'webhookOutForDeliveryUrl' | 'webhookArrivedAtDoorUrl' | 'isAppDiscountEnabled' | 'appDiscountPercentage' | 'logoUrl' | 'heroImageUrl' | 'loyaltyModel' | 'isRaffleEnabled' | 'rafflePrizeValue' | 'raffleDrawDate' | 'lastRaffleWinner' | 'isRatingEnabled' | 'deliveryFee' | 'courier_access_code' | 'defaultDDD' | 'isBotEnabled' | 'printerCompatibilityMode' | 'kitchenPrinter' | 'kitchenPrinterPaperWidth' | 'barPrinter' | 'barPrinterPaperWidth' | 'courierPrinter' | 'courierPrinterPaperWidth'>> => {
     const { data, error } = await supabase
         .from('settings')
         .select('*')
@@ -976,7 +1175,7 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
         'preferredPrinter', 'printerPaperWidth',
         'printerCompatibilityMode',
         'autoPrintDineIn',
-        'sireneTipo', 'sireneVolume', 'mostrarDicasAtalho', 'modeloMesas', 'heroImageUrl',
+        'sireneTipo', 'sireneVolume', 'mostrarDicasAtalho', 'modeloMesas', 'heroImageUrl', 'loyaltyModel',
         'pixEnabled', 'pixKey', 'pixKeyType', 'pixBeneficiary',
         'storeWhatsapp', 'pixResumoTemplate'
     ];

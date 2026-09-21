@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { X as LucideX, History as LucideHistory, Repeat as LucideRepeat, Utensils as LucideUtensils, Package, Clock, Truck, MapPin, AlertCircle } from 'lucide-react';
+import { X as LucideX, History as LucideHistory, Utensils as LucideUtensils, MapPin } from 'lucide-react';
 import { fetchCustomerLoyaltyHistory, submitBolaoGuess, fetchBolaoGuessByPhone, fetchPublicSettings } from '../services/supabaseService';
-import { normalizeString } from '../utils/searchUtils';
-import { MIN_ORDER_VALUE } from '../constants';
 
 
 // Types (Inlined for stability)
@@ -98,7 +96,11 @@ interface LoyaltyProfileModalProps {
     dynamicDeliveryFee: number | null;
 }
 
-const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClose, customer, lastOrder, onRepeatOrder, onNewOrder, isLoadingRepeat, storeId, isStoreOpen, onUpdateAddress, onTriggerReward, pendingReward, dynamicDeliveryFee }) => {
+// lastOrder/onRepeatOrder/isLoadingRepeat continuam no contrato de props
+// (CustomerPageModern ainda os usa para o mecanismo de repetir pedido em
+// outro lugar), mas este modal nao mostra mais o ultimo pedido nem tem
+// botao de repetir — pedido do Icaro, 21/09/2026. Recebidos e ignorados.
+const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClose, customer, onNewOrder, storeId, isStoreOpen, onUpdateAddress, onTriggerReward, pendingReward }) => {
     const [loyaltyHistory, setLoyaltyHistory] = useState<Order[]>([]);
     const [isLoadingLoyalty, setIsLoadingLoyalty] = useState(true);
 
@@ -116,14 +118,10 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
     const [bolaoStatus, setBolaoStatus] = useState<'loading' | 'open' | 'closed' | 'not_started'>('loading');
     const [bolaoStartTime, setBolaoStartTime] = useState<number | null>(null);
     const [countdown, setCountdown] = useState<string>('');
-    const [minOrderValue, setMinOrderValue] = useState<number>(MIN_ORDER_VALUE);
 
     useEffect(() => {
         if (isOpen && customer && storeId) {
             fetchPublicSettings(storeId).then(settings => {
-                if (settings && (settings as any).minOrderValue !== undefined) {
-                    setMinOrderValue(Number((settings as any).minOrderValue) || MIN_ORDER_VALUE);
-                }
                 const now = new Date().getTime();
                 // Padrão: Sábado (13/06/2026) às 13:00 até 18:00
                 const defaultStart = new Date('2026-06-13T13:00:00-03:00').getTime();
@@ -198,42 +196,26 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
         return () => clearInterval(interval);
     }, [bolaoStatus, bolaoStartTime]);
 
+    // Nao mostramos mais o ultimo pedido (pedido do Icaro, 21/09/2026) — este
+    // efeito so cuida do item RESGATADO por fidelidade, que ainda precisa
+    // chegar ao carrinho normalmente via pendingReward.
     useEffect(() => {
         if (!isOpen) {
             setItemsToRepeat([]);
-        } else if (lastOrder) {
-            // 1. Filter valid items from last order
-            const baseItems: CartItem[] = lastOrder.items.filter((item: any) =>
-                item.price > 0 &&
-                !normalizeString(item.name).includes('fidelidade') &&
-                !normalizeString(item.notes || '').includes('fidelidade')
-            ).map((item: any) => ({ // Deep copy to allow editing
-                ...item,
-                cartId: `repeat-${Math.random().toString(36).substr(2, 9)}`, // New cart IDs
-                notes: item.notes || '' // Preserve existing notes or empty
-            }));
-
-            // 2. Add Pending Reward Item if applicable
-            if (pendingReward?.type === 'item') {
-                baseItems.push({
-                    ...pendingReward.item,
-                    cartId: `reward-${Date.now()}`,
-                    quantity: 1,
-                    notes: 'Fidelidade - GRÁTIS',
-                    price: 0
-                });
-            }
-
-            setItemsToRepeat(baseItems);
+            return;
         }
-    }, [isOpen, lastOrder, pendingReward]);
-
-    // Handle Note Change
-    const handleItemNoteChange = (index: number, newNote: string) => {
-        const newItems = [...itemsToRepeat];
-        newItems[index].notes = newNote;
-        setItemsToRepeat(newItems);
-    };
+        if (pendingReward?.type === 'item') {
+            setItemsToRepeat([{
+                ...pendingReward.item,
+                cartId: `reward-${Date.now()}`,
+                quantity: 1,
+                notes: 'Fidelidade - GRÁTIS',
+                price: 0
+            }]);
+        } else {
+            setItemsToRepeat([]);
+        }
+    }, [isOpen, pendingReward]);
 
     useEffect(() => {
         if (isOpen && customer && storeId) {
@@ -253,12 +235,8 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
             }
             setEditReference(customer.reference_point || '');
 
-            if (lastOrder) {
-                setEditPaymentMethod(lastOrder.paymentMethod);
-                setEditChangeFor(lastOrder.changeFor || '');
-            }
         }
-    }, [isOpen, customer, storeId, lastOrder]);
+    }, [isOpen, customer, storeId]);
 
     const totalStamps = loyaltyHistory.length;
     const currentProgress = totalStamps % 10;
@@ -277,28 +255,6 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
             setIsSavingAddress(false);
         }
     };
-
-    // Calculate total with pending reward discount if applicable
-    const calculateTotalWithReward = () => {
-        if (!lastOrder) return 0;
-        
-        // Use the last order subtotal (total - previous fee) - BUT wait, it's safer to recalculate items
-        const itemsTotal = itemsToRepeat.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-        
-        // Use the new dynamic fee if available, otherwise fallback to last order fee
-        const fee = dynamicDeliveryFee !== null ? dynamicDeliveryFee : (lastOrder.deliveryFee || 0);
-
-        let total = itemsTotal + fee;
-
-        if (pendingReward?.type === 'discount') {
-            total = Math.max(0, total - pendingReward.value);
-        }
-
-        return total;
-    };
-
-    const finalTotal = calculateTotalWithReward();
-
 
     if (!isOpen || !customer) return null;
 
@@ -397,196 +353,139 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                     </div>
 
                     <div className="flex-grow">
-                        {lastOrder ? (
-                            <div className="bg-background/50 rounded-xl p-4 border-2 border-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.1)] relative">
-                                <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                    <LucideHistory size={12} /> Último Pedido
-                                </h3>
-                                <div className="space-y-3 mb-4 max-h-[250px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-800 pr-2">
-                                    {itemsToRepeat.map((item, idx) => (
-                                        <div key={idx} className="bg-black/20 rounded p-2 border border-gray-800">
-                                            <div className="flex justify-between text-sm text-gray-200 mb-2">
-                                                <span className={`font-medium ${item.price === 0 ? 'text-yellow-500' : ''}`}>
-                                                    {item.quantity}x {item.name}
-                                                </span>
-                                                {item.price === 0 && <span className="text-xs text-yellow-500 font-bold bg-yellow-500/10 px-2 rounded">GRÁTIS</span>}
+                        {/* Nao mostramos mais o "Ultimo Pedido" nem "Repetir Pedido" —
+                            pedido do Icaro, 21/09/2026. Os dados do cliente (endereco,
+                            pagamento) ficam sempre visiveis ao reconhecer o telefone,
+                            independente de ja ter pedido antes. O item resgatado por
+                            fidelidade (pendingReward) ainda aparece aqui, e chega ao
+                            carrinho normalmente ao abrir o cardapio. */}
+                        <div className="bg-background/50 rounded-xl p-4 border-2 border-orange-500 shadow-[0_0_10px_rgba(249,115,22,0.1)] relative">
+                            {pendingReward?.type === 'item' && itemsToRepeat.length > 0 && (
+                                <div className="mb-4">
+                                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                        <LucideHistory size={12} /> Resgate de Fidelidade
+                                    </h3>
+                                    <div className="space-y-2">
+                                        {itemsToRepeat.map((item, idx) => (
+                                            <div key={idx} className="bg-black/20 rounded p-2 border border-gray-800 flex justify-between text-sm text-gray-200">
+                                                <span className="font-medium text-yellow-500">{item.quantity}x {item.name}</span>
+                                                <span className="text-xs text-yellow-500 font-bold bg-yellow-500/10 px-2 rounded">GRÁTIS</span>
                                             </div>
-                                            <input
-                                                value={item.notes || ''}
-                                                onChange={(e) => handleItemNoteChange(idx, e.target.value)}
-                                                placeholder="Observação (Ex: Sem cebola...)"
-                                                className="w-full bg-gray-900 border border-gray-700/50 rounded px-2 py-1 text-xs text-gray-300 focus:border-green-500 outline-none transition-colors placeholder-gray-600"
-                                            />
-                                        </div>
-                                    ))}
-
-                                    {/* Show discount info if applicable */}
-                                    {pendingReward?.type === 'discount' && (
-                                        <div className="flex justify-between text-sm text-yellow-500 font-bold border-b border-gray-800 last:border-0 py-1 animate-pulse px-2">
-                                            <span>Desconto Fidelidade</span>
-                                            <span>- R$ {pendingReward.value.toFixed(2)}</span>
-                                        </div>
-                                    )}
-
-                                    {itemsToRepeat.length === 0 && !pendingReward && (
-                                        <p className="text-gray-500 text-sm italic py-2 text-center">Nenhum item válido para repetir.</p>
-                                    )}
-                                </div>
-
-                                <div className="mb-4 text-xs text-gray-400 bg-black/20 p-2 rounded border border-white/5 flex flex-col gap-2">
-                                    <div className="flex justify-between items-center">
-                                        <span>Pagamento: <span className="text-white font-medium">{lastOrder.paymentMethod}</span></span>
-                                        {lastOrder.paymentMethod === 'Dinheiro' && lastOrder.changeFor && <span>Troco: <span className="text-white">R$ {parseFloat(lastOrder.changeFor).toFixed(2)}</span></span>}
+                                        ))}
                                     </div>
-                                    
-                                    {lastOrder.paymentMethod === 'PIX' && (
-                                        <div className="bg-gray-800 rounded p-3 flex flex-col gap-1 animate-fade-in border border-gray-700">
-                                            <p className="text-[10px] font-bold text-white flex items-center gap-1">
-                                                <span className="text-yellow-500">ℹ️</span> Pagamento via PIX
-                                            </p>
-                                            <p className="text-[9px] text-gray-400 leading-tight">
-                                                O motoboy ou atendente fornecerá o QR Code no momento do pagamento.
-                                            </p>
-                                        </div>
-                                    )}
                                 </div>
+                            )}
 
-                                <div className="mt-4 mb-4 text-xs text-text-light bg-black/30 p-3 rounded-xl border border-white/5 w-full text-left relative group">
-                                    {!isEditingAddress ? (
-                                        <>
-                                            <div className="flex justify-between items-start">
-                                                <p className="font-bold text-gray-300 mb-1 flex items-center gap-1">Endereço de Entrega:</p>
-                                                <button
-                                                    onClick={() => setIsEditingAddress(true)}
-                                                    className="text-[10px] text-primary hover:text-white border border-primary/30 hover:bg-primary/10 px-2 py-0.5 rounded transition-colors"
-                                                    title="Editar Endereço"
-                                                >
-                                                    Editar Dados
-                                                </button>
-                                            </div>
-                                            {customer.address ? (
-                                                <>
-                                                    <p className="text-sm text-white leading-tight">{customer.address}</p>
-                                                    {customer.reference_point && <p className="italic mt-1 text-gray-500 border-t border-gray-700/50 pt-1">Ref: {customer.reference_point}</p>}
-                                                </>
-                                            ) : (
-                                                <p className="text-gray-500 italic">Nenhum endereço cadastrado</p>
-                                            )}
-                                        </>
-                                    ) : (
-                                        <div className="space-y-3 animate-fade-in">
+                            {pendingReward?.type === 'discount' && (
+                                <div className="mb-4 flex justify-between text-sm text-yellow-500 font-bold bg-black/20 rounded p-2 border border-gray-800 animate-pulse">
+                                    <span>Desconto Fidelidade</span>
+                                    <span>- R$ {pendingReward.value.toFixed(2)}</span>
+                                </div>
+                            )}
+
+                            <div className="mt-4 mb-4 text-xs text-text-light bg-black/30 p-3 rounded-xl border border-white/5 w-full text-left relative group">
+                                {!isEditingAddress ? (
+                                    <>
+                                        <div className="flex justify-between items-start">
+                                            <p className="font-bold text-gray-300 mb-1 flex items-center gap-1">Endereço de Entrega:</p>
+                                            <button
+                                                onClick={() => setIsEditingAddress(true)}
+                                                className="text-[10px] text-primary hover:text-white border border-primary/30 hover:bg-primary/10 px-2 py-0.5 rounded transition-colors"
+                                                title="Editar Endereço"
+                                            >
+                                                Editar Dados
+                                            </button>
+                                        </div>
+                                        {customer.address ? (
+                                            <>
+                                                <p className="text-sm text-white leading-tight">{customer.address}</p>
+                                                {customer.reference_point && <p className="italic mt-1 text-gray-500 border-t border-gray-700/50 pt-1">Ref: {customer.reference_point}</p>}
+                                            </>
+                                        ) : (
+                                            <p className="text-gray-500 italic">Nenhum endereço cadastrado</p>
+                                        )}
+                                    </>
+                                ) : (
+                                    <div className="space-y-3 animate-fade-in">
+                                        <input
+                                            value={editAddress}
+                                            onChange={e => setEditAddress(e.target.value)}
+                                            placeholder="Rua / Avenida"
+                                            className="w-full bg-gray-800 border-none rounded px-2 py-1 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-primary"
+                                        />
+                                        <div className="flex gap-2">
                                             <input
-                                                value={editAddress}
-                                                onChange={e => setEditAddress(e.target.value)}
-                                                placeholder="Rua / Avenida"
-                                                className="w-full bg-gray-800 border-none rounded px-2 py-1 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-primary"
+                                                value={editNumber}
+                                                onChange={e => setEditNumber(e.target.value)}
+                                                placeholder="Número"
+                                                className="w-1/3 bg-gray-800 border-none rounded px-2 py-2 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-primary"
                                             />
-                                            <div className="flex gap-2">
-                                                <input
-                                                    value={editNumber}
-                                                    onChange={e => setEditNumber(e.target.value)}
-                                                    placeholder="Número"
-                                                    className="w-1/3 bg-gray-800 border-none rounded px-2 py-2 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-primary"
-                                                />
-                                                <input
-                                                    value={editReference}
-                                                    onChange={e => setEditReference(e.target.value)}
-                                                    placeholder="Referência (Opcional)"
-                                                    className="w-2/3 bg-gray-800 border-none rounded px-2 py-2 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-primary"
-                                                />
-                                            </div>
+                                            <input
+                                                value={editReference}
+                                                onChange={e => setEditReference(e.target.value)}
+                                                placeholder="Referência (Opcional)"
+                                                className="w-2/3 bg-gray-800 border-none rounded px-2 py-2 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-primary"
+                                            />
+                                        </div>
 
-                                            <div className="border-t border-gray-700/50 pt-2 mt-2">
-                                                <p className="mb-1 text-gray-400">Forma de Pagamento:</p>
-                                                <div className="flex gap-2">
-                                                    <select
-                                                        value={editPaymentMethod}
-                                                        onChange={e => setEditPaymentMethod(e.target.value as PaymentMethod)}
-                                                        className="bg-gray-800 border-none rounded px-2 py-1 text-xs text-white focus:ring-1 focus:ring-primary flex-grow"
-                                                    >
-                                                        <option value="Cartão">Cartão</option>
-                                                        <option value="Dinheiro">Dinheiro</option>
-                                                        <option value="PIX">PIX</option>
-                                                    </select>
+                                        <div className="border-t border-gray-700/50 pt-2 mt-2">
+                                            <p className="mb-1 text-gray-400">Forma de Pagamento:</p>
+                                            <div className="flex gap-2">
+                                                <select
+                                                    value={editPaymentMethod}
+                                                    onChange={e => setEditPaymentMethod(e.target.value as PaymentMethod)}
+                                                    className="bg-gray-800 border-none rounded px-2 py-1 text-xs text-white focus:ring-1 focus:ring-primary flex-grow"
+                                                >
+                                                    <option value="Cartão">Cartão</option>
+                                                    <option value="Dinheiro">Dinheiro</option>
+                                                    <option value="PIX">PIX</option>
+                                                </select>
+                                            </div>
+                                            {editPaymentMethod === 'Dinheiro' && (
+                                                <div className="mt-2 flex items-center gap-2 animate-fade-in">
+                                                    <label className="whitespace-nowrap text-gray-400">Troco para:</label>
+                                                    <input
+                                                        type="number"
+                                                        value={editChangeFor}
+                                                        onChange={e => setEditChangeFor(e.target.value)}
+                                                        placeholder="R$ 50,00"
+                                                        className="w-full bg-gray-800 border-none rounded px-2 py-2 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-primary"
+                                                    />
                                                 </div>
-                                                {editPaymentMethod === 'Dinheiro' && (
-                                                    <div className="mt-2 flex items-center gap-2 animate-fade-in">
-                                                        <label className="whitespace-nowrap text-gray-400">Troco para:</label>
-                                                        <input
-                                                            type="number"
-                                                            value={editChangeFor}
-                                                            onChange={e => setEditChangeFor(e.target.value)}
-                                                            placeholder="R$ 50,00"
-                                                            className="w-full bg-gray-800 border-none rounded px-2 py-2 text-xs text-white placeholder-gray-500 focus:ring-1 focus:ring-primary"
-                                                        />
-                                                    </div>
-                                                )}
-                                                {editPaymentMethod === 'PIX' && (
-                                                    <div className="mt-2 bg-gray-800 rounded p-3 flex flex-col gap-2 border border-primary/20 animate-fade-in">
-                                                        <div className="flex items-start gap-2">
-                                                            <span className="text-yellow-500">ℹ️</span>
-                                                            <div>
-                                                                <p className="text-[10px] font-bold text-white">Pagamento via PIX:</p>
-                                                                <p className="text-[9px] text-gray-400 leading-tight">
-                                                                    O QR Code ou chave PIX será fornecida no momento do pagamento (entrega ou balcão).
-                                                                </p>
-                                                            </div>
+                                            )}
+                                            {editPaymentMethod === 'PIX' && (
+                                                <div className="mt-2 bg-gray-800 rounded p-3 flex flex-col gap-2 border border-primary/20 animate-fade-in">
+                                                    <div className="flex items-start gap-2">
+                                                        <span className="text-yellow-500">ℹ️</span>
+                                                        <div>
+                                                            <p className="text-[10px] font-bold text-white">Pagamento via PIX:</p>
+                                                            <p className="text-[9px] text-gray-400 leading-tight">
+                                                                O QR Code ou chave PIX será fornecida no momento do pagamento (entrega ou balcão).
+                                                            </p>
                                                         </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                            <div className="flex justify-end gap-2 mt-4">
-                                                <button
-                                                    onClick={() => setIsEditingAddress(false)}
-                                                    className="text-xs text-gray-400 hover:text-white px-3 py-2"
-                                                >
-                                                    Cancelar
-                                                </button>
-                                                <button
-                                                    onClick={handleSaveAddress}
-                                                    disabled={isSavingAddress}
-                                                    className="text-xs bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold transition-colors disabled:opacity-50"
-                                                >
-                                                    {isSavingAddress ? 'Salvando...' : 'Salvar'}
-                                                </button>
-                                            </div>
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-                                </div>
-
-                                {/* Upsell Tip */}
-                                {finalTotal < 35 && (
-                                    <div className="mb-3 bg-blue-500/10 border border-blue-500/30 rounded-lg p-2.5 flex items-start gap-2 animate-fade-in">
-                                        <div className="text-xs text-blue-200">
-                                            <p className="font-bold text-blue-300">Quase lá!</p>
-                                            <p className="leading-tight mt-0.5">
-                                                Faltam <strong className="text-white">R$ {(35 - finalTotal).toFixed(2)}</strong> para ganhar um selo fidelidade neste pedido.
-                                            </p>
+                                        <div className="flex justify-end gap-2 mt-4">
+                                            <button
+                                                onClick={() => setIsEditingAddress(false)}
+                                                className="text-xs text-gray-400 hover:text-white px-3 py-2"
+                                            >
+                                                Cancelar
+                                            </button>
+                                            <button
+                                                onClick={handleSaveAddress}
+                                                disabled={isSavingAddress}
+                                                className="text-xs bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold transition-colors disabled:opacity-50"
+                                            >
+                                                {isSavingAddress ? 'Salvando...' : 'Salvar'}
+                                            </button>
                                         </div>
                                     </div>
                                 )}
-
-                                {lastOrder?.orderType === 'Entrega' && finalTotal < minOrderValue && (
-                                    <div className="mb-3 p-2 bg-red-600/20 border border-red-600 rounded-lg text-red-500 text-center font-black text-[10px] animate-pulse">
-                                        Pedido mínimo de R$ {minOrderValue.toFixed(2)} não atingido para entrega
-                                    </div>
-                                )}
-
-                                <button
-                                    onClick={() => onRepeatOrder(itemsToRepeat)}
-                                    disabled={isLoadingRepeat || !isStoreOpen || itemsToRepeat.length === 0 || (lastOrder?.orderType === 'Entrega' && finalTotal < minOrderValue)}
-                                    className={`w-full py-3 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 text-sm ${!isStoreOpen || itemsToRepeat.length === 0 || (lastOrder?.orderType === 'Entrega' && finalTotal < minOrderValue) ? 'bg-gray-600 cursor-not-allowed opacity-50' : 'bg-green-600 hover:bg-green-500 hover:shadow-green-500/20 disabled:opacity-50'}`}
-                                >
-
-                                    {isLoadingRepeat ? 'Processando...' : <><LucideRepeat size={16} /> Repetir Pedido (R$ {finalTotal.toFixed(2)})</>}
-                                </button>
                             </div>
-                        ) : (
-                            // ...
-                            <div className="text-center py-8 text-gray-500 bg-background/30 rounded-xl border border-dashed border-gray-700">
-                                <p>Nenhum pedido recente salvo.</p>
-                            </div>
-                        )}
+                        </div>
                     </div>
 
                     <div className="mt-4 pt-4 border-t border-gray-700">
@@ -610,65 +509,8 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                     <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full filter blur-3xl transform translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
 
                     <div className="relative z-10 flex-grow flex flex-col">
-                        {/* Order Tracking Card (NEW) */}
-                        {lastOrder && (lastOrder.status !== 'Entregue' && lastOrder.status !== 'Cancelado') && (
-                            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-primary/30 shadow-lg mb-6 animate-fade-in-up">
-                                <div className="flex items-center justify-between mb-3">
-                                    <h4 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                                        <Clock size={16} className="text-primary animate-pulse" /> Status do Pedido
-                                    </h4>
-                                    <span className="text-[10px] text-gray-400 font-mono">#{lastOrder.dailyOrderNumber}</span>
-                                </div>
-
-                                <div className="flex items-center gap-4">
-                                    <div className="p-3 bg-primary/20 rounded-full">
-                                        {lastOrder.status === 'Novo' && <AlertCircle className="text-blue-400 animate-bounce" size={24} />}
-                                        {lastOrder.status === 'Em Produção' && <Package className="text-yellow-400 animate-pulse" size={24} />}
-                                        {(lastOrder.status === 'A Caminho' || lastOrder.status === 'No Portão') && <Truck className="text-green-400 animate-bounce" size={24} />}
-                                        {lastOrder.status === 'Conta Solicitada' && <Clock className="text-purple-400" size={24} />}
-                                    </div>
-                                    <div className="flex-grow">
-                                        <p className="text-lg font-black text-white leading-none mb-1">
-                                            {lastOrder.status === 'Novo' && 'Pedido na fila de produção'}
-                                            {lastOrder.status === 'Em Produção' && 'Sendo Preparado'}
-                                            {lastOrder.status === 'A Caminho' && 'Saiu para Entrega'}
-                                            {lastOrder.status === 'No Portão' && 'Chegou no Portão!'}
-                                            {lastOrder.status === 'Conta Solicitada' && 'Aguardando Pagamento'}
-                                        </p>
-                                        <p className="text-xs text-gray-400">
-                                            {lastOrder.status === 'Novo' && 'Vamos te atualizar sobre o pedido'}
-                                            {lastOrder.status === 'Em Produção' && 'Nossa equipe já está montando seu pedido.'}
-                                            {lastOrder.status === 'A Caminho' && 'O entregador está a caminho do seu endereço.'}
-                                            {lastOrder.status === 'No Portão' && 'O entregador está na porta! Prepare o pagamento.'}
-                                            {lastOrder.status === 'Conta Solicitada' && 'Seu pedido está pronto para o pagamento.'}
-                                        </p>
-                                        
-                                        {/* Address and Change Details */}
-                                        <div className="mt-3 pt-3 border-t border-white/5 flex flex-col gap-1.5">
-                                            {lastOrder.orderType === 'Entrega' && (
-                                                <div className="flex items-center gap-2 text-[10px] text-gray-300">
-                                                    <MapPin size={12} className="text-primary" />
-                                                    <span className="font-medium">{lastOrder.address}</span>
-                                                </div>
-                                            )}
-                                            {lastOrder.paymentMethod === 'Dinheiro' && lastOrder.changeFor && (
-                                                <div className="flex items-center gap-2 text-[10px] text-gray-300">
-                                                    <span>Troco para: <strong className="text-white">R$ {parseFloat(lastOrder.changeFor).toFixed(2)}</strong></span>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Progress Bar */}
-                                <div className="mt-4 flex gap-1 h-1.5">
-                                    <div className={`flex-1 rounded-full transition-all duration-500 ${['Novo', 'Em Produção', 'A Caminho', 'No Portão'].includes(lastOrder.status) ? 'bg-primary' : 'bg-gray-800'}`}></div>
-                                    <div className={`flex-1 rounded-full transition-all duration-500 ${['Em Produção', 'A Caminho', 'No Portão'].includes(lastOrder.status) ? 'bg-primary' : 'bg-gray-800'}`}></div>
-                                    <div className={`flex-1 rounded-full transition-all duration-500 ${['A Caminho', 'No Portão'].includes(lastOrder.status) ? 'bg-primary' : 'bg-gray-800'}`}></div>
-                                    <div className={`flex-1 rounded-full transition-all duration-500 ${lastOrder.status === 'No Portão' ? 'bg-primary animate-pulse' : 'bg-gray-800'}`}></div>
-                                </div>
-                            </div>
-                        )}
+                        {/* Status do pedido em tempo real removido — pedido do Icaro,
+                            21/09/2026. Este modal nao acompanha mais o ultimo pedido. */}
 
                         <h3 className="text-xl font-display text-white mb-1 flex items-center gap-2">
                             Fidelidade Açaí do Dudu

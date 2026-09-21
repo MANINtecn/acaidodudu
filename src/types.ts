@@ -70,6 +70,17 @@ export interface MenuItem {
   printed?: boolean;
   isWeightBased?: boolean;
   pricePerKg?: number;
+  /**
+   * Campos fiscais (NFC-e). `ncm` e OBRIGATORIO para emitir — sem ele a
+   * nota nao sai. Levantamento de 09/09: 33 dos 73 produtos estao sem NCM,
+   * o contador precisa definir antes da Fase 2 (emissao).
+   */
+  ncm?: string;
+  cest?: string;
+  /** 'UN' padrao; acai vendido por peso usa 'KG' (3 casas na nota). */
+  unidadeFiscal?: string;
+  /** 0 = nacional — padrao para produto de sorveteria/alimenticio. */
+  origemFiscal?: number;
 }
 
 export interface CartItem extends MenuItem {
@@ -78,9 +89,93 @@ export interface CartItem extends MenuItem {
   notes: string;
   printed?: boolean;
   weightKg?: number;
+  /**
+   * Marca que este item foi RESGATADO com pontos de fidelidade -- entra no
+   * pedido com price=0 (definido no momento do resgate) mas o sistema
+   * precisa saber que foi resgate para nao contar como venda normal em
+   * relatorios, e para o ledger de pontos bater com o pedido certo.
+   */
+  isLoyaltyRedemption?: boolean;
+  /** Quantos pontos este resgate custou (para o ledger, ao criar o pedido). */
+  loyaltyPointsCost?: number;
 }
 
 export type OrderType = 'Entrega' | 'Balcão' | 'Retirada';
+
+/** Um dos ate 4 produtos resgataveis no modelo de fidelidade por pontos. */
+export interface LoyaltyRewardItem {
+  id: string;
+  store_id: string;
+  menu_item_id: number;
+  /** Custo em pontos para resgatar este produto. */
+  points_cost: number;
+  /** Copia do nome/preco do MenuItem no momento da config, para exibir sem join. */
+  menu_item_name: string;
+  menu_item_price: number;
+  is_active: boolean;
+}
+
+/** Saldo de pontos de UM cliente, numa loja. */
+export interface CustomerLoyaltyPoints {
+  id: string;
+  store_id: string;
+  phone: string;
+  points_balance: number;
+  updated_at: string;
+}
+
+/**
+ * Configuracao fiscal da loja (NFC-e) — 1 linha por loja. Ver
+ * claude-acai.md, "ARQUITETURA TECNICA DA NFC-e". `provedor_api` e' so o
+ * NOME do provedor escolhido (Focus NFe/TecnoSpeed/Webmania) — o TOKEN em
+ * si nunca trafega para o front, so a Edge Function o le.
+ */
+export interface FiscalConfig {
+  id: string;
+  store_id: string;
+  cnpj?: string;
+  inscricao_estadual?: string;
+  razao_social?: string;
+  nome_fantasia?: string;
+  logradouro?: string;
+  numero?: string;
+  bairro?: string;
+  municipio?: string;
+  cod_ibge_municipio?: string;
+  uf?: string;
+  cep?: string;
+  regime_tributario?: number;
+  cfop_padrao?: string;
+  csosn_padrao?: string;
+  pis_cst?: string;
+  cofins_cst?: string;
+  carga_tributaria_aprox?: number;
+  ambiente: 'homologacao' | 'producao';
+  provedor_api?: string;
+  csc_id?: string;
+  csc_token?: string;
+}
+
+export type NotaFiscalStatus = 'pendente' | 'autorizada' | 'rejeitada' | 'cancelada' | 'contingencia';
+
+/** Uma NFC-e emitida (ou tentada) para um pedido. */
+export interface NotaFiscal {
+  id: string;
+  store_id: string;
+  order_id?: string;
+  serie: number;
+  numero: number;
+  chave_acesso?: string;
+  protocolo_autorizacao?: string;
+  status: NotaFiscalStatus;
+  motivo_rejeicao?: string;
+  valor_total: number;
+  data_emissao: string;
+  xml?: string;
+  danfe_url?: string;
+  emitida_por_estacao?: string;
+}
+
 export type PaymentMethod = 'Dinheiro' | 'Cartão' | 'PIX';
 export type OrderStatus = 'Novo' | 'Em Produção' | 'A Caminho' | 'No Portão' | 'Entregue' | 'Cancelado' | 'Conta Solicitada';
 
@@ -192,6 +287,13 @@ export interface Settings {
   logoUrl?: string;
   /** Foto grande da tela inicial (Moderna). Vazio = usa /acai_boat_hero.jpg. */
   heroImageUrl?: string;
+  /**
+   * Qual modelo de fidelidade esta ativo na loja.
+   * 'selo'   = o historico: 10 pedidos elegiveis = 1 desconto (is_loyalty_eligible).
+   * 'pontos' = novo: cliente acumula pontos por valor gasto e resgata
+   *            produtos configurados. Os dois nunca ficam ativos juntos.
+   */
+  loyaltyModel?: 'selo' | 'pontos';
   isRaffleEnabled?: boolean;
   rafflePrizeValue?: number;
   raffleDrawDate?: string;
