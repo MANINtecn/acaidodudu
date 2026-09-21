@@ -906,21 +906,29 @@ const AdminPage = () => {
         }
 
 
-        // 1b. Impressao automatica de MESA/RETIRADA desligada nas configuracoes.
-        // O pedido entra normalmente; so nao imprime sozinho. O operador usa o
+        // 1b. Impressao automatica de MESA e de RETIRADA, configuraveis
+        // INDEPENDENTEMENTE desde 21/09/2026 (Ikarus: "pedidos de retirada
+        // nao imprimiu automaticamente" -- causa raiz era as duas caindo
+        // juntas na mesma flag `autoPrintDineIn`, que ele so tinha desligado
+        // pensando em Mesa). O pedido entra normalmente mesmo com a
+        // impressao desligada; so nao dispara sozinho -- o operador usa o
         // botao de imprimir do card (que chama com force=true e passa aqui).
-        // Entrega nao e afetada. undefined = ligado (comportamento historico).
-        // Mesa/Retirada = tudo que NAO e entrega. Testar pelo negativo e mais
-        // seguro: o orderType nem sempre vem preenchido, mas "e entrega" da para
-        // determinar com confianca (tipo Entrega ou com taxa/endereco).
+        // Entrega nunca e afetada. undefined = ligado (comportamento historico).
         const ehEntrega =
             order.orderType === 'Entrega' ||
             (order.deliveryFee ?? 0) > 0;
-        const ehMesaOuRetirada = !ehEntrega;
-        const autoPrintLigado = settingsRef.current?.autoPrintDineIn !== false;
+        const ehRetirada = !ehEntrega && order.orderType === 'Retirada';
+        const ehMesa = !ehEntrega && !ehRetirada;
 
-        if (!force && ehMesaOuRetirada && !autoPrintLigado) {
-            console.log(`[Printer] Auto-print de mesa/retirada DESLIGADO nas configuracoes. Pedido #${order.id} recebido sem imprimir.`);
+        const autoPrintMesaLigado = settingsRef.current?.autoPrintDineIn !== false;
+        const autoPrintRetiradaLigado = settingsRef.current?.autoPrintRetirada !== false;
+
+        if (!force && ehMesa && !autoPrintMesaLigado) {
+            console.log(`[Printer] Auto-print de MESA desligado nas configuracoes. Pedido #${order.id} recebido sem imprimir.`);
+            return;
+        }
+        if (!force && ehRetirada && !autoPrintRetiradaLigado) {
+            console.log(`[Printer] Auto-print de RETIRADA desligado nas configuracoes. Pedido #${order.id} recebido sem imprimir.`);
             return;
         }
 

@@ -182,22 +182,24 @@ export const mapAddonFromDB = (addon: any): Addon => {
         ...addon,
         price: Number(addon.price) || 0,
         categoryId: addon.category_id || addon.categoryId,
-        isAvailable: addon.is_available ?? addon.isAvailable ?? true
+        isAvailable: addon.is_available ?? addon.isAvailable ?? true,
+        addonGroup: addon.addon_group || addon.addonGroup || undefined,
     };
 };
 
 export const mapAddonToDB = (addon: Partial<Addon>) => {
-    const { id, categoryId, isAvailable, isSelected, daysOfWeek, ...rest } = addon as any;
+    const { id, categoryId, isAvailable, isSelected, daysOfWeek, addonGroup, ...rest } = addon as any;
     const payload: any = { ...rest };
     if (categoryId !== undefined) payload.category_id = categoryId;
     if (isAvailable !== undefined) payload.is_available = isAvailable;
     if (daysOfWeek !== undefined) payload.days_of_week = daysOfWeek;
-    
+    if (addonGroup !== undefined) payload.addon_group = addonGroup || null;
+
     delete payload.categoryId;
     delete payload.isAvailable;
     delete payload.isSelected;
     delete payload.daysOfWeek;
-    
+
     return payload;
 };
 
@@ -998,6 +1000,7 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     printerPaperWidth: '80mm',
     printerCompatibilityMode: false,
     autoPrintDineIn: true,   // padrao: imprime sozinho (comportamento historico)
+    autoPrintRetirada: true, // padrao: imprime sozinho (independente de Mesa desde 21/09/2026)
     sireneTipo: 'sino',
     sireneVolume: 3,
     mostrarDicasAtalho: true,
@@ -1066,6 +1069,7 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
 
         printerCompatibilityMode: dbData?.printer_compatibility_mode ?? dbData?.printerCompatibilityMode ?? defaultSettings.printerCompatibilityMode,
         autoPrintDineIn: dbData?.auto_print_dine_in ?? dbData?.autoPrintDineIn ?? defaultSettings.autoPrintDineIn,
+        autoPrintRetirada: dbData?.auto_print_retirada ?? dbData?.autoPrintRetirada ?? defaultSettings.autoPrintRetirada,
         sireneTipo: dbData?.sirene_tipo ?? dbData?.sireneTipo ?? defaultSettings.sireneTipo,
         sireneVolume: Number(dbData?.sirene_volume ?? dbData?.sireneVolume ?? defaultSettings.sireneVolume),
         mostrarDicasAtalho: dbData?.mostrar_dicas_atalho ?? dbData?.mostrarDicasAtalho ?? defaultSettings.mostrarDicasAtalho,
@@ -1318,7 +1322,7 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
         'courierPrinter', 'courierPrinterPaperWidth',
         'preferredPrinter', 'printerPaperWidth',
         'printerCompatibilityMode',
-        'autoPrintDineIn',
+        'autoPrintDineIn', 'autoPrintRetirada',
         'sireneTipo', 'sireneVolume', 'mostrarDicasAtalho', 'modeloMesas', 'heroImageUrl', 'loyaltyModel',
         'pixEnabled', 'pixKey', 'pixKeyType', 'pixBeneficiary',
         'storeWhatsapp', 'pixResumoTemplate'

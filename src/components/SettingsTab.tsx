@@ -666,9 +666,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                             </div>
                         </div>
 
-                        {/* Impressão automática de Mesa/Retirada.
-                            Padrão LIGADO: quem já usa o sistema não vê mudança. */}
-                        <div className="md:col-span-2 pt-2 border-t border-gray-100 dark:border-gray-700 mt-2">
+                        {/* Impressão automática de Mesa e de Retirada -- SEPARADAS desde
+                            21/09/2026 (antes as duas caiam na mesma flag autoPrintDineIn,
+                            e desligar pensando so em Mesa tambem desligava Retirada sem
+                            o usuario perceber). Padrão LIGADO nas duas: quem já usa o
+                            sistema não vê mudança. */}
+                        <div className="md:col-span-2 pt-2 border-t border-gray-100 dark:border-gray-700 mt-2 space-y-3">
                              <div className="flex items-center gap-3">
                                 <input
                                     type="checkbox"
@@ -680,12 +683,31 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                 />
                                 <div>
                                     <label htmlFor="autoPrintDineIn" className="text-sm font-bold text-gray-900 dark:text-gray-100 cursor-pointer">
-                                        Imprimir automaticamente pedidos de Mesa / Retirada
+                                        Imprimir automaticamente pedidos de Mesa
                                     </label>
                                     <p className="text-[10px] text-gray-500">
-                                        Desmarcado: o pedido de mesa/retirada é recebido normalmente, mas <strong>não</strong> imprime sozinho —
-                                        o operador imprime pelo botão do card quando quiser. Pedidos de <strong>Entrega</strong> continuam
-                                        imprimindo automaticamente.
+                                        Desmarcado: o pedido de mesa é recebido normalmente, mas <strong>não</strong> imprime sozinho —
+                                        o operador imprime pelo botão do card quando quiser.
+                                    </p>
+                                </div>
+                            </div>
+                             <div className="flex items-center gap-3">
+                                <input
+                                    type="checkbox"
+                                    name="autoPrintRetirada"
+                                    id="autoPrintRetirada"
+                                    checked={formData.autoPrintRetirada !== false}
+                                    onChange={handleCheckboxChange}
+                                    className="h-5 w-5 rounded text-orange-600 focus:ring-orange-500 border-gray-300 dark:bg-gray-700 dark:border-gray-600"
+                                />
+                                <div>
+                                    <label htmlFor="autoPrintRetirada" className="text-sm font-bold text-gray-900 dark:text-gray-100 cursor-pointer">
+                                        Imprimir automaticamente pedidos de Retirada
+                                    </label>
+                                    <p className="text-[10px] text-gray-500">
+                                        Desmarcado: o pedido de retirada é recebido normalmente, mas <strong>não</strong> imprime sozinho —
+                                        o operador imprime pelo botão do card quando quiser. Pedidos de <strong>Entrega</strong> sempre
+                                        continuam imprimindo automaticamente, independente destas duas opções.
                                     </p>
                                 </div>
                             </div>

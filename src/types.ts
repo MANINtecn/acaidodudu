@@ -45,6 +45,16 @@ export interface Addon {
   categoryId?: number;
   store_id: string;
   daysOfWeek?: string[];
+  /**
+   * Grupo do complemento, usado para separar sabor de calda no fluxo do
+   * Milkshake -- pedido do Ikarus, 21/09/2026: "cliente escolhe o sabor
+   * primeiro... e depois perguntamos qual calda, 1 calda apenas
+   * selecionada". undefined = generico (comportamento historico: aparece
+   * numa lista so, sem separacao, escolha livre). So produtos com addons
+   * marcados como 'sabor' E 'calda' ganham o fluxo em 2 passos no
+   * ItemDetailModal -- outros produtos continuam como sempre foram.
+   */
+  addonGroup?: 'sabor' | 'calda';
 }
 
 export interface MenuItem {
@@ -321,13 +331,26 @@ export interface Settings {
   printerPaperWidth?: '58mm' | '80mm';
   printerCompatibilityMode?: boolean;
   /**
-   * Imprimir automaticamente pedidos de Mesa/Retirada.
+   * Imprimir automaticamente pedidos de MESA.
    * Quando false, o pedido e recebido normalmente mas NAO dispara impressao —
    * o operador imprime pelo botao do card quando quiser.
    * Nao afeta pedidos de Entrega, que seguem imprimindo sozinhos.
    * undefined = true (comportamento historico, nao quebra quem ja usa).
+   *
+   * ATE 21/09/2026 esta mesma flag tambem controlava Retirada junto -- foi
+   * separada porque o Ikarus queria Retirada sempre imprimindo, mas a Mesa
+   * dele estava desligada de proposito (as duas caiam juntas). Ver
+   * autoPrintRetirada abaixo.
    */
   autoPrintDineIn?: boolean;
+  /**
+   * Imprimir automaticamente pedidos de RETIRADA. Mesma logica de
+   * autoPrintDineIn, mas independente -- desde 21/09/2026 (Ikarus: "pedidos
+   * de retirada nao imprimiu automaticamente", causa raiz era a mesma flag
+   * de Mesa desligada, afetando os dois juntos sem ele perceber).
+   * undefined = true (nunca quebra quem ja tinha o antigo comportamento).
+   */
+  autoPrintRetirada?: boolean;
   /** Som do alerta de pedido novo: 'sino' | 'alarme' | 'campainha'. */
   sireneTipo?: string;
   /** Volume do alerta. 1 = normal, ate 10 para ambiente barulhento. */
