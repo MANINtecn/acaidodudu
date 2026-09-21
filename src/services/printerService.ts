@@ -185,20 +185,33 @@ class PrinterService {
         content += qtyStr + name.padEnd(maxNameWidth) + " R$ " + price.padStart(5) + "\n";
       }
       
+      // Espaco entre o nome do produto e seus adicionais/combo/obs -- pedido
+      // do Ikarus, 21/09/2026 ("dar um espaço de 2 px"). Em impressora
+      // termica (texto monoespacado) isso vira uma linha em branco, o
+      // equivalente visual mais proximo de um respiro entre as duas partes.
+      const temExtras = item.isCombo || (item.selectedAddons && item.selectedAddons.length > 0) || item.notes;
+      if (temExtras) content += "\n";
+
       if (item.isCombo) {
         content += "  + BATATA FRITA DE 200G\n";
         content += "  + REFRI LATA 350ML\n";
       }
-      
+
       if (item.selectedAddons && item.selectedAddons.length > 0) {
         item.selectedAddons.forEach((addon: any) => {
           content += "  + " + this.normalizeText(addon.name).toUpperCase() + "\n";
         });
       }
-      
+
       if (item.notes) {
         content += "  * OBS: " + this.normalizeText(item.notes).toUpperCase() + "\n";
       }
+
+      // Linha tracejada separando um produto do proximo -- pedido do
+      // Ikarus, 21/09/2026: facilitar a leitura de pedidos com varios itens.
+      // "- " repetido (nao "-" solido) para diferenciar visualmente da
+      // linha cheia usada entre SECOES (cabecalho/subtotal/total).
+      content += "- ".repeat(Math.floor(WIDTH / 2)) + "\n";
     });
 
     const subtotal = order.total - (order.deliveryFee || 0);
@@ -223,9 +236,9 @@ class PrinterService {
 
     if (order.paymentMethod === 'PIX') {
       if (order.orderType === 'Entrega') {
-        content += center(BOLD + "QRCODE OU CHAVE PIX") + "\n";
-        content += center("GERADA PELO MOTOBOY") + "\n";
-        content += center("NA ENTREGA" + RESET) + "\n";
+        // Trocado de "QRCODE OU CHAVE PIX GERADA PELO MOTOBOY NA ENTREGA"
+        // para "PAGAMENTO ONLINE PIX" -- pedido do Ikarus, 21/09/2026.
+        content += center(BIG_BOLD + "PAGAMENTO ONLINE PIX" + RESET) + "\n";
       } else {
         content += center(BOLD + "PAGAMENTO VIA PIX") + "\n";
         content += center("SOLICITE O QRCODE NO BALCAO" + RESET) + "\n";
