@@ -907,17 +907,26 @@ const AdminPage = () => {
 
 
         // 1b. Impressao automatica de MESA e de RETIRADA, configuraveis
-        // INDEPENDENTEMENTE desde 21/09/2026 (Ikarus: "pedidos de retirada
-        // nao imprimiu automaticamente" -- causa raiz era as duas caindo
-        // juntas na mesma flag `autoPrintDineIn`, que ele so tinha desligado
-        // pensando em Mesa). O pedido entra normalmente mesmo com a
-        // impressao desligada; so nao dispara sozinho -- o operador usa o
-        // botao de imprimir do card (que chama com force=true e passa aqui).
-        // Entrega nunca e afetada. undefined = ligado (comportamento historico).
+        // INDEPENDENTEMENTE por estacao/PC -- pedido do Ikarus, 23/09/2026:
+        // "vamos dar todas as opcoes para o usuario... cada um com seu
+        // tratamento separado" (Entrega/Retirada/Mesa). Nao hardcodar
+        // "Retirada sempre imprime": um PC de cozinha, por exemplo, pode
+        // querer NAO imprimir Retirada mesmo com Entrega ligada.
+        //
+        // BUG REAL achado em 23/09 (log do Ikarus): a config de Retirada
+        // ja existia desde 21/09, mas nunca disparava porque a deteccao de
+        // "e' Retirada" so olhava order.orderType === 'Retirada' -- e o
+        // botao "Retirar" do site grava order_type = 'Balcão' (nomenclatura
+        // historica, ver ehColunaEntrega() logo abaixo, que ja tratava essa
+        // mesma ambiguidade para a aba Pedidos). Corrigido para usar a
+        // MESMA regra: Balcao SEM mesa + origin WEB/APP/AI = veio do site
+        // pra retirar, mesmo com orderType literal = 'Balcão' no banco.
         const ehEntrega =
             order.orderType === 'Entrega' ||
             (order.deliveryFee ?? 0) > 0;
-        const ehRetirada = !ehEntrega && order.orderType === 'Retirada';
+        const ehRetiradaDoSite = !ehEntrega && order.orderType === 'Balcão' && !order.table_number &&
+            (order.origin === 'WEB' || order.origin === 'APP' || order.origin === 'AI');
+        const ehRetirada = !ehEntrega && (order.orderType === 'Retirada' || ehRetiradaDoSite);
         const ehMesa = !ehEntrega && !ehRetirada;
 
         const autoPrintMesaLigado = settingsRef.current?.autoPrintDineIn !== false;

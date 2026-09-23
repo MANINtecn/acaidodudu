@@ -13,6 +13,16 @@ import {
 interface Props {
     /** Impressoras que ESTA máquina enxerga (vem do SettingsTab). */
     impressorasDisponiveis: string[];
+    /**
+     * Auto-print de Mesa/Retirada -- pedido do Ikarus, 23/09/2026: "seria
+     * decente deixar junto no front-end" as opcoes de impressao, mesmo as
+     * duas vivendo em lugares diferentes por baixo (autoPrintDineIn/
+     * autoPrintRetirada sao da LOJA, no banco settings; ficam aqui so
+     * visualmente ao lado do resto, que e' desta MAQUINA, no disco local).
+     */
+    autoPrintDineIn?: boolean;
+    autoPrintRetirada?: boolean;
+    onAutoPrintChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 const ESCOPOS_SOM: { valor: EscopoSom; titulo: string; ajuda: string }[] = [
@@ -40,7 +50,7 @@ const ESCOPOS: { valor: EscopoImpressao; titulo: string; ajuda: string }[] = [
  * Fica no disco local (electron-store), não no banco — assim o PC do salão e o
  * da cozinha têm cada um a sua impressora, sem um sobrescrever o outro.
  */
-export const EstacaoImpressao = ({ impressorasDisponiveis }: Props) => {
+export const EstacaoImpressao = ({ impressorasDisponiveis, autoPrintDineIn, autoPrintRetirada, onAutoPrintChange }: Props) => {
     const [cfg, setCfg] = useState<ConfigEstacao>(CONFIG_PADRAO);
     const [salvando, setSalvando] = useState(false);
     const [salvo, setSalvo] = useState(false);
@@ -89,6 +99,49 @@ export const EstacaoImpressao = ({ impressorasDisponiveis }: Props) => {
                     />
                     <span className="text-sm font-bold text-gray-900 dark:text-gray-100">Ativar</span>
                 </label>
+            </div>
+
+            {/* Auto-print de Mesa/Retirada -- pedido do Ikarus, 23/09/2026:
+                "seria decente deixar junto no front-end" essas escolhas.
+                ATENCAO: apesar de aparecer aqui do lado das opcoes DESTA
+                maquina, estas duas sao da LOJA (settings, banco) -- valem
+                em TODO computador, nao so neste. O rotulo abaixo deixa essa
+                diferenca explicita para nao confundir o Ikarus/operador. */}
+            <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 mb-2">
+                    Impressão automática da loja (vale em todo computador)
+                </p>
+                <div className="space-y-2">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            name="autoPrintDineIn"
+                            checked={autoPrintDineIn !== false}
+                            onChange={onAutoPrintChange}
+                            className="h-5 w-5 rounded text-orange-600 focus:ring-orange-500 border-gray-300 dark:bg-gray-700 dark:border-gray-600"
+                        />
+                        <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                            Imprimir automaticamente pedidos de Mesa
+                        </span>
+                    </label>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                        <input
+                            type="checkbox"
+                            name="autoPrintRetirada"
+                            checked={autoPrintRetirada !== false}
+                            onChange={onAutoPrintChange}
+                            className="h-5 w-5 rounded text-orange-600 focus:ring-orange-500 border-gray-300 dark:bg-gray-700 dark:border-gray-600"
+                        />
+                        <span className="text-sm font-bold text-gray-900 dark:text-gray-100">
+                            Imprimir automaticamente pedidos de Retirada
+                        </span>
+                    </label>
+                </div>
+                <p className="text-[10px] text-gray-500 mt-1.5">
+                    Desmarcado: o pedido é recebido normalmente, mas <strong>não</strong> imprime sozinho —
+                    o operador imprime pelo botão do card quando quiser. Pedidos de <strong>Entrega</strong> sempre
+                    imprimem automaticamente, independente destas duas opções.
+                </p>
             </div>
 
             {!cfg.ativo ? (
