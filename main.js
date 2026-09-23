@@ -353,11 +353,38 @@ function createWindow() {
 
   const isHidden = process.argv.includes('--hidden');
 
+  // BUG HISTORICO (23/09/2026): campo nenhum aceitava digitar na primeira
+  // abertura do app -- o operador so conseguia depois de minimizar e
+  // restaurar a janela manualmente ("gambiarra" reportada pelo Ikarus).
+  //
+  // CAUSA: `mainWindow.focus()` foca a JANELA do sistema operacional, mas
+  // isso NAO garante que o foco de teclado entre de fato no webContents
+  // (o DOM/React la dentro) quando chamado logo no 'ready-to-show' -- esse
+  // evento dispara no primeiro paint do processo de render, que pode ser
+  // ANTES do React terminar de montar e ter algo focavel na tela. O
+  // Windows mostra a janela como "ativa" (barra de titulo colorida), mas
+  // o teclado nao esta de fato direcionado para dentro da pagina.
+  // Minimizar e restaurar forca o SO a redespachar o foco do zero, o que
+  // mascarava o problema sem corrigir a causa.
+  //
+  // CORRECAO: foco explicito no webContents (nao so na janela), repetido
+  // apos 'did-finish-load' (pagina carregada) com um pequeno atraso extra
+  // para dar tempo do React montar e ter um elemento focavel de verdade.
   mainWindow.once('ready-to-show', () => {
     if (!isHidden) {
       mainWindow.show();
       mainWindow.focus();
+      mainWindow.webContents.focus();
     }
+  });
+
+  mainWindow.webContents.once('did-finish-load', () => {
+    if (isHidden) return;
+    setTimeout(() => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.focus();
+      mainWindow.webContents.focus();
+    }, 300);
   });
 
   // Mostramos se não estiver oculto

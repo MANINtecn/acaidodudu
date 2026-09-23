@@ -123,15 +123,16 @@ const LoginPage: React.FC = () => {
             </label>
             <div className="relative">
               <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-purple-400" />
-              <input 
-                id="email" 
-                name="email" 
-                type="email" 
-                required 
-                value={email} 
-                onChange={(e) => setEmail(e.target.value)} 
+              <input
+                id="email"
+                name="email"
+                type="email"
+                required
+                autoFocus
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 placeholder="seu.email@exemplo.com"
-                className="w-full pl-11 pr-4 py-3 bg-gray-900/90 border border-purple-500/30 rounded-xl text-white placeholder-gray-500 shadow-inner focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm" 
+                className="w-full pl-11 pr-4 py-3 bg-gray-900/90 border border-purple-500/30 rounded-xl text-white placeholder-gray-500 shadow-inner focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all text-sm"
               />
             </div>
           </div>
