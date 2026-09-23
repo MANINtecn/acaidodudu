@@ -1495,11 +1495,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         Produtos no Pedido
                     </h3>
                     <div className="flex items-center gap-2">
-                        <button 
+                        <button
                             type="button"
-                            onClick={() => setIsScaleModalOpen(true)} 
+                            onClick={() => setIsScaleModalOpen(true)}
                             className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-md shadow-blue-600/20 flex items-center gap-1 text-xs font-bold"
-                            title="Puxar Peso da Balança (Urano / Toledo)"
+                            title="Puxar peso da balança física OU digitar o peso na mão"
                         >
                             <Scale size={15} />
                             <span>Balança</span>
@@ -1821,12 +1821,15 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full shadow-2xl border border-gray-100 dark:border-gray-700" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="font-black text-gray-900 dark:text-white text-lg flex items-center gap-2">
-                                <Scale className="text-blue-600 animate-pulse" size={24} /> Pesagem na Balança
+                                <Scale className="text-blue-600 animate-pulse" size={24} /> Pesagem
                             </h3>
                             <button onClick={() => setIsScaleModalOpen(false)} className="text-gray-400 hover:text-gray-600">
                                 <X size={20} />
                             </button>
                         </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 -mt-2 mb-2">
+                            Digite o peso na mão ou use "Capturar da Balança" se tiver uma conectada.
+                        </p>
 
                         <div className="space-y-4">
                             <div>
@@ -1853,14 +1856,17 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">Peso (Kg)</label>
-                                    <input 
-                                        type="number" 
+                                    <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1">
+                                        Peso (Kg) <span className="text-blue-600 dark:text-blue-400 font-black normal-case">— digite direto se não tiver balança conectada</span>
+                                    </label>
+                                    <input
+                                        type="number"
                                         step="0.005"
                                         value={scaleWeight || ''}
                                         onChange={e => setScaleWeight(parseFloat(e.target.value) || 0)}
-                                        placeholder="0.000"
-                                        className="w-full px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border border-blue-300 rounded-xl font-black text-xl text-blue-700 dark:text-blue-300 text-center"
+                                        placeholder="Digite o peso aqui (ex: 0.350)"
+                                        autoFocus
+                                        className="w-full px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-400 rounded-xl font-black text-xl text-blue-700 dark:text-blue-300 text-center"
                                     />
                                 </div>
                             </div>
@@ -1900,10 +1906,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                         }
                                     }}
                                     disabled={isReadingScale}
+                                    title="So funciona com balanca fisica conectada por USB/Serial"
                                     className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg shadow-blue-500/20 text-sm"
                                 >
                                     <Scale size={18} className={isReadingScale ? "animate-spin" : ""} />
-                                    {isReadingScale ? "Lendo..." : "⚖️ Capturar Peso"}
+                                    {isReadingScale ? "Lendo..." : "⚖️ Capturar da Balança"}
                                 </button>
                                 
                                 <button
