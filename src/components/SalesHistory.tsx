@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, Search, Trash2, Trophy, Gift, DollarSign, ShoppingBag, TrendingUp, X, Bot, Smartphone, UtensilsCrossed } from 'lucide-react';
+import { Calendar, Search, Trash2, Trophy, Gift, DollarSign, ShoppingBag, TrendingUp, X, Smartphone, UtensilsCrossed, Bike, Store } from 'lucide-react';
 import { Order, Settings, Category } from '../types';
 import { fetchSalesByDateRange, deleteOrdersByDateRange, fetchEligibleCustomersForRaffle, fetchPublicSettings, fetchMenuForAdmin } from '../services/supabaseService';
+import { classificarTipoPedido } from '../services/estacaoService';
 
 interface SalesHistoryProps {
     storeId: string;
@@ -160,27 +161,27 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
     const rankedPayments = Object.entries(paymentStats)
         .sort(([, a], [, b]) => b - a);
 
-    // Daily Stats for Candlestick Chart
-    const dailyStats: Record<string, { total: number, min: number, max: number, count: number }> = {};
-    orders.forEach(order => {
-        if (order.timestamp) {
-            const date = new Date(order.timestamp).toISOString().split('T')[0];
-            if (!dailyStats[date]) {
-                dailyStats[date] = { total: 0, min: order.total, max: order.total, count: 0 };
-            }
-            dailyStats[date].total += order.total;
-            dailyStats[date].min = Math.min(dailyStats[date].min, order.total);
-            dailyStats[date].max = Math.max(dailyStats[date].max, order.total);
-            dailyStats[date].count += 1;
-        }
-    });
+    // Vendas separadas por TIPO real (Balcao/Mesa, Entrega, Retirada) --
+    // pedido do Ikarus, 23/09/2026: "mostrar as vendas separadas as do
+    // balcao separadas das vendas de entrega e retirada". Antes esta secao
+    // separava por ORIGEM (App vs Robo IA), que e' outra coisa (de onde
+    // veio o pedido, nao que tipo de venda foi). Usa a mesma
+    // `classificarTipoPedido` (estacaoService.ts) ja usada para impressao e
+    // som, que resolve a ambiguidade "Balcão" vs "Retirada do site vinda
+    // com orderType='Balcão'" -- fonte unica da verdade, sem duplicar regra.
+    const balcaoOrders = orders.filter(o => classificarTipoPedido({
+        orderType: o.orderType, origin: o.origin, tableNumber: o.table_number, deliveryFee: o.deliveryFee,
+    }) === 'mesa');
+    const entregaOrders = orders.filter(o => classificarTipoPedido({
+        orderType: o.orderType, origin: o.origin, tableNumber: o.table_number, deliveryFee: o.deliveryFee,
+    }) === 'entrega');
+    const retiradaOrders = orders.filter(o => classificarTipoPedido({
+        orderType: o.orderType, origin: o.origin, tableNumber: o.table_number, deliveryFee: o.deliveryFee,
+    }) === 'retirada');
 
-    // Origin Stats (App vs Bot)
-    const appOrders = orders.filter(o => o.origin === 'APP');
-    const botOrders = orders.filter(o => !o.origin || o.origin !== 'APP');
-
-    const totalAppValue = appOrders.reduce((acc, o) => acc + o.total, 0);
-    const totalBotValue = botOrders.reduce((acc, o) => acc + o.total, 0);
+    const totalBalcaoValue = balcaoOrders.reduce((acc, o) => acc + o.total, 0);
+    const totalEntregaValue = entregaOrders.reduce((acc, o) => acc + o.total, 0);
+    const totalRetiradaValue = retiradaOrders.reduce((acc, o) => acc + o.total, 0);
 
     // --- Status History Calculations ---
     const calculateAverageTime = (startStatus: string, endStatus: string, filterType?: 'Entrega' | 'Salão') => {
@@ -228,11 +229,6 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
     const avgDeliveryTime = calculateAverageTime('A Caminho', 'Entregue'); // Average time delivering
     const avgAcceptTime = calculateAverageTime('Novo', 'Em Produção', 'Entrega'); // Time to accept/start delivery
     const avgSalaoTime = calculateAverageTime('Novo', 'Em Produção', 'Salão'); // Time to produce for Salão
-
-
-    const chartData = Object.entries(dailyStats).sort((a, b) => a[0].localeCompare(b[0]));
-    const maxDayTotal = Math.max(...Object.values(dailyStats).map(d => d.total), 1);
-    const maxSingleOrder = Math.max(...Object.values(dailyStats).map(d => d.max), 1);
 
     return (
         <div className="w-full">
@@ -401,104 +397,67 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
                         </div>
                     </div>
 
-                    {/* Origin Stats */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Vendas por TIPO (Balcão/Mesa, Entrega, Retirada) -- substitui o
+                        grafico de velas + a separacao por origem (App/Robo), pedido do
+                        Ikarus, 23/09/2026: "no historico remover as velas e esse modelo
+                        de crescimento, nao faz mais sentido, e mostrar as vendas
+                        separadas as do balcao separadas das vendas de entrega e
+                        retirada". */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/10 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
+                            <div className="flex justify-between items-start relative z-10">
+                                <div>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 font-bold mb-1 flex items-center gap-2">
+                                        <Store size={16} className="text-rose-500" />
+                                        Vendas de Balcão / Mesa
+                                    </p>
+                                    <h3 className="text-3xl font-bold text-gray-900 dark:text-gray-100">R$ {totalBalcaoValue.toFixed(2)}</h3>
+                                    <p className="text-xs text-gray-400 mt-1 font-medium">{balcaoOrders.length} pedidos</p>
+                                </div>
+                                <div className="p-3 bg-rose-100 dark:bg-rose-900/30 rounded-xl text-rose-600 dark:text-rose-400">
+                                    <Store size={24} />
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 relative overflow-hidden group">
+                            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
+                            <div className="flex justify-between items-start relative z-10">
+                                <div>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400 font-bold mb-1 flex items-center gap-2">
+                                        <Bike size={16} className="text-blue-500" />
+                                        Vendas de Entrega
+                                    </p>
+                                    <h3 className="text-3xl font-bold text-gray-900 dark:text-gray-100">R$ {totalEntregaValue.toFixed(2)}</h3>
+                                    <p className="text-xs text-gray-400 mt-1 font-medium">{entregaOrders.length} pedidos</p>
+                                </div>
+                                <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl text-blue-600 dark:text-blue-400">
+                                    <Bike size={24} />
+                                </div>
+                            </div>
+                        </div>
+
                         <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 relative overflow-hidden group">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
                             <div className="flex justify-between items-start relative z-10">
                                 <div>
                                     <p className="text-sm text-gray-500 dark:text-gray-400 font-bold mb-1 flex items-center gap-2">
                                         <Smartphone size={16} className="text-purple-500" />
-                                        Pedidos via App / Balcão
+                                        Vendas de Retirada
                                     </p>
-                                    <h3 className="text-3xl font-bold text-gray-900 dark:text-gray-100">R$ {totalAppValue.toFixed(2)}</h3>
-                                    <p className="text-xs text-gray-400 mt-1 font-medium">{appOrders.length} pedidos</p>
+                                    <h3 className="text-3xl font-bold text-gray-900 dark:text-gray-100">R$ {totalRetiradaValue.toFixed(2)}</h3>
+                                    <p className="text-xs text-gray-400 mt-1 font-medium">{retiradaOrders.length} pedidos</p>
                                 </div>
                                 <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-xl text-purple-600 dark:text-purple-400">
                                     <Smartphone size={24} />
                                 </div>
                             </div>
                         </div>
-
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 relative overflow-hidden group">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-green-500/10 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
-                            <div className="flex justify-between items-start relative z-10">
-                                <div>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 font-bold mb-1 flex items-center gap-2">
-                                        <Bot size={16} className="text-green-500" />
-                                        Pedidos via Robô IA
-                                    </p>
-                                    <h3 className="text-3xl font-bold text-gray-900 dark:text-gray-100">R$ {totalBotValue.toFixed(2)}</h3>
-                                    <p className="text-xs text-gray-400 mt-1 font-medium">{botOrders.length} pedidos</p>
-                                </div>
-                                <div className="p-3 bg-green-100 dark:bg-green-900/30 rounded-xl text-green-600 dark:text-green-400">
-                                    <Bot size={24} />
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
-                    {/* Charts Grid */}
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <div className="lg:col-span-2 bg-white dark:bg-gray-800 p-8 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 relative">
-                            <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-10">Evolução de Vendas</h3>
-                            <div className="h-64 flex items-end gap-3 px-4 relative border-b border-gray-100 dark:border-gray-700">
-                                {chartData.map(([date, stats]) => (
-                                    <div key={date} className="flex-1 flex flex-col items-center gap-2 group relative h-full justify-end">
-                                        {/* Wick (Pavio) - Represents individual order range */}
-                                        <div
-                                            className="absolute w-0.5 bg-gray-200 dark:bg-gray-700 z-0"
-                                            style={{ height: '80%', bottom: '0' }}
-                                        >
-                                            <div
-                                                className="absolute w-2 bg-red-400 dark:bg-red-500 left-1/2 -translate-x-1/2 rounded-full shadow-sm"
-                                                style={{
-                                                    height: `${((stats.max - stats.min) / maxSingleOrder) * 100 + 5}%`,
-                                                    bottom: `${(stats.min / maxSingleOrder) * 90}%`,
-                                                    opacity: 0.8
-                                                }}
-                                            />
-                                        </div>
-
-                                        {/* Body (Corpo) - Represents Total Volume */}
-                                        <div
-                                            className="w-full bg-red-500 dark:bg-red-600 rounded-t-md relative transition-all duration-200 z-10 hover:brightness-110"
-                                            style={{ height: `${(stats.total / maxDayTotal) * 100}%` }}
-                                        >
-                                            {/* Permanent Value Label */}
-                                            <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex flex-col items-center z-30">
-                                                <span className="bg-red-600 dark:bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded shadow-lg whitespace-nowrap">
-                                                    R$ {stats.total.toFixed(0)}
-                                                </span>
-                                                <span className="text-[8px] text-gray-500 dark:text-gray-400 font-bold mt-0.5 uppercase">
-                                                    {stats.count} ped.
-                                                </span>
-                                            </div>
-
-                                            {/* Hover Tooltip (Detailed) */}
-                                            <div className="absolute -top-24 left-1/2 -translate-x-1/2 bg-gray-900 border border-gray-700 text-white text-[10px] font-bold px-4 py-3 rounded-xl opacity-0 group-hover:opacity-100 transition-all duration-300 whitespace-nowrap z-50 shadow-2xl scale-75 group-hover:scale-100 flex flex-col items-center gap-1.5">
-                                                <span className="text-sm text-red-400">Total: R$ {stats.total.toFixed(2)}</span>
-                                                <div className="flex gap-3 text-[10px] font-medium border-t border-gray-700 pt-1.5 mt-1">
-                                                    <span className="text-green-400">Min: R$ {stats.min.toFixed(2)}</span>
-                                                    <span className="text-orange-400">Max: R$ {stats.max.toFixed(2)}</span>
-                                                </div>
-                                                <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-gray-900 border-b border-r border-gray-700 rotate-45"></div>
-                                            </div>
-                                        </div>
-                                        <span className="text-[10px] font-bold text-gray-500 dark:text-gray-400 rotate-45 origin-left mt-3 whitespace-nowrap z-10">
-                                            {date.split('-').reverse().slice(0, 2).join('/')}
-                                        </span>
-                                    </div>
-                                ))}
-                                {chartData.length === 0 && (
-                                    <div className="w-full h-full flex items-center justify-center text-gray-400">
-                                        Sem dados para exibir no gráfico.
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col h-[400px] overflow-y-auto">
+                        <div className="lg:col-span-3 bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col h-[400px] overflow-y-auto">
                             <div className="flex-1">
                                 <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-6 flex items-center gap-2">
                                     <Trophy className="text-yellow-500" size={20} />
