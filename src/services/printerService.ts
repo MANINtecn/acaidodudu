@@ -175,16 +175,25 @@ class PrinterService {
       const qtyStr = `${item.quantity}x `.padEnd(3);
       let name = this.normalizeText(item.name).toUpperCase();
       if (item.isCombo) name += " (COMBO)";
-      const price = ((item.price + (item.isCombo ? (order.comboPrice || 13) : 0)) * item.quantity).toFixed(2);
-      
-      const maxNameWidth = WIDTH - 12; 
+
+      // Subtotal do item -- CORRIGIDO 23/09/2026 (Ikarus: "cada produto
+      // apareceu seu valor e seu subtotal... o 3 nao mostrou seu
+      // subtotal"). O calculo antigo so multiplicava preco base + combo,
+      // ESQUECENDO os adicionais -- por isso o subtotal batia certo so nos
+      // itens sem adicional caro. Agora usa a MESMA formula do carrinho
+      // (CustomerPageModern.tsx): (base + soma dos adicionais + combo) * qtd.
+      const addonsTotal = (item.selectedAddons || []).reduce((s: number, a: any) => s + (Number(a.price) || 0), 0);
+      const unitPrice = (Number(item.price) || 0) + addonsTotal + (item.isCombo ? (Number(order.comboPrice) || 13) : 0);
+      const price = (unitPrice * item.quantity).toFixed(2);
+
+      const maxNameWidth = WIDTH - 12;
       if (name.length > maxNameWidth) {
         content += qtyStr + name.substring(0, maxNameWidth) + "\n";
         content += " ".repeat(3) + name.substring(maxNameWidth).padEnd(maxNameWidth) + " R$ " + price.padStart(5) + "\n";
       } else {
         content += qtyStr + name.padEnd(maxNameWidth) + " R$ " + price.padStart(5) + "\n";
       }
-      
+
       // Espaco entre o nome do produto e seus adicionais/combo/obs -- pedido
       // do Ikarus, 21/09/2026 ("dar um espaço de 2 px"). Em impressora
       // termica (texto monoespacado) isso vira uma linha em branco, o
@@ -197,14 +206,43 @@ class PrinterService {
         content += "  + REFRI LATA 350ML\n";
       }
 
+      // Adicionais agora mostram o proprio preco -- pedido do Ikarus,
+      // 23/09/2026: "mostrar mais informacoes na impressao final". Sem
+      // preco na linha do adicional, nao dava pra conferir de onde vinha
+      // a diferenca no subtotal do item.
       if (item.selectedAddons && item.selectedAddons.length > 0) {
         item.selectedAddons.forEach((addon: any) => {
-          content += "  + " + this.normalizeText(addon.name).toUpperCase() + "\n";
+          const addonName = "  + " + this.normalizeText(addon.name).toUpperCase();
+          const addonPrice = Number(addon.price) || 0;
+          if (addonPrice > 0) {
+            const addonPriceStr = "R$ " + addonPrice.toFixed(2);
+            const espacos = Math.max(1, WIDTH - addonName.length - addonPriceStr.length);
+            content += addonName + " ".repeat(espacos) + addonPriceStr + "\n";
+          } else {
+            content += addonName + "\n";
+          }
         });
       }
 
       if (item.notes) {
         content += "  * OBS: " + this.normalizeText(item.notes).toUpperCase() + "\n";
+      }
+
+      // Subtotal do item, discriminado -- so aparece quando ha adicional
+      // com preco ou combo, para nao poluir o cupom de itens simples (sem
+      // extras, o valor da linha do produto ja e' auto-explicativo).
+      if (addonsTotal > 0 || item.isCombo) {
+        const baseStr = `  Produto: R$ ${(Number(item.price) || 0).toFixed(2)}`;
+        content += baseStr + "\n";
+        if (addonsTotal > 0) {
+          content += `  Adicionais: R$ ${addonsTotal.toFixed(2)}` + "\n";
+        }
+        if (item.isCombo) {
+          content += `  Combo: R$ ${(Number(order.comboPrice) || 13).toFixed(2)}` + "\n";
+        }
+        if (item.quantity > 1) {
+          content += `  Subtotal (${item.quantity}x): R$ ${price}` + "\n";
+        }
       }
 
       // Linha tracejada separando um produto do proximo -- pedido do
