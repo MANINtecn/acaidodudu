@@ -876,6 +876,7 @@ const SideCart: React.FC<{
                 if (!houseNumber.trim()) return false;
                 if (!referencePoint.trim()) return false;
             }
+            if (!paymentMethod) return false; // forma de pagamento e' obrigatoria, sem padrao pre-selecionado
             if (paymentMethod === 'Dinheiro' && !changeFor) return false;
             if (orderType === 'Entrega' && total < minOrderValue) return false;
             return true;
@@ -1172,15 +1173,28 @@ const SideCart: React.FC<{
                                     </button>
                                 </div>
 
-                                <select
-                                    value={paymentMethod}
-                                    onChange={e => setPaymentMethod(e.target.value as PaymentMethod)}
-                                    className="w-full p-1.5 bg-background border border-surface rounded text-text-light focus:border-primary outline-none text-xs h-8"
-                                >
-                                    <option value="Cartão">Cartão</option>
-                                    <option value="Dinheiro">Dinheiro</option>
-                                    <option value="PIX">PIX</option>
-                                </select>
+                                <div>
+                                    <select
+                                        value={paymentMethod}
+                                        onChange={e => setPaymentMethod(e.target.value as PaymentMethod)}
+                                        required
+                                        className={`w-full p-1.5 bg-background border rounded outline-none text-xs h-8 ${
+                                            !paymentMethod
+                                                ? 'border-red-500 text-red-400 font-semibold animate-pulse'
+                                                : 'border-surface text-text-light focus:border-primary'
+                                        }`}
+                                    >
+                                        <option value="">-- Escolha a forma de pagamento --</option>
+                                        <option value="Cartão">Cartão</option>
+                                        <option value="Dinheiro">Dinheiro</option>
+                                        <option value="PIX">PIX</option>
+                                    </select>
+                                    {!paymentMethod && (
+                                        <p className="text-[10px] text-red-500 mt-0.5 font-semibold">
+                                            Por favor, escolha a forma de pagamento para continuar.
+                                        </p>
+                                    )}
+                                </div>
 
                                 {orderType === 'Entrega' && (
                                     <div className="space-y-2">
@@ -2126,7 +2140,15 @@ const CustomerPage: React.FC = () => {
     const [address, setAddress] = useState('');
     const [houseNumber, setHouseNumber] = useState('');
     const [referencePoint, setReferencePoint] = useState('');
-    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Cartão');
+    // Sem valor padrao de proposito -- pedido do Ikarus, 23/09/2026: "a
+    // forma de pagamento... o cliente ser obrigado a escolher um". Antes
+    // vinha pre-selecionado 'Cartão', entao quem nao tocasse no campo
+    // seguia sem ter escolhido de verdade. '' as PaymentMethod e' um hack
+    // controlado e isolado aqui: o tipo formal continua exigindo um dos 3
+    // valores nos outros lugares do codigo, mas o estado inicial vazio
+    // forca o cliente a clicar antes de conseguir finalizar (isFormValid
+    // abaixo bloqueia com paymentMethod vazio).
+    const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('' as PaymentMethod);
     const [changeFor, setChangeFor] = useState('');
     const [orderType, setOrderType] = useState<OrderType>('Entrega');
 
@@ -2280,7 +2302,8 @@ const CustomerPage: React.FC = () => {
                 setPhone(phoneInput);
                 setAddress('');
                 setReferencePoint('');
-                setPaymentMethod('Cartão');
+                // Sem padrao -- forma de pagamento e' obrigatoria (ver useState acima).
+                setPaymentMethod('' as PaymentMethod);
                 setChangeFor('');
                 setLastOrder(null);
                 setRecognizedCustomer(null);
