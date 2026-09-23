@@ -1287,15 +1287,27 @@ const ItemDetailModal: React.FC<{
 
     const relevantAddons = (item.selectedAddons && item.selectedAddons.length > 0) ? item.selectedAddons : (item.addons || []);
 
-    // Fluxo em 2 passos (Sabor -> Calda), mesma logica de CustomerPageModern.tsx
-    // -- pedido do Ikarus, 21/09/2026, especifico para Milkshake.
-    const saboresDisponiveis = relevantAddons.filter(a => a.addonGroup === 'sabor');
+    // Fluxo de TROCA de tela (1a etapa -> Calda), mesma logica de
+    // CustomerPageModern.tsx -- unificado em 23/09/2026 (Milkshake +
+    // Sorvete kit cascão usam o mesmo comportamento). Ver comentario
+    // completo la.
     const caldasDisponiveis = relevantAddons.filter(a => a.addonGroup === 'calda');
-    const usaFluxoSaborCalda = saboresDisponiveis.length > 0 && caldasDisponiveis.length > 0;
-    const outrosAddons = usaFluxoSaborCalda ? [] : relevantAddons;
+    const saboresDisponiveis = relevantAddons.filter(a => a.addonGroup === 'sabor');
+    const temFluxoDeCalda = caldasDisponiveis.length > 0;
+    const primeiraEtapaEhRadio = saboresDisponiveis.length > 0;
+    const primeiraEtapaAddons = temFluxoDeCalda
+        ? (primeiraEtapaEhRadio ? saboresDisponiveis : relevantAddons.filter(a => a.addonGroup !== 'calda'))
+        : relevantAddons;
+    const outrosAddons = temFluxoDeCalda ? [] : relevantAddons;
 
-    const saborEscolhido = selectedAddons.find(a => a.addonGroup === 'sabor');
+    const primeiraEtapaEscolhida = primeiraEtapaEhRadio
+        ? selectedAddons.find(a => a.addonGroup === 'sabor')
+        : undefined;
+    const primeiraEtapaTemEscolha = primeiraEtapaEhRadio
+        ? !!primeiraEtapaEscolhida
+        : selectedAddons.some(a => primeiraEtapaAddons.some(p => p.id === a.id));
     const caldaEscolhida = selectedAddons.find(a => a.addonGroup === 'calda');
+    const mostrandoTelaDeCalda = temFluxoDeCalda && primeiraEtapaTemEscolha;
 
     const handleRadioSelect = (addon: Addon) => {
         setSelectedAddons(prev => {
@@ -1305,9 +1317,9 @@ const ItemDetailModal: React.FC<{
         });
     };
 
-    const isOptionRequired = usaFluxoSaborCalda ? true : outrosAddons.length > 0;
-    const hasMandatorySelection = usaFluxoSaborCalda
-        ? (!saborEscolhido || !caldaEscolhida)
+    const isOptionRequired = temFluxoDeCalda ? true : outrosAddons.length > 0;
+    const hasMandatorySelection = temFluxoDeCalda
+        ? (!primeiraEtapaTemEscolha || !caldaEscolhida)
         : (isOptionRequired && selectedAddons.length === 0);
 
     const handleAddToCart = () => {
@@ -1387,17 +1399,28 @@ const ItemDetailModal: React.FC<{
                         )}
                     </div>
 
-                    {usaFluxoSaborCalda ? (
-                        <>
-                            <div className="space-y-3">
+                    {temFluxoDeCalda ? (
+                        mostrandoTelaDeCalda ? (
+                            <div className="space-y-3 animate-fade-in">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSelectedAddons(prev => primeiraEtapaEhRadio
+                                            ? prev.filter(a => a.addonGroup !== 'sabor')
+                                            : prev.filter(a => !primeiraEtapaAddons.some(p => p.id === a.id)));
+                                    }}
+                                    className="text-[11px] text-purple-300 hover:text-white font-bold flex items-center gap-1"
+                                >
+                                    ← Voltar
+                                </button>
                                 <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
-                                    <span>1. Escolha o sabor</span>
-                                    <span className="text-[10px] text-amber-400 font-bold uppercase">(1 sabor)</span>
+                                    <span>Escolha a calda</span>
+                                    <span className="text-[10px] text-amber-400 font-bold uppercase">(1 calda)</span>
                                 </h3>
                                 <div className="grid grid-cols-1 gap-2">
-                                    {saboresDisponiveis.map(addon => {
+                                    {caldasDisponiveis.map(addon => {
                                         const isUnavailable = addon.isAvailable === false;
-                                        const isSelected = saborEscolhido?.id === addon.id;
+                                        const isSelected = caldaEscolhida?.id === addon.id;
                                         return (
                                             <button
                                                 key={addon.id}
@@ -1424,45 +1447,47 @@ const ItemDetailModal: React.FC<{
                                     })}
                                 </div>
                             </div>
-
-                            {saborEscolhido && (
-                                <div className="space-y-3 animate-fade-in">
-                                    <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
-                                        <span>2. Escolha a calda</span>
-                                        <span className="text-[10px] text-amber-400 font-bold uppercase">(1 calda)</span>
-                                    </h3>
-                                    <div className="grid grid-cols-1 gap-2">
-                                        {caldasDisponiveis.map(addon => {
-                                            const isUnavailable = addon.isAvailable === false;
-                                            const isSelected = caldaEscolhida?.id === addon.id;
-                                            return (
-                                                <button
-                                                    key={addon.id}
-                                                    disabled={isUnavailable}
-                                                    onClick={() => handleRadioSelect(addon)}
-                                                    className={`flex items-center p-3 rounded-2xl border transition-all text-left
-                                                        ${isSelected
-                                                            ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
-                                                            : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
-                                                        ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
-                                                >
-                                                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center transition-colors
-                                                        ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
-                                                        {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
-                                                    </div>
-                                                    <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
-                                                        {sanitizeHtmlEntities(addon.name)}
-                                                    </span>
-                                                    <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
-                                                        + R$ {addon.price.toFixed(2)}
-                                                    </span>
-                                                </button>
-                                            );
-                                        })}
-                                    </div>
+                        ) : (
+                            <div className="space-y-3">
+                                <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
+                                    <span>{primeiraEtapaEhRadio ? 'Escolha o sabor' : 'Escolha seu sabor / adicionais'}</span>
+                                    <span className="text-[10px] text-amber-400 font-bold uppercase">
+                                        {primeiraEtapaEhRadio ? '(1 sabor)' : '(Mínimo 1 opção)'}
+                                    </span>
+                                </h3>
+                                <div className="grid grid-cols-1 gap-2">
+                                    {primeiraEtapaAddons.map(addon => {
+                                        const isUnavailable = addon.isAvailable === false;
+                                        const isSelected = primeiraEtapaEhRadio
+                                            ? primeiraEtapaEscolhida?.id === addon.id
+                                            : selectedAddons.some(a => a.id === addon.id);
+                                        return (
+                                            <button
+                                                key={addon.id}
+                                                disabled={isUnavailable}
+                                                onClick={() => primeiraEtapaEhRadio ? handleRadioSelect(addon) : handleAddonToggle(addon)}
+                                                className={`flex items-center p-3 rounded-2xl border transition-all text-left
+                                                    ${isSelected
+                                                        ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
+                                                        : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
+                                                    ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                                            >
+                                                <div className={`w-5 h-5 ${primeiraEtapaEhRadio ? 'rounded-full' : 'rounded-md'} border flex items-center justify-center transition-colors
+                                                    ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
+                                                    {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
+                                                </div>
+                                                <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
+                                                    {sanitizeHtmlEntities(addon.name)}
+                                                </span>
+                                                <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
+                                                    + R$ {addon.price.toFixed(2)}
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
                                 </div>
-                            )}
-                        </>
+                            </div>
+                        )
                     ) : outrosAddons.length > 0 && (
                         <div className="space-y-3">
                             <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
@@ -1505,8 +1530,8 @@ const ItemDetailModal: React.FC<{
                 <div className="p-4 bg-[#100620] border-t border-purple-500/30 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
                     {hasMandatorySelection && (
                         <div className="mb-3 p-2 bg-amber-500/20 border border-amber-500/50 rounded-xl text-center text-xs font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
-                            {usaFluxoSaborCalda
-                                ? (!saborEscolhido ? 'Escolha o sabor para continuar' : 'Escolha a calda para continuar')
+                            {temFluxoDeCalda
+                                ? (!primeiraEtapaTemEscolha ? 'Escolha uma opção para continuar' : 'Escolha a calda para continuar')
                                 : 'Selecione pelo menos 1 opção / sabor para continuar'}
                         </div>
                     )}
@@ -1543,7 +1568,7 @@ const ItemDetailModal: React.FC<{
                         }`}
                     >
                         <span>{hasMandatorySelection
-                            ? (usaFluxoSaborCalda ? (!saborEscolhido ? 'Escolha o Sabor' : 'Escolha a Calda') : 'Escolha 1 Sabor / Opção')
+                            ? (temFluxoDeCalda ? (!primeiraEtapaTemEscolha ? 'Escolha uma Opção' : 'Escolha a Calda') : 'Escolha 1 Sabor / Opção')
                             : 'Adicionar ao Pedido'}</span>
                         <LucideArrowRight size={18} />
                     </button>
