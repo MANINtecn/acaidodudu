@@ -29,12 +29,13 @@ interface Props {
 // "vamos ser profissionais... pensar em todos os casos". 'salao' continua
 // existindo (retirada + mesa juntos) para quem ja configurou assim antes.
 const ESCOPOS_SOM: { valor: EscopoSom; titulo: string; ajuda: string }[] = [
-    { valor: 'tudo',     titulo: 'Todos',       ajuda: 'Toca em qualquer pedido.' },
-    { valor: 'entrega',  titulo: 'So entrega',  ajuda: 'So pedidos de entrega.' },
-    { valor: 'retirada', titulo: 'So retirada', ajuda: 'So pedidos de retirada (site ou balcao).' },
-    { valor: 'mesa',     titulo: 'So mesa',     ajuda: 'So mesas de verdade.' },
-    { valor: 'salao',    titulo: 'Retirada + mesa', ajuda: 'As duas juntas (nao entrega).' },
-    { valor: 'mudo',     titulo: 'Mudo',        ajuda: 'Esta maquina nao toca.' },
+    { valor: 'tudo',              titulo: 'Todos',            ajuda: 'Toca em qualquer pedido.' },
+    { valor: 'entrega',           titulo: 'So entrega',       ajuda: 'So pedidos de entrega.' },
+    { valor: 'retirada',          titulo: 'So retirada',      ajuda: 'So pedidos de retirada (site ou balcao).' },
+    { valor: 'mesa',              titulo: 'So mesa',          ajuda: 'So mesas de verdade.' },
+    { valor: 'entrega_retirada',  titulo: 'Entrega + retirada', ajuda: 'As duas juntas (nao mesa). Ideal para a cozinha.' },
+    { valor: 'salao',             titulo: 'Retirada + mesa',  ajuda: 'As duas juntas (nao entrega).' },
+    { valor: 'mudo',              titulo: 'Mudo',             ajuda: 'Esta maquina nao toca.' },
 ];
 
 const ESCOPOS_JANELAS: { valor: EscopoJanelas; titulo: string; ajuda: string }[] = [

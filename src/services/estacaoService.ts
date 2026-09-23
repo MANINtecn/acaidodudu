@@ -32,10 +32,13 @@ export type EscopoImpressao =
  * Retirada mas ficar muda para Mesa (ou vice-versa) nao conseguia.
  */
 export type EscopoSom =
-    | 'tudo'       // toca em qualquer pedido (padrao)
-    | 'entrega'    // so pedidos de entrega
-    | 'retirada'   // so pedidos de retirada (site ou balcao)
-    | 'mesa'       // so mesas de verdade
+    | 'tudo'              // toca em qualquer pedido (padrao)
+    | 'entrega'           // so pedidos de entrega
+    | 'retirada'          // so pedidos de retirada (site ou balcao)
+    | 'mesa'              // so mesas de verdade
+    | 'entrega_retirada'  // entrega + retirada juntos (nao mesa) -- pedido do
+                           // Ikarus, 23/09/2026: cozinha toca entrega+retirada,
+                           // salao fica mudo
     | 'salao'      // retirada + mesa juntos (comportamento historico, mantido p/ quem ja usa)
     | 'mudo';      // esta maquina nao toca
 
@@ -224,6 +227,9 @@ export function estacaoDeveTocar(pedido: PedidoParaClassificar | string | undefi
             break;
         case 'mesa':
             deve = tipo === 'mesa';
+            break;
+        case 'entrega_retirada':
+            deve = tipo === 'entrega' || tipo === 'retirada';
             break;
         case 'salao': // historico: retirada + mesa juntos
         default:
