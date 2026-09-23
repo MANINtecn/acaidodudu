@@ -25,11 +25,16 @@ interface Props {
     onAutoPrintChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
+// 'retirada' e 'mesa' separados desde 23/09/2026 -- pedido do Ikarus:
+// "vamos ser profissionais... pensar em todos os casos". 'salao' continua
+// existindo (retirada + mesa juntos) para quem ja configurou assim antes.
 const ESCOPOS_SOM: { valor: EscopoSom; titulo: string; ajuda: string }[] = [
-    { valor: 'tudo',    titulo: 'Todos',      ajuda: 'Toca em qualquer pedido.' },
-    { valor: 'entrega', titulo: 'So entrega', ajuda: 'So pedidos de entrega.' },
-    { valor: 'salao',   titulo: 'So salao',   ajuda: 'Mesa, retirada e balcao.' },
-    { valor: 'mudo',    titulo: 'Mudo',       ajuda: 'Esta maquina nao toca.' },
+    { valor: 'tudo',     titulo: 'Todos',       ajuda: 'Toca em qualquer pedido.' },
+    { valor: 'entrega',  titulo: 'So entrega',  ajuda: 'So pedidos de entrega.' },
+    { valor: 'retirada', titulo: 'So retirada', ajuda: 'So pedidos de retirada (site ou balcao).' },
+    { valor: 'mesa',     titulo: 'So mesa',     ajuda: 'So mesas de verdade.' },
+    { valor: 'salao',    titulo: 'Retirada + mesa', ajuda: 'As duas juntas (nao entrega).' },
+    { valor: 'mudo',     titulo: 'Mudo',        ajuda: 'Esta maquina nao toca.' },
 ];
 
 const ESCOPOS_JANELAS: { valor: EscopoJanelas; titulo: string; ajuda: string }[] = [
@@ -229,7 +234,7 @@ export const EstacaoImpressao = ({ impressorasDisponiveis, autoPrintDineIn, auto
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                             O que esta maquina <strong>toca</strong>
                         </label>
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
                             {ESCOPOS_SOM.map(op => (
                                 <button
                                     key={op.valor}

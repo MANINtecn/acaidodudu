@@ -24,12 +24,19 @@ export type EscopoImpressao =
 
 /**
  * O que esta maquina TOCA. Eixo diferente do escopo de impressao: aqui o que
- * importa e entrega x salao, nao a origem do pedido.
+ * importa e entrega x retirada x mesa, nao a origem do pedido.
+ *
+ * 'retirada' adicionado em 23/09/2026 -- pedido do Ikarus: "vamos ser
+ * profissionais... pensar em todos os casos". Antes so existia 'salao', que
+ * juntava Mesa+Retirada+Balcao num grupo so -- uma loja que quer tocar para
+ * Retirada mas ficar muda para Mesa (ou vice-versa) nao conseguia.
  */
 export type EscopoSom =
     | 'tudo'       // toca em qualquer pedido (padrao)
     | 'entrega'    // so pedidos de entrega
-    | 'salao'      // so mesa/retirada/balcao
+    | 'retirada'   // so pedidos de retirada (site ou balcao)
+    | 'mesa'       // so mesas de verdade
+    | 'salao'      // retirada + mesa juntos (comportamento historico, mantido p/ quem ja usa)
     | 'mudo';      // esta maquina nao toca
 
 /**
@@ -130,12 +137,55 @@ export function estacaoDeveImprimir(origem?: string): boolean {
     return cache.escopo === 'app' ? veioDoApp : !veioDoApp;
 }
 
+/** Dados minimos de um pedido para classifica-lo em Entrega/Retirada/Mesa. */
+export interface PedidoParaClassificar {
+    orderType?: string;
+    origin?: string;
+    tableNumber?: string | number | null;
+    deliveryFee?: number | null;
+}
+
+/**
+ * Classifica um pedido em 'entrega' | 'retirada' | 'mesa' -- FONTE UNICA DA
+ * VERDADE, usada tanto para decidir impressao quanto som (AdminPage.tsx e
+ * este arquivo). Antes cada lugar tinha sua propria copia da regra e elas
+ * desalinhavam (foi a causa do bug de 21-23/09/2026: a checagem de auto-print
+ * so olhava orderType === 'Retirada' puro, e a de som nem existia).
+ *
+ * REGRA (ja usada em AdminPage.tsx ehColunaEntrega() desde antes): o botao
+ * "Retirar" do site grava order_type = 'Balcão', NUNCA 'Retirada' --
+ * nomenclatura historica, em producao ha meses, que a gente decidiu nao
+ * mudar (arriscaria o fluxo do site). Por isso "Balcao SEM mesa vindo do
+ * site (origin WEB/APP/AI)" tambem conta como retirada, mesmo com o campo
+ * literal dizendo 'Balcão'.
+ */
+export function classificarTipoPedido(pedido: PedidoParaClassificar): 'entrega' | 'retirada' | 'mesa' {
+    const ehEntrega =
+        pedido.orderType === 'Entrega' ||
+        (Number(pedido.deliveryFee) || 0) > 0;
+    if (ehEntrega) return 'entrega';
+
+    const semMesa = !pedido.tableNumber;
+    const veioDoSite = pedido.origin === 'WEB' || pedido.origin === 'APP' || pedido.origin === 'AI';
+    const ehRetiradaDoSite = pedido.orderType === 'Balcão' && semMesa && veioDoSite;
+
+    if (pedido.orderType === 'Retirada' || ehRetiradaDoSite) return 'retirada';
+    return 'mesa';
+}
+
 /**
  * Esta maquina deve TOCAR o alerta deste pedido?
  * Independente da impressao: a cozinha pode imprimir tudo e so tocar nas
  * entregas, por exemplo.
  */
-export function estacaoDeveTocar(orderType?: string): boolean {
+export function estacaoDeveTocar(pedido: PedidoParaClassificar | string | undefined): boolean {
+    // Compatibilidade: chamadores antigos passavam so o orderType (string).
+    // Sem origin/tableNumber, a Retirada do site nao e reconhecida (vira
+    // 'mesa') -- por isso os dois call-sites em AdminPage.tsx foram
+    // atualizados para passar o pedido completo. Mantido aqui so para nao
+    // quebrar quem ainda nao migrou.
+    const p: PedidoParaClassificar = typeof pedido === 'string' ? { orderType: pedido } : (pedido || {});
+    const orderType = p.orderType;
     // AINDA NAO CARREGOU: a config vem do disco por IPC (assincrono). Enquanto
     // a promessa do boot nao resolve, `cache` e o CONFIG_PADRAO com
     // ativo=false — e a linha de baixo devolveria `true`, fazendo TODA maquina
@@ -163,9 +213,24 @@ export function estacaoDeveTocar(orderType?: string): boolean {
         return true;
     }
 
-    const ehEntrega = (orderType || '').toLowerCase() === 'entrega';
-    const deve = escopo === 'entrega' ? ehEntrega : !ehEntrega;
-    diagnosticarSom(orderType, deve, `escopoSom=${escopo}, ehEntrega=${ehEntrega}`);
+    const tipo = classificarTipoPedido(p);
+    let deve: boolean;
+    switch (escopo) {
+        case 'entrega':
+            deve = tipo === 'entrega';
+            break;
+        case 'retirada':
+            deve = tipo === 'retirada';
+            break;
+        case 'mesa':
+            deve = tipo === 'mesa';
+            break;
+        case 'salao': // historico: retirada + mesa juntos
+        default:
+            deve = tipo !== 'entrega';
+            break;
+    }
+    diagnosticarSom(orderType, deve, `escopoSom=${escopo}, tipo=${tipo}`);
     return deve;
 }
 

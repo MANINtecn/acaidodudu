@@ -39,7 +39,7 @@ import FidelidadeTab from '../components/FidelidadeTab';
 import FiscalTab from '../components/FiscalTab';
 import { reservarImpressao, liberarImpressao, liberarTodasAsVias } from '../services/impressaoLockService';
 import { tocarSirene, type TipoSirene } from '../services/sireneService';
-import { estacaoDeveTocar, estacaoDeveImprimir, estacaoAtiva, estacaoMostraJanela } from '../services/estacaoService';
+import { estacaoDeveTocar, estacaoDeveImprimir, estacaoAtiva, estacaoMostraJanela, classificarTipoPedido } from '../services/estacaoService';
 import { mesmaMesa, nomeDaComanda } from '../utils/mesaUtils';
 import {
     fetchMenuForAdmin,
@@ -449,7 +449,15 @@ const AdminPage = () => {
                     // Toca so se ESTA maquina deve tocar este tipo de pedido.
                     // A cozinha pode querer so entregas; o salao so o salao.
                     // Ver Configuracoes -> Esta Maquina -> "O que esta maquina toca".
-                    if (estacaoDeveTocar(pedidoNovo.orderType)) {
+                    // Pedido completo (nao so orderType) desde 23/09/2026 --
+                    // sem origin/table_number a Retirada do site nunca era
+                    // reconhecida (ver classificarTipoPedido em estacaoService.ts).
+                    if (estacaoDeveTocar({
+                        orderType: pedidoNovo.orderType,
+                        origin: pedidoNovo.origin,
+                        tableNumber: pedidoNovo.table_number,
+                        deliveryFee: pedidoNovo.deliveryFee,
+                    })) {
                         tocarSirene(
                             (settingsRef.current?.sireneTipo as TipoSirene) || 'sino',
                             Number(settingsRef.current?.sireneVolume) || 3
@@ -489,7 +497,16 @@ const AdminPage = () => {
                     // Toca so se ESTA maquina deve tocar este tipo de pedido.
                     // A cozinha pode querer so entregas; o salao so o salao.
                     // Ver Configuracoes -> Esta Maquina -> "O que esta maquina toca".
-                    if (estacaoDeveTocar((payload.new as any)?.order_type)) {
+                    // payload.new vem cru do Postgres (snake_case) -- mesmos
+                    // campos que classificarTipoPedido precisa, so com nome
+                    // diferente. Ver nota de 23/09/2026 no outro call-site.
+                    const raw = payload.new as any;
+                    if (estacaoDeveTocar({
+                        orderType: raw?.order_type,
+                        origin: raw?.origin,
+                        tableNumber: raw?.table_number,
+                        deliveryFee: raw?.delivery_fee,
+                    })) {
                         tocarSirene(
                             (settingsRef.current?.sireneTipo as TipoSirene) || 'sino',
                             Number(settingsRef.current?.sireneVolume) || 3
@@ -913,21 +930,19 @@ const AdminPage = () => {
         // "Retirada sempre imprime": um PC de cozinha, por exemplo, pode
         // querer NAO imprimir Retirada mesmo com Entrega ligada.
         //
-        // BUG REAL achado em 23/09 (log do Ikarus): a config de Retirada
-        // ja existia desde 21/09, mas nunca disparava porque a deteccao de
-        // "e' Retirada" so olhava order.orderType === 'Retirada' -- e o
-        // botao "Retirar" do site grava order_type = 'Balcão' (nomenclatura
-        // historica, ver ehColunaEntrega() logo abaixo, que ja tratava essa
-        // mesma ambiguidade para a aba Pedidos). Corrigido para usar a
-        // MESMA regra: Balcao SEM mesa + origin WEB/APP/AI = veio do site
-        // pra retirar, mesmo com orderType literal = 'Balcão' no banco.
-        const ehEntrega =
-            order.orderType === 'Entrega' ||
-            (order.deliveryFee ?? 0) > 0;
-        const ehRetiradaDoSite = !ehEntrega && order.orderType === 'Balcão' && !order.table_number &&
-            (order.origin === 'WEB' || order.origin === 'APP' || order.origin === 'AI');
-        const ehRetirada = !ehEntrega && (order.orderType === 'Retirada' || ehRetiradaDoSite);
-        const ehMesa = !ehEntrega && !ehRetirada;
+        // Classificacao delegada a classificarTipoPedido (estacaoService.ts)
+        // -- FONTE UNICA da regra "Balcao sem mesa + origin WEB/APP/AI conta
+        // como Retirada", usada tambem por estacaoDeveTocar (som) desde
+        // 23/09/2026. Antes cada lugar tinha sua propria copia e elas
+        // desalinhavam -- foi a causa do bug original.
+        const tipoPedido = classificarTipoPedido({
+            orderType: order.orderType,
+            origin: order.origin,
+            tableNumber: order.table_number,
+            deliveryFee: order.deliveryFee,
+        });
+        const ehMesa = tipoPedido === 'mesa';
+        const ehRetirada = tipoPedido === 'retirada';
 
         const autoPrintMesaLigado = settingsRef.current?.autoPrintDineIn !== false;
         const autoPrintRetiradaLigado = settingsRef.current?.autoPrintRetirada !== false;
