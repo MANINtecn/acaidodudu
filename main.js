@@ -23,6 +23,31 @@ let mainWindow;
 let tray = null;
 let isQuitting = false;
 
+// --- CONTADOR DE REINICIO AUTOMATICO (tela travada no boot) ---
+// Precisa sobreviver ao app.relaunch() (que mata e recria o processo, zerando
+// qualquer variavel em memoria), por isso vai em arquivo, nao em variavel.
+// Reseta assim que um boot confirma o foco com sucesso (ver 'ambiente-pronto'
+// mais abaixo), para nao acumular reinicios de dias diferentes.
+function getBootRetryPath() {
+  return path.join(app.getPath('userData'), 'boot_retry.json');
+}
+
+function getBootRetryCount() {
+  try {
+    const p = getBootRetryPath();
+    if (fs.existsSync(p)) {
+      return JSON.parse(fs.readFileSync(p, 'utf8')).count || 0;
+    }
+  } catch (e) {}
+  return 0;
+}
+
+function setBootRetryCount(count) {
+  try {
+    fs.writeFileSync(getBootRetryPath(), JSON.stringify({ count }));
+  } catch (e) {}
+}
+
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 // --- GLOBAL ERROR HANDLER ---
@@ -367,9 +392,22 @@ function createWindow() {
   // Minimizar e restaurar forca o SO a redespachar o foco do zero, o que
   // mascarava o problema sem corrigir a causa.
   //
-  // CORRECAO: foco explicito no webContents (nao so na janela), repetido
-  // apos 'did-finish-load' (pagina carregada) com um pequeno atraso extra
-  // para dar tempo do React montar e ter um elemento focavel de verdade.
+  // TENTATIVA 1 (23/09/2026) -- foco no webContents com timeout fixo de
+  // 300ms apos 'did-finish-load': melhorou mas nao resolveu de vez. O
+  // timeout era um chute -- 'did-finish-load' dispara quando o HTML/JS
+  // carregou, NAO quando o React terminou de montar algo focavel. Em boot
+  // mais lento (disco frio, Supabase demorando, balanca varrendo portas)
+  // 300ms nao bastava.
+  //
+  // CORRECAO 24/09/2026 -- CONFIRMACAO REAL em vez de timeout adivinhado:
+  // o renderer (BootCheckModal) chama window.electron.confirmarFocoOk() so
+  // depois de testar de verdade que um campo oculto aceita foco
+  // (document.activeElement === o input de teste). O main.js foca o
+  // webContents e ESPERA essa confirmacao chegar por IPC dentro de um
+  // prazo; se nao chegar, reinicia o app sozinho (app.relaunch()) --
+  // ate 2 vezes por instalacao. Na 3a falha seguida, desiste de reiniciar
+  // sozinho e deixa o aviso na tela (BootCheckModal) pedindo para o
+  // operador minimizar/restaurar ou fechar e abrir de novo manualmente.
   mainWindow.once('ready-to-show', () => {
     if (!isHidden) {
       mainWindow.show();
@@ -378,13 +416,46 @@ function createWindow() {
     }
   });
 
+  const FOCO_CONFIRMACAO_TIMEOUT_MS = 8000;
+  let focoConfirmado = false;
+  let focoTimeoutId = null;
+
+  ipcMain.once('ambiente-pronto', () => {
+    focoConfirmado = true;
+    if (focoTimeoutId) clearTimeout(focoTimeoutId);
+    // Sucesso: zera o contador para nao acumular reinicios de dias/boots
+    // anteriores que eventualmente tenham falhado.
+    setBootRetryCount(0);
+    logToFile('[BootCheck] Ambiente confirmado pronto (foco OK).');
+  });
+
   mainWindow.webContents.once('did-finish-load', () => {
     if (isHidden) return;
-    setTimeout(() => {
+    mainWindow.focus();
+    mainWindow.webContents.focus();
+
+    focoTimeoutId = setTimeout(() => {
+      if (focoConfirmado) return;
       if (!mainWindow || mainWindow.isDestroyed()) return;
-      mainWindow.focus();
-      mainWindow.webContents.focus();
-    }, 300);
+
+      const tentativas = getBootRetryCount();
+      logToFile(`[BootCheck] Confirmacao de foco NAO chegou em ${FOCO_CONFIRMACAO_TIMEOUT_MS}ms (tentativa ${tentativas + 1}).`);
+
+      if (tentativas < 2) {
+        setBootRetryCount(tentativas + 1);
+        logToFile('[BootCheck] Reiniciando automaticamente...');
+        app.relaunch();
+        app.exit(0);
+      } else {
+        // Ja tentou 2 reinicios automaticos e continuou falhando: avisa o
+        // renderer para mostrar a instrucao manual em vez de reiniciar
+        // de novo (evita loop infinito numa maquina com problema persistente).
+        logToFile('[BootCheck] 2 reinicios automaticos ja tentados -- pedindo acao manual.');
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('ambiente-falhou-definitivo');
+        }
+      }
+    }, FOCO_CONFIRMACAO_TIMEOUT_MS);
   });
 
   // Mostramos se não estiver oculto

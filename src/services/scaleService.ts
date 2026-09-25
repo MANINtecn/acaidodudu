@@ -479,14 +479,22 @@ export async function connectScale(
 
       if (known && known.length > 0) {
         // Portas com usbVendorId sao USB de verdade (a balanca e uma delas).
-        // As Bluetooth nao trazem VID — vao para o fim da fila.
-        const ordenadas = [...known].sort((a: any, b: any) => {
-          const vidA = typeof a.getInfo === 'function' ? a.getInfo()?.usbVendorId : undefined;
-          const vidB = typeof b.getInfo === 'function' ? b.getInfo()?.usbVendorId : undefined;
-          return (vidB ? 1 : 0) - (vidA ? 1 : 0);
+        // As Bluetooth nao trazem VID e NUNCA sao a balanca nesta loja --
+        // nesta maquina sao 8 das 9 portas autorizadas, e cada tentativa de
+        // abrir uma Bluetooth morta demora vários segundos para o Windows
+        // recusar. Varrer as 8 em sequencia no boot travava o app "sincronizando"
+        // por dezenas de segundos e atrasava o React ficar pronto para digitar.
+        // Por isso: exclui Bluetooth da tentativa automatica, so tenta USB.
+        const candidatas = known.filter((p: any) => {
+          const vid = typeof p.getInfo === 'function' ? p.getInfo()?.usbVendorId : undefined;
+          return !!vid;
         });
 
-        for (const candidata of ordenadas) {
+        if (candidatas.length < known.length) {
+          pushRaw(`[conexao] ignorando ${known.length - candidatas.length} porta(s) Bluetooth (sem VID USB)`);
+        }
+
+        for (const candidata of candidatas) {
           const info = typeof candidata.getInfo === 'function' ? candidata.getInfo() : {};
           const etiqueta = info?.usbVendorId
             ? `USB ${info.usbVendorId.toString(16)}`

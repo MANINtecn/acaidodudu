@@ -56,6 +56,15 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     const [categorySearchTerm, setCategorySearchTerm] = useState('');
     const [isScaleModalOpen, setIsScaleModalOpen] = useState(false);
     const [scaleWeight, setScaleWeight] = useState<number>(0);
+    // Peso do modal "Pesagem" (digitado a mão OU capturado por um clique no
+    // botão). Precisa ser um state SEPARADO de `scaleWeight`: aquele é
+    // atualizado o tempo todo pelo stream em tempo real da balança do
+    // balcão (subscribeToScale, abaixo), e enquanto o modal ficava aberto
+    // usando o mesmo state, cada leitura nova da balança do balcão
+    // sobrescrevia o número que o operador tinha acabado de digitar --
+    // parecia "o peso não fixa", mas não era bug de foco, era o valor
+    // sendo pisado por outro state.
+    const [manualWeight, setManualWeight] = useState<number>(0);
     const [scalePricePerKg, setScalePricePerKg] = useState<number>(settings?.scalePricePerKg || 60);
     const [scaleItemName, setScaleItemName] = useState<string>('Açaí/Sorvete por Quilo');
     const [isReadingScale, setIsReadingScale] = useState(false);
@@ -1497,7 +1506,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     <div className="flex items-center gap-2">
                         <button
                             type="button"
-                            onClick={() => setIsScaleModalOpen(true)}
+                            onClick={() => {
+                                // Comeca do peso que ja estiver na balanca ao vivo (se houver e
+                                // estavel), mas so essa UMA vez -- dali em diante o campo do
+                                // modal e independente e nao acompanha mais o stream.
+                                setManualWeight(isScaleStable ? scaleWeight : 0);
+                                setIsScaleModalOpen(true);
+                            }}
                             className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all shadow-md shadow-blue-600/20 flex items-center gap-1 text-xs font-bold"
                             title="Puxar peso da balança física OU digitar o peso na mão"
                         >
@@ -1862,8 +1877,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                     <input
                                         type="number"
                                         step="0.005"
-                                        value={scaleWeight || ''}
-                                        onChange={e => setScaleWeight(parseFloat(e.target.value) || 0)}
+                                        value={manualWeight || ''}
+                                        onChange={e => setManualWeight(parseFloat(e.target.value) || 0)}
                                         placeholder="Digite o peso aqui (ex: 0.350)"
                                         autoFocus
                                         className="w-full px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-400 rounded-xl font-black text-xl text-blue-700 dark:text-blue-300 text-center"
@@ -1877,11 +1892,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                 <div className="flex justify-around items-baseline font-mono">
                                     <div>
                                         <span className="text-gray-400 text-xs block">PESO</span>
-                                        <span className="text-emerald-400 font-extrabold text-3xl tracking-wider">{(scaleWeight || 0).toFixed(3)} kg</span>
+                                        <span className="text-emerald-400 font-extrabold text-3xl tracking-wider">{(manualWeight || 0).toFixed(3)} kg</span>
                                     </div>
                                     <div>
                                         <span className="text-gray-400 text-xs block">TOTAL</span>
-                                        <span className="text-yellow-400 font-extrabold text-3xl tracking-wider">R$ {((scaleWeight || 0) * (scalePricePerKg || 0)).toFixed(2)}</span>
+                                        <span className="text-yellow-400 font-extrabold text-3xl tracking-wider">R$ {((manualWeight || 0) * (scalePricePerKg || 0)).toFixed(2)}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1897,7 +1912,9 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                             if (!result.isStable || result.weightKg <= 0) {
                                                 alert('Peso ainda não estabilizou. Aguarde a balança parar de oscilar e tente novamente.');
                                             } else {
-                                                setScaleWeight(result.weightKg);
+                                                // Copia UMA vez para o campo do modal -- nao gruda no
+                                                // stream ao vivo, senao volta o bug de nao "fixar".
+                                                setManualWeight(result.weightKg);
                                             }
                                         } catch (err: any) {
                                             alert(err?.message || 'Não foi possível ler a balança. Verifique o cabo USB/Serial.');
@@ -1912,15 +1929,15 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                     <Scale size={18} className={isReadingScale ? "animate-spin" : ""} />
                                     {isReadingScale ? "Lendo..." : "⚖️ Capturar da Balança"}
                                 </button>
-                                
+
                                 <button
                                     type="button"
                                     onClick={() => {
-                                        if (!scaleWeight || scaleWeight <= 0) {
+                                        if (!manualWeight || manualWeight <= 0) {
                                             alert('Por favor, informe ou capture um peso válido.');
                                             return;
                                         }
-                                        handleScaleItemAdd(scaleWeight, scaleItemName || 'Açaí/Sorvete por Quilo', scalePricePerKg || 60);
+                                        handleScaleItemAdd(manualWeight, scaleItemName || 'Açaí/Sorvete por Quilo', scalePricePerKg || 60);
                                         setIsScaleModalOpen(false);
                                     }}
                                     className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase text-xs tracking-wider shadow-lg shadow-emerald-600/20"

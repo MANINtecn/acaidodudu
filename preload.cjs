@@ -9,7 +9,13 @@ contextBridge.exposeInMainWorld("electron", {
   // Salva o log da balanca num .txt na Area de Trabalho, para o log nao se
   // perder ao copiar/limpar. Retorna o caminho do arquivo.
   salvarLogBalanca: (texto) => ipcRenderer.invoke("salvar-log-balanca", texto),
-  
+
+  // BootCheckModal: avisa o processo principal que o foco de teclado foi
+  // confirmado de verdade (nao so o timeout). Sem isso, o main.js reinicia
+  // o app sozinho apos alguns segundos (ver 'ambiente-pronto' no main.js).
+  confirmarFocoOk: () => ipcRenderer.send("ambiente-pronto"),
+  onAmbienteFalhouDefinitivo: (callback) => ipcRenderer.on("ambiente-falhou-definitivo", (event, ...args) => callback(...args)),
+
   // Listeners
   onUpdateAvailable: (callback) => ipcRenderer.on("update-available", (event, ...args) => callback(...args)),
   onUpdateNotAvailable: (callback) => ipcRenderer.on("update-not-available", (event, ...args) => callback(...args)),

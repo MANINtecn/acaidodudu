@@ -6,6 +6,7 @@ import CustomerPage from './pages/CustomerPage';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { StoreProvider, useStore } from './contexts/StoreContext';
 import { CourierProvider } from './contexts/CourierContext';
+import BootCheckModal from './components/BootCheckModal';
 
 const AdminPage = lazy(() => import('./pages/AdminPage'));
 const LoginPage = lazy(() => import('./pages/LoginPage'));
@@ -110,6 +111,21 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 // detect if we are running in Electron
 const isElectron = /Electron/i.test(navigator.userAgent);
 
+// Le direto do localStorage (sincrono, sem esperar o Supabase) para o
+// BootCheckModal poder testar a balanca sem atrasar ainda mais o boot.
+// Mesmo fallback usado em supabaseService.ts (getDefaultSettings).
+const lerConfigBalancaLocal = (): { isScaleEnabled: boolean; scaleBaudRate: number } => {
+  try {
+    const local = JSON.parse(localStorage.getItem('acai_scale_settings') || '{}');
+    return {
+      isScaleEnabled: !!local.isScaleEnabled,
+      scaleBaudRate: Number(local.scaleBaudRate) || 9600,
+    };
+  } catch (e) {
+    return { isScaleEnabled: false, scaleBaudRate: 9600 };
+  }
+};
+
 const App: React.FC = () => {
   if (!isSupabaseConfigured) {
     return <SupabaseConfigWarning />;
@@ -118,9 +134,16 @@ const App: React.FC = () => {
   const loadingSpinner = <div className="flex items-center justify-center h-screen bg-background"><div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
 
   const Router = isElectron ? HashRouter : BrowserRouter;
+  const scaleConfigLocal = isElectron ? lerConfigBalancaLocal() : null;
 
   return (
     <ErrorBoundary>
+      {isElectron && (
+        <BootCheckModal
+          isScaleEnabled={scaleConfigLocal?.isScaleEnabled}
+          scaleBaudRate={scaleConfigLocal?.scaleBaudRate}
+        />
+      )}
       <AuthProvider>
         <Router>
           <StoreProvider>
