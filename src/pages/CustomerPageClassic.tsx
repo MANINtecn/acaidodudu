@@ -1331,10 +1331,16 @@ const ItemDetailModal: React.FC<{
         });
     };
 
-    const isOptionRequired = temFluxoDeCalda ? true : outrosAddons.length > 0;
+    // Opcionais (gratis, price=0) x Adicionais (pagos, price>0) -- pedido do
+    // Ikarus, 28/09/2026 (mesma mudanca de CustomerPageModern.tsx). Nenhum
+    // dos dois e' obrigatorio no fluxo generico; so' o fluxo de sabor/calda
+    // continua exigindo escolha.
+    const opcionaisGratis = outrosAddons.filter(a => !a.price || a.price <= 0);
+    const adicionaisPagos = outrosAddons.filter(a => a.price > 0);
+
     const hasMandatorySelection = temFluxoDeCalda
         ? (!primeiraEtapaTemEscolha || !caldaEscolhida)
-        : (isOptionRequired && selectedAddons.length === 0);
+        : false;
 
     const handleAddToCart = () => {
         if (hasMandatorySelection) {
@@ -1502,51 +1508,94 @@ const ItemDetailModal: React.FC<{
                                 </div>
                             </div>
                         )
-                    ) : outrosAddons.length > 0 && (
-                        <div className="space-y-3">
-                            <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
-                                <span>Escolha seu sabor / adicionais</span>
-                                <span className="text-[10px] text-amber-400 font-bold uppercase">(Mínimo 1 opção)</span>
-                            </h3>
-                            <div className="grid grid-cols-1 gap-2">
-                                {outrosAddons.map(addon => {
-                                    const isUnavailable = addon.isAvailable === false;
-                                    const isSelected = selectedAddons.some(a => a.id === addon.id);
-                                    return (
-                                        <button
-                                            key={addon.id}
-                                            disabled={isUnavailable}
-                                            onClick={() => handleAddonToggle(addon)}
-                                            className={`flex items-center p-3 rounded-2xl border transition-all text-left
-                                                ${isSelected
-                                                    ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
-                                                    : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
-                                                ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
-                                        >
-                                            <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors
-                                                ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
-                                                {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
-                                            </div>
-                                            <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
-                                                {sanitizeHtmlEntities(addon.name)}
-                                            </span>
-                                            <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
-                                                + R$ {addon.price.toFixed(2)}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                    ) : (
+                        <>
+                            {/* ETAPA 1: Opcionais gratis -- separados dos pagos (pedido do
+                                Ikarus, 28/09/2026). Nunca obrigatorio. */}
+                            {opcionaisGratis.length > 0 && (
+                                <div className="space-y-3">
+                                    <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
+                                        <span>Opcionais</span>
+                                        <span className="text-[10px] text-purple-400 font-bold uppercase">(sem custo — opcional)</span>
+                                    </h3>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {opcionaisGratis.map(addon => {
+                                            const isUnavailable = addon.isAvailable === false;
+                                            const isSelected = selectedAddons.some(a => a.id === addon.id);
+                                            return (
+                                                <button
+                                                    key={addon.id}
+                                                    disabled={isUnavailable}
+                                                    onClick={() => handleAddonToggle(addon)}
+                                                    className={`flex items-center p-3 rounded-2xl border transition-all text-left
+                                                        ${isSelected
+                                                            ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
+                                                            : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
+                                                        ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                                                >
+                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors
+                                                        ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
+                                                        {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
+                                                    </div>
+                                                    <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
+                                                        {sanitizeHtmlEntities(addon.name)}
+                                                    </span>
+                                                    <span className="font-black text-xs text-purple-400">Grátis</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ETAPA 2: Adicionais pagos -- lista separada, tambem opcional. */}
+                            {adicionaisPagos.length > 0 && (
+                                <div className="space-y-3">
+                                    <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
+                                        <span>Adicionais</span>
+                                        <span className="text-[10px] text-purple-400 font-bold uppercase">(opcional)</span>
+                                    </h3>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {adicionaisPagos.map(addon => {
+                                            const isUnavailable = addon.isAvailable === false;
+                                            const isSelected = selectedAddons.some(a => a.id === addon.id);
+                                            return (
+                                                <button
+                                                    key={addon.id}
+                                                    disabled={isUnavailable}
+                                                    onClick={() => handleAddonToggle(addon)}
+                                                    className={`flex items-center p-3 rounded-2xl border transition-all text-left
+                                                        ${isSelected
+                                                            ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
+                                                            : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
+                                                        ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                                                >
+                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors
+                                                        ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
+                                                        {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
+                                                    </div>
+                                                    <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
+                                                        {sanitizeHtmlEntities(addon.name)}
+                                                    </span>
+                                                    <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
+                                                        + R$ {addon.price.toFixed(2)}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
 
                 <div className="p-4 bg-[#100620] border-t border-purple-500/30 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
+                    {/* So' o fluxo de sabor/calda e' obrigatorio -- ver comentario
+                        equivalente em CustomerPageModern.tsx. */}
                     {hasMandatorySelection && (
                         <div className="mb-3 p-2 bg-amber-500/20 border border-amber-500/50 rounded-xl text-center text-xs font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
-                            {temFluxoDeCalda
-                                ? (!primeiraEtapaTemEscolha ? 'Escolha uma opção para continuar' : 'Escolha a calda para continuar')
-                                : 'Selecione pelo menos 1 opção / sabor para continuar'}
+                            {(!primeiraEtapaTemEscolha ? 'Escolha uma opção para continuar' : 'Escolha a calda para continuar')}
                         </div>
                     )}
                     <div className="flex items-center gap-4 mb-3">

@@ -1397,10 +1397,20 @@ const ItemDetailModal: React.FC<{
         });
     };
 
-    const isOptionRequired = temFluxoDeCalda ? true : outrosAddons.length > 0;
+    // Opcionais (gratis, price=0) x Adicionais (pagos, price>0) -- pedido do
+    // Ikarus, 28/09/2026: a lista generica misturava os dois e OBRIGAVA
+    // escolher pelo menos 1 para liberar o botao, mesmo quando so' havia
+    // opcionais de graca. Agora nenhum dos dois e' obrigatorio -- o cliente
+    // pode nao querer nem opcional nem adicional, o botao fica sempre
+    // liberado. So' se aplica ao fluxo GENERICO (sem grupo sabor/calda); o
+    // fluxo de Milkshake/Sorvete com calda continua exigindo escolha, sem
+    // mudanca (isso e' obrigatorio por natureza do produto, decisao anterior).
+    const opcionaisGratis = outrosAddons.filter(a => !a.price || a.price <= 0);
+    const adicionaisPagos = outrosAddons.filter(a => a.price > 0);
+
     const hasMandatorySelection = temFluxoDeCalda
         ? (!primeiraEtapaTemEscolha || !caldaEscolhida)
-        : (isOptionRequired && selectedAddons.length === 0);
+        : false;
 
     const handleAddToCart = () => {
         if (hasMandatorySelection) {
@@ -1575,51 +1585,97 @@ const ItemDetailModal: React.FC<{
                                 </div>
                             </div>
                         )
-                    ) : outrosAddons.length > 0 && (
-                        <div className="space-y-3">
-                            <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
-                                <span>Escolha seu sabor / adicionais</span>
-                                <span className="text-[10px] text-amber-400 font-bold uppercase">(Mínimo 1 opção)</span>
-                            </h3>
-                            <div className="grid grid-cols-1 gap-2">
-                                {outrosAddons.map(addon => {
-                                    const isUnavailable = addon.isAvailable === false;
-                                    const isSelected = selectedAddons.some(a => a.id === addon.id);
-                                    return (
-                                        <button
-                                            key={addon.id}
-                                            disabled={isUnavailable}
-                                            onClick={() => handleAddonToggle(addon)}
-                                            className={`flex items-center p-3 rounded-2xl border transition-all text-left
-                                                ${isSelected
-                                                    ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
-                                                    : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
-                                                ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
-                                        >
-                                            <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors
-                                                ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
-                                                {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
-                                            </div>
-                                            <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
-                                                {sanitizeHtmlEntities(addon.name)}
-                                            </span>
-                                            <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
-                                                + R$ {addon.price.toFixed(2)}
-                                            </span>
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
+                    ) : (
+                        <>
+                            {/* ETAPA 1: Opcionais gratis -- separados dos pagos (pedido do
+                                Ikarus, 28/09/2026). Nunca obrigatorio: "Nenhum" e' so' nao
+                                marcar nada, o botao de continuar ja fica liberado. */}
+                            {opcionaisGratis.length > 0 && (
+                                <div className="space-y-3">
+                                    <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
+                                        <span>Opcionais</span>
+                                        <span className="text-[10px] text-purple-400 font-bold uppercase">(sem custo — opcional)</span>
+                                    </h3>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {opcionaisGratis.map(addon => {
+                                            const isUnavailable = addon.isAvailable === false;
+                                            const isSelected = selectedAddons.some(a => a.id === addon.id);
+                                            return (
+                                                <button
+                                                    key={addon.id}
+                                                    disabled={isUnavailable}
+                                                    onClick={() => handleAddonToggle(addon)}
+                                                    className={`flex items-center p-3 rounded-2xl border transition-all text-left
+                                                        ${isSelected
+                                                            ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
+                                                            : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
+                                                        ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                                                >
+                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors
+                                                        ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
+                                                        {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
+                                                    </div>
+                                                    <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
+                                                        {sanitizeHtmlEntities(addon.name)}
+                                                    </span>
+                                                    <span className="font-black text-xs text-purple-400">Grátis</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* ETAPA 2: Adicionais pagos -- lista separada, tambem opcional. */}
+                            {adicionaisPagos.length > 0 && (
+                                <div className="space-y-3">
+                                    <h3 className="text-xs font-black text-purple-300 uppercase tracking-widest flex items-center justify-between">
+                                        <span>Adicionais</span>
+                                        <span className="text-[10px] text-purple-400 font-bold uppercase">(opcional)</span>
+                                    </h3>
+                                    <div className="grid grid-cols-1 gap-2">
+                                        {adicionaisPagos.map(addon => {
+                                            const isUnavailable = addon.isAvailable === false;
+                                            const isSelected = selectedAddons.some(a => a.id === addon.id);
+                                            return (
+                                                <button
+                                                    key={addon.id}
+                                                    disabled={isUnavailable}
+                                                    onClick={() => handleAddonToggle(addon)}
+                                                    className={`flex items-center p-3 rounded-2xl border transition-all text-left
+                                                        ${isSelected
+                                                            ? 'bg-orange-500/20 border-orange-500 shadow-[0_0_15px_rgba(249,115,22,0.2)]'
+                                                            : 'bg-[#1a0c33] border-purple-500/20 hover:border-purple-500/50'}
+                                                        ${isUnavailable ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                                                >
+                                                    <div className={`w-5 h-5 rounded-md border flex items-center justify-center transition-colors
+                                                        ${isSelected ? 'bg-orange-500 border-orange-500' : 'bg-[#130826] border-purple-500/40'}`}>
+                                                        {isSelected && <LucideCheck size={12} className="text-white stroke-[4]" />}
+                                                    </div>
+                                                    <span className="ml-3 flex-grow text-xs font-bold text-white uppercase tracking-tight">
+                                                        {sanitizeHtmlEntities(addon.name)}
+                                                    </span>
+                                                    <span className={`font-black text-xs ${isSelected ? 'text-amber-400' : 'text-purple-300'}`}>
+                                                        + R$ {addon.price.toFixed(2)}
+                                                    </span>
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+                        </>
                     )}
                 </div>
 
                 <div className="p-4 bg-[#100620] border-t border-purple-500/30 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
+                    {/* So' o fluxo de sabor/calda (Milkshake/Sorvete) e' obrigatorio --
+                        o fluxo generico de Opcionais/Adicionais NUNCA trava o botao
+                        (pedido do Ikarus, 28/09/2026: "vai que o cara nao quer nem o
+                        opcional e nem adicional"). */}
                     {hasMandatorySelection && (
                         <div className="mb-3 p-2 bg-amber-500/20 border border-amber-500/50 rounded-xl text-center text-xs font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
-                            {temFluxoDeCalda
-                                ? (!primeiraEtapaTemEscolha ? 'Escolha uma opção para continuar' : 'Escolha a calda para continuar')
-                                : 'Selecione pelo menos 1 opção / sabor para continuar'}
+                            {!primeiraEtapaTemEscolha ? 'Escolha uma opção para continuar' : 'Escolha a calda para continuar'}
                         </div>
                     )}
                     <div className="flex items-center gap-4 mb-3">
