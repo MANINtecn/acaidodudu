@@ -42,8 +42,18 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
     // Foca a busca sempre que o sinal mudar. So no numero, nao no mount —
     // undefined/0 iniciais nao devem roubar o foco sozinhos.
+    // BUG achado em 28/09/2026: F4 (Configuracoes -> Balcao) seguido rapido
+    // de F3 podia deixar o campo de busca com "foco fantasma" -- o mesmo
+    // sintoma do BootCheckModal (ver claude-acai.md), so' que disparado por
+    // navegacao entre abas em vez do boot. Causa: `.focus()` chamado no
+    // MESMO ciclo de render em que o CounterTab acabou de montar (o F4 monta
+    // o componente, o F3 chega colado e tenta focar antes do layout
+    // assentar). Corrigido com o mesmo remedio ja usado no campo de nome e
+    // no BootCheckModal: da 1 frame (requestAnimationFrame) antes de focar,
+    // para o elemento estar de fato pintado e o foco "pegar" de verdade.
     useEffect(() => {
-        if (focusSearchSignal) buscaProdutoRef.current?.focus();
+        if (!focusSearchSignal) return;
+        requestAnimationFrame(() => buscaProdutoRef.current?.focus());
     }, [focusSearchSignal]);
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
