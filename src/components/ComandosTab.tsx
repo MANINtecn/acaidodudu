@@ -19,6 +19,7 @@ const ATALHOS: { tecla: string; oque: string }[] = [
     { tecla: '100-941', oque: 'Codigo do produto' },
     { tecla: '1-30', oque: 'Numero da mesa' },
     { tecla: 'R', oque: 'Retirada (sem mesa)' },
+    { tecla: 'B', oque: 'Abre a Balanca (pesagem manual)' },
     { tecla: 'N', oque: 'Nome do cliente' },
     { tecla: 'ENTER', oque: '1x monta / 2x envia' },
     { tecla: 'ESC', oque: 'Cancela tudo' },

@@ -415,6 +415,23 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         setCart(prev => [...prev, newItem]);
     };
 
+    /**
+     * Confirma o peso digitado no modal da Balança e joga no carrinho --
+     * extraida do onClick do botao "Adicionar ao Pedido" para o ENTER
+     * dentro do campo de peso poder chamar a MESMA logica, sem duplicar
+     * (pedido do Ikarus, 28/09/2026: "da enter pra agir como adicionar ao
+     * pedido"). Depois disso o fluxo de vincular a mesa continua igual,
+     * sem mudanca nenhuma.
+     */
+    const confirmarPesoManual = () => {
+        if (!manualWeight || manualWeight <= 0) {
+            alert('Por favor, informe ou capture um peso válido.');
+            return;
+        }
+        handleScaleItemAdd(manualWeight, scaleItemName || 'Açaí/Sorvete por Quilo', scalePricePerKg || 60);
+        setIsScaleModalOpen(false);
+    };
+
     const handleLaunchScaleItemToOrder = (weightKg: number) => {
         if (!weightKg || weightKg <= 0) return;
         const currentPricePerKg = scalePricePerKg || 60;
@@ -656,6 +673,21 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     titulo: `RETIRADA · ${descR} · R$ ${(valorPesoR + valorCarrinhoR).toFixed(2)}`,
                     detalhe: 'ENTER confirma e envia · N para dar um nome · ESC cancela'
                 });
+                return;
+            }
+
+            // B: abre o modal da Balança para pesagem MANUAL -- atalho pedido
+            // pelo Ikarus, 28/09/2026, para nao depender do clique do mouse.
+            // So' abre se nao houver outro modal/aviso em andamento (mesma
+            // regra do R/N) para nao competir com um fluxo ja em curso.
+            if (e.key.toUpperCase() === 'B' && !avisoAtalho && !modalAbertoRef.current) {
+                e.preventDefault();
+                // Comeca do peso ja estavel na balanca automatica, se houver
+                // (mesmo comportamento do clique no botao "Balança" do mouse,
+                // ver onClick do botao abaixo) -- mas o campo do modal fica
+                // INDEPENDENTE dali em diante, nao acompanha mais o stream.
+                setManualWeight(isScaleStable ? scaleWeight : 0);
+                setIsScaleModalOpen(true);
                 return;
             }
 
@@ -1879,6 +1911,18 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                         step="0.005"
                                         value={manualWeight || ''}
                                         onChange={e => setManualWeight(parseFloat(e.target.value) || 0)}
+                                        onKeyDown={e => {
+                                            // ENTER aqui dentro age como clicar em "Adicionar ao
+                                            // Pedido" -- pedido do Ikarus, 28/09/2026. stopPropagation
+                                            // evita que o Enter tambem chegue no handler global de
+                                            // atalhos do Balcao (ele ja ignora quando modalAbertoRef
+                                            // esta true, mas aqui reforça no proprio campo).
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                confirmarPesoManual();
+                                            }
+                                        }}
                                         placeholder="Digite o peso aqui (ex: 0.350)"
                                         autoFocus
                                         className="w-full px-4 py-2.5 bg-blue-50 dark:bg-blue-900/30 border-2 border-blue-400 rounded-xl font-black text-xl text-blue-700 dark:text-blue-300 text-center"
@@ -1932,14 +1976,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
                                 <button
                                     type="button"
-                                    onClick={() => {
-                                        if (!manualWeight || manualWeight <= 0) {
-                                            alert('Por favor, informe ou capture um peso válido.');
-                                            return;
-                                        }
-                                        handleScaleItemAdd(manualWeight, scaleItemName || 'Açaí/Sorvete por Quilo', scalePricePerKg || 60);
-                                        setIsScaleModalOpen(false);
-                                    }}
+                                    onClick={confirmarPesoManual}
                                     className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black uppercase text-xs tracking-wider shadow-lg shadow-emerald-600/20"
                                 >
                                     Adicionar ao Pedido
