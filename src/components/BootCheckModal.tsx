@@ -78,7 +78,35 @@ const BootCheckModal: React.FC<Props> = ({ isScaleEnabled, scaleBaudRate }) => {
           jaConfirmouRef.current = true;
           const api = (window as any).electron;
           api?.confirmarFocoOk?.();
-          setEtapa('pronto');
+          // BUG achado em 28/09/2026: o modal desmontava (return null)
+          // logo depois de confirmar o foco -- so' que era ESTE input
+          // oculto que estava focado no instante do desmonte. Remover do
+          // DOM um elemento com foco faz o Chromium devolver o foco para
+          // o <body> (nenhum campo real da tela), NAO para o proximo
+          // elemento focavel automaticamente. Ficava um "foco fantasma": a
+          // tela parecia normal, mas nenhum campo aceitava clique/digitar
+          // ate o operador minimizar e restaurar -- so' que agora
+          // acontecendo "do nada" no meio do uso, nao mais no boot (o
+          // sintoma mudou de lugar, nao sumiu).
+          //
+          // Corrigido: antes de desmontar, procura o primeiro campo REAL
+          // da tela (INPUT/TEXTAREA visivel, fora deste modal) e foca nele
+          // explicitamente -- so' desmontando depois. Se nao achar nenhum
+          // ainda (tela por tras ainda montando), so' da blur() no input
+          // oculto e deixa o foco cair no <body> mesmo -- pior que hoje
+          // nao fica, e o autoFocus dos proprios campos (ja usado em
+          // varios modais do app) deve assumir no proprio ciclo seguinte.
+          requestAnimationFrame(() => {
+            const candidato = document.querySelector<HTMLElement>(
+              'input:not([aria-hidden="true"]):not([tabindex="-1"]), textarea:not([aria-hidden="true"])'
+            );
+            if (candidato) {
+              candidato.focus();
+            } else {
+              input.blur();
+            }
+            setEtapa('pronto');
+          });
           return;
         }
       }
