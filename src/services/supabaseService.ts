@@ -596,7 +596,8 @@ export const saveFiscalConfig = async (
  */
 export const criarNotaFiscalPendente = async (params: {
     storeId: string;
-    orderId: string;
+    /** Opcional: o botao manual de teste (FiscalTab) nao tem pedido real. */
+    orderId?: string;
     serie: number;
     numero: number;
     valorTotal: number;
@@ -606,7 +607,7 @@ export const criarNotaFiscalPendente = async (params: {
         .from('notas_fiscais')
         .insert({
             store_id: params.storeId,
-            order_id: params.orderId,
+            order_id: params.orderId || null,
             serie: params.serie,
             numero: params.numero,
             valor_total: params.valorTotal,
@@ -965,30 +966,58 @@ const dispararEmissaoNotaFiscal = async (order: Order, storeId: string): Promise
         return;
     }
 
+    // Repassa para a rotina compartilhada -- mesma usada pelo botao manual
+    // da tela Nota Fiscal (emitirNotaFiscalAgora). Erro aqui NUNCA propaga:
+    // o pedido ja foi criado, a venda ja aconteceu.
+    try {
+        await emitirNotaFiscalAgora(storeId, order.total, order.id, config);
+    } catch (e) {
+        console.error('[NFC-e] Falha ao disparar emissao automatica (nota fica pendente):', e);
+    }
+};
+
+/**
+ * Emite (tenta emitir) uma NFC-e -- rotina compartilhada entre o gatilho
+ * automatico do checkout (`dispararEmissaoNotaFiscal`, silencioso) e o
+ * botao manual "Gerar Nota Fiscal (teste)" da tela Admin (`FiscalTab.tsx`,
+ * que PRECISA do resultado para mostrar sucesso/erro ao Ikarus).
+ * `orderId` e' opcional -- o botao manual nao tem pedido real, gera uma
+ * nota AVULSA so para validar a integracao (chave `order_id` fica NULL).
+ *
+ * Botao existe e chama isto de verdade mesmo sem provedor contratado --
+ * pedido explicito do Ikarus (28/09/2026): "deixa o botao pronto... eu sei
+ * muito bem que ele nao vai funcionar" ainda. Sem provedor, a Edge Function
+ * responde com resultado.sucesso=false e motivo explicito -- nao e' erro
+ * de bug, e' o estado real do sistema.
+ */
+export const emitirNotaFiscalAgora = async (
+    storeId: string,
+    valorTotal: number,
+    orderId?: string,
+    configJaCarregada?: FiscalConfig | null
+): Promise<{ nota: NotaFiscal; resultado: any }> => {
+    const config = configJaCarregada ?? await fetchFiscalConfig(storeId);
+    if (!config) throw new Error('Configuração fiscal da loja ainda não foi salva.');
+
     const serie = config.serie_padrao || 1;
     const numero = await calcularProximoNumeroNota(storeId, serie, config.numero_inicial);
 
-    // Grava como 'pendente' ANTES de qualquer chamada externa.
+    // Grava como 'pendente' ANTES de qualquer chamada externa (Regra 7 da
+    // skill nfce) -- se a luz cair no meio da chamada, a nota fica
+    // registrada em vez de sumir.
     const nota = await criarNotaFiscalPendente({
         storeId,
-        orderId: order.id!,
+        orderId,
         serie,
         numero,
-        valorTotal: order.total,
+        valorTotal,
     });
 
-    // Repassa para a Edge Function, que decide o adaptador certo (Focus
-    // NFe / eNotas / outro) a partir de `provedor_api`. Timeout curto e
-    // fire-and-forget: se a Sefaz estiver fora do ar, a Edge Function marca
-    // a nota como 'contingencia' e uma rotina de reprocessamento (a criar)
-    // tenta de novo depois -- a venda ja aconteceu, nunca para por causa disto.
-    try {
-        await supabase.functions.invoke('emitir-nfce', {
-            body: { notaFiscalId: nota.id, storeId, orderId: order.id },
-        });
-    } catch (e) {
-        console.error('[NFC-e] Edge Function emitir-nfce falhou (nota fica pendente):', e);
-    }
+    const { data, error } = await supabase.functions.invoke('emitir-nfce', {
+        body: { notaFiscalId: nota.id, storeId, orderId: orderId || null },
+    });
+    if (error) throw error;
+    return { nota, resultado: data?.resultado };
 };
 
 export const updateOrder = async (orderId: string, updates: any) => {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { FileText, Save, Lock, AlertCircle, Upload, CheckCircle2, RefreshCw } from 'lucide-react';
+import { FileText, Save, AlertCircle, Upload, CheckCircle2, RefreshCw, Zap } from 'lucide-react';
 import type { FiscalConfig, NotaFiscal } from '../types';
-import { fetchFiscalConfig, saveFiscalConfig, uploadCertificadoFiscal, fetchNotasFiscais } from '../services/supabaseService';
+import { fetchFiscalConfig, saveFiscalConfig, uploadCertificadoFiscal, fetchNotasFiscais, emitirNotaFiscalAgora } from '../services/supabaseService';
 
 interface FiscalTabProps {
     storeId: string;
@@ -58,6 +58,8 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
     const [notas, setNotas] = useState<NotaFiscal[]>([]);
     const [carregandoNotas, setCarregandoNotas] = useState(false);
     const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
+    const [emitindo, setEmitindo] = useState(false);
+    const [resultadoEmissao, setResultadoEmissao] = useState<{ ok: boolean; mensagem: string } | null>(null);
 
     useEffect(() => {
         let cancelado = false;
@@ -145,6 +147,37 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
             alert('Não foi possível enviar o certificado. Tente novamente.');
         } finally {
             setEnviandoCertificado(false);
+        }
+    };
+
+    /**
+     * Botao "Gerar Nota Fiscal (teste)" -- pedido explicito do Ikarus
+     * (28/09/2026): o botao deve EXISTIR e ser CLICAVEL mesmo sem provedor
+     * contratado ainda. Chama a mesma Edge Function que o checkout real usa
+     * (`emitirNotaFiscalAgora`), so que sem pedido vinculado (nota avulsa,
+     * so para validar a integracao). Sem provedor configurado, o resultado
+     * vem com sucesso=false e motivo explicito -- mostrado na tela como
+     * "Contingência", nao como bug.
+     */
+    const handleGerarNotaTeste = async () => {
+        setEmitindo(true);
+        setResultadoEmissao(null);
+        try {
+            const { nota, resultado } = await emitirNotaFiscalAgora(storeId, 0.01, undefined, config as FiscalConfig);
+            if (resultado?.sucesso) {
+                setResultadoEmissao({ ok: true, mensagem: `Nota ${nota.serie}/${nota.numero} autorizada! Protocolo: ${resultado.protocoloAutorizacao}` });
+            } else {
+                setResultadoEmissao({
+                    ok: false,
+                    mensagem: `Nota ${nota.serie}/${nota.numero} não saiu: ${resultado?.motivoRejeicao || 'motivo desconhecido'}`,
+                });
+            }
+            carregarNotas();
+        } catch (err: any) {
+            console.error('[Fiscal] erro ao gerar nota de teste:', err);
+            setResultadoEmissao({ ok: false, mensagem: err?.message || 'Falha ao chamar a emissão. Veja o console.' });
+        } finally {
+            setEmitindo(false);
         }
     };
 
@@ -388,26 +421,23 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                 </div>
             </div>
 
-            {/* Bloco 3: Emissao — real quando ha provedor, bloqueada quando nao ha */}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 relative overflow-hidden">
-                {!provedorConfigurado && (
-                    <div className="absolute inset-0 bg-gray-50/80 dark:bg-gray-900/60 backdrop-blur-[1px] z-10 flex items-center justify-center">
-                        <div className="bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-xl px-6 py-4 shadow-lg max-w-sm text-center">
-                            <Lock size={24} className="text-amber-500 mx-auto mb-2" />
-                            <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-1">
-                                Disponível após contratar a API fiscal
-                            </p>
-                            <p className="text-[11px] text-gray-500">
-                                Escolha um provedor no bloco acima para ativar a emissão de NFC-e.
-                            </p>
-                        </div>
-                    </div>
-                )}
-
-                <h3 className={`text-lg font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100 ${!provedorConfigurado ? 'opacity-40' : ''}`}>
+            {/* Bloco 3: Emissao — botao SEMPRE ativo, mesmo sem provedor (pedido
+                explicito do Ikarus, 28/09/2026: o front tem que estar pronto
+                para quando o provedor for escolhido, sem eu precisar voltar
+                a mexer em tela. Sem provedor, o clique mostra o motivo real
+                em vez de fingir que nao existe.) */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100">
                     <AlertCircle size={20} /> Emissão de Notas
                 </h3>
-                <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 ${!provedorConfigurado ? 'opacity-40 pointer-events-none' : ''}`}>
+                {!provedorConfigurado && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 font-bold mb-3">
+                        ⚠️ Nenhum provedor de API fiscal contratado ainda — o botão abaixo funciona
+                        (grava a nota e chama o sistema), mas a nota vai ficar em "Contingência" até
+                        escolher um provedor no bloco acima e configurar o acesso dele.
+                    </p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4">
                     <div className="p-4 bg-gray-100 dark:bg-gray-900 rounded-lg text-center">
                         <span className="block text-2xl font-black text-gray-700 dark:text-gray-200">{notasDoMes.length}</span>
                         <span className="text-[11px] text-gray-500">Notas este mês</span>
@@ -423,6 +453,33 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                     >
                         <span className="block text-sm font-bold">{mostrarRelatorio ? 'Ocultar relatório' : 'Ver relatório de notas'}</span>
                     </button>
+                </div>
+
+                <div className="border-t border-gray-100 dark:border-gray-700 mt-4 pt-4">
+                    <button
+                        type="button"
+                        onClick={handleGerarNotaTeste}
+                        disabled={emitindo || !config.cnpj}
+                        title={!config.cnpj ? 'Preencha e salve os Dados da Empresa primeiro' : undefined}
+                        className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-lg font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-2"
+                    >
+                        <Zap size={16} className={emitindo ? 'animate-pulse' : ''} />
+                        {emitindo ? 'Gerando...' : 'Gerar Nota Fiscal (teste)'}
+                    </button>
+                    <p className="text-[11px] text-gray-500 mt-2">
+                        Gera uma nota avulsa de R$ 0,01 só para testar a integração de ponta a ponta —
+                        não vincula a nenhum pedido real.
+                    </p>
+
+                    {resultadoEmissao && (
+                        <div className={`mt-3 rounded-lg px-4 py-3 text-sm font-bold ${
+                            resultadoEmissao.ok
+                                ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                                : 'bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400'
+                        }`}>
+                            {resultadoEmissao.mensagem}
+                        </div>
+                    )}
                 </div>
             </div>
 
