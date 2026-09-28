@@ -178,6 +178,24 @@ export interface FiscalConfig {
   provedor_api?: string;
   csc_id?: string;
   csc_token?: string;
+  /**
+   * Serie e numero inicial da NFC-e — Fase 2, 28/09/2026. `numero_inicial`
+   * so deve ser configurado depois de confirmar com o Multipedidos se
+   * houve emissao em setembro/2026 (ver claude-acai.md); usar o numero
+   * ERRADO aqui faz o sistema novo colidir com uma nota ja emitida e a
+   * SEFAZ rejeita por duplicidade.
+   */
+  serie_padrao?: number;
+  numero_inicial?: number;
+  /**
+   * Metadados do certificado A1 -- NUNCA o arquivo nem a senha aqui (ficam
+   * no Supabase Storage privado + secret da Edge Function). So o que a
+   * tela precisa para mostrar "certificado enviado, valido ate X".
+   */
+  certificado_nome_arquivo?: string;
+  certificado_validade?: string;
+  certificado_enviado_em?: string;
+  certificado_storage_path?: string;
 }
 
 export type NotaFiscalStatus = 'pendente' | 'autorizada' | 'rejeitada' | 'cancelada' | 'contingencia';
@@ -198,6 +216,9 @@ export interface NotaFiscal {
   xml?: string;
   danfe_url?: string;
   emitida_por_estacao?: string;
+  /** Quantas vezes o reprocessamento (contingencia) ja tentou reenviar. */
+  tentativas_reprocessamento?: number;
+  ultima_tentativa_em?: string;
 }
 
 export type PaymentMethod = 'Dinheiro' | 'Cartão' | 'PIX';

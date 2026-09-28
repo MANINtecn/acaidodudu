@@ -1,28 +1,40 @@
 import { useEffect, useState } from 'react';
-import { FileText, Save, Lock, AlertCircle } from 'lucide-react';
-import type { FiscalConfig } from '../types';
-import { fetchFiscalConfig, saveFiscalConfig } from '../services/supabaseService';
+import { FileText, Save, Lock, AlertCircle, Upload, CheckCircle2, RefreshCw } from 'lucide-react';
+import type { FiscalConfig, NotaFiscal } from '../types';
+import { fetchFiscalConfig, saveFiscalConfig, uploadCertificadoFiscal, fetchNotasFiscais } from '../services/supabaseService';
 
 interface FiscalTabProps {
     storeId: string;
 }
 
+/** Provedores de API fiscal conhecidos -- plug-and-play (Ikarus, 28/09/2026):
+ * cada copia do app/cliente escolhe o seu aqui, a Edge Function `emitir-nfce`
+ * roteia pelo valor salvo. Adicionar um provedor novo = so mexer nesta
+ * lista + criar o adaptador correspondente na Edge Function, nunca mexer
+ * nesta tela de novo. */
+const PROVEDORES_API = [
+    { value: '', label: 'Nenhum contratado ainda' },
+    { value: 'focus_nfe', label: 'Focus NFe' },
+    { value: 'enotas', label: 'eNotas' },
+];
+
 /**
- * Aba "Nota Fiscal" — cadastro dos dados fiscais da loja (Fase 1 do plano
- * de NFC-e, ver claude-acai.md "ARQUITETURA TECNICA DA NFC-e"). Pedido do
- * Ikarus, 22/09/2026: ele quer VER onde vai cadastrar CNPJ e onde vai
- * emitir, mesmo antes de escolhermos a API fiscal.
+ * Aba "Nota Fiscal" — cadastro + emissao da loja (NFC-e). Ver
+ * claude-acai.md, "ARQUITETURA TECNICA DA NFC-e".
  *
- * Por isso a tela tem 2 blocos:
- * 1. Cadastro — funciona hoje, salva em `fiscal_config`.
- * 2. Emissao — visivel mas BLOQUEADA, com aviso do motivo. So liga na
- *    Fase 2, depois de contratada a API (Focus NFe / TecnoSpeed / Webmania
- *    — comparativo no diario) e criada a Edge Function que guarda o token.
+ * Blocos:
+ * 1. Dados da Empresa — cadastro basico (CNPJ, endereco, CSC).
+ * 2. Provedor + Numeracao + Certificado — plug-and-play por loja: cada
+ *    cliente escolhe seu provedor de API fiscal e configura serie/numero
+ *    inicial sem precisar mexer em codigo (Fase 2, 28/09/2026).
+ * 3. Emissao — mostra estatisticas reais (notas do mes, ultimo numero) a
+ *    partir de `notas_fiscais`. So fica "ativa de verdade" quando houver
+ *    provedor configurado; sem provedor, mostra o aviso de bloqueio.
+ * 4. Relatorio — lista as notas emitidas/pendentes/rejeitadas.
  *
- * O CSC (Codigo de Seguranca do Contribuinte) e tratado como campo de senha
+ * O CSC (Codigo de Seguranca do Contribuinte) e' tratado como campo de senha
  * que so envia ao salvar SE foi digitado de novo — nunca mostra o valor
- * salvo de volta na tela, mesmo padrao de "nao expor segredo que ja foi
- * gravado".
+ * salvo de volta na tela.
  */
 export default function FiscalTab({ storeId }: FiscalTabProps) {
     const [config, setConfig] = useState<Partial<FiscalConfig>>({
@@ -34,12 +46,18 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
         carga_tributaria_aprox: 4.00,
         regime_tributario: 1,
         uf: 'TO',
+        serie_padrao: 1,
     });
     const [cscToken, setCscToken] = useState(''); // nunca pre-preenchido
     const [temCscSalvo, setTemCscSalvo] = useState(false);
     const [carregando, setCarregando] = useState(true);
     const [salvando, setSalvando] = useState(false);
     const [salvo, setSalvo] = useState(false);
+    const [enviandoCertificado, setEnviandoCertificado] = useState(false);
+
+    const [notas, setNotas] = useState<NotaFiscal[]>([]);
+    const [carregandoNotas, setCarregandoNotas] = useState(false);
+    const [mostrarRelatorio, setMostrarRelatorio] = useState(false);
 
     useEffect(() => {
         let cancelado = false;
@@ -59,6 +77,23 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
         })();
         return () => { cancelado = true; };
     }, [storeId]);
+
+    const carregarNotas = async () => {
+        setCarregandoNotas(true);
+        try {
+            const lista = await fetchNotasFiscais(storeId);
+            setNotas(lista);
+        } catch (err) {
+            console.error('[Fiscal] erro ao carregar notas:', err);
+        } finally {
+            setCarregandoNotas(false);
+        }
+    };
+
+    useEffect(() => {
+        if (mostrarRelatorio) carregarNotas();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [mostrarRelatorio]);
 
     const atualizar = (campo: keyof FiscalConfig, valor: string | number) => {
         setConfig(prev => ({ ...prev, [campo]: valor }));
@@ -90,6 +125,29 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
         }
     };
 
+    const handleUploadCertificado = async (file: File) => {
+        if (!/\.(pfx|p12)$/i.test(file.name)) {
+            alert('O certificado A1 deve ser um arquivo .pfx ou .p12.');
+            return;
+        }
+        setEnviandoCertificado(true);
+        try {
+            const { path, nomeArquivo } = await uploadCertificadoFiscal(file, storeId);
+            const salvo = await saveFiscalConfig(storeId, {
+                certificado_nome_arquivo: nomeArquivo,
+                certificado_storage_path: path,
+                certificado_enviado_em: new Date().toISOString(),
+            });
+            setConfig(salvo);
+            alert('Certificado enviado. A senha dele deve ser passada separadamente para configurar na Edge Function (nunca aqui na tela).');
+        } catch (err) {
+            console.error('[Fiscal] erro ao enviar certificado:', err);
+            alert('Não foi possível enviar o certificado. Tente novamente.');
+        } finally {
+            setEnviandoCertificado(false);
+        }
+    };
+
     const campoTexto = (label: string, campo: keyof FiscalConfig, placeholder?: string, largura = '') => (
         <div className={largura}>
             <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">{label}</label>
@@ -106,6 +164,22 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
     if (carregando) {
         return <div className="max-w-4xl mx-auto"><p className="text-sm text-gray-400">Carregando...</p></div>;
     }
+
+    const provedorConfigurado = !!config.provedor_api;
+    const notasDoMes = notas.filter(n => {
+        const d = new Date(n.data_emissao);
+        const hoje = new Date();
+        return d.getMonth() === hoje.getMonth() && d.getFullYear() === hoje.getFullYear();
+    });
+    const ultimaNota = [...notas].sort((a, b) => b.numero - a.numero)[0];
+
+    const corStatus = (status: NotaFiscal['status']) => ({
+        pendente: 'text-amber-600 bg-amber-50 dark:bg-amber-900/20',
+        autorizada: 'text-green-600 bg-green-50 dark:bg-green-900/20',
+        rejeitada: 'text-red-600 bg-red-50 dark:bg-red-900/20',
+        cancelada: 'text-gray-500 bg-gray-100 dark:bg-gray-800',
+        contingencia: 'text-orange-600 bg-orange-50 dark:bg-orange-900/20',
+    }[status]);
 
     return (
         <div className="max-w-4xl mx-auto space-y-6">
@@ -210,38 +284,202 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                 </div>
             </div>
 
-            {/* Bloco 2: Emissao — visivel, bloqueada */}
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gray-50/80 dark:bg-gray-900/60 backdrop-blur-[1px] z-10 flex items-center justify-center">
-                    <div className="bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-xl px-6 py-4 shadow-lg max-w-sm text-center">
-                        <Lock size={24} className="text-amber-500 mx-auto mb-2" />
-                        <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-1">
-                            Disponível após contratar a API fiscal
-                        </p>
-                        <p className="text-[11px] text-gray-500">
-                            A emissão de NFC-e depende de um provedor (Focus NFe, TecnoSpeed ou Webmania) ainda não
-                            contratado. O cadastro acima já fica pronto para quando isso acontecer.
-                        </p>
-                    </div>
+            {/* Bloco 2: Provedor + Numeracao + Certificado — plug-and-play por loja */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                <h3 className="text-lg font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                    <FileText size={20} className="text-purple-600" /> Provedor, Numeração e Certificado
+                </h3>
+                <p className="text-[11px] text-gray-500 mb-4">
+                    Estes campos são desta loja específica — trocar o provedor de API fiscal ou os dados abaixo
+                    não exige mexer em código, só preencher aqui.
+                </p>
+
+                <div className="border-b border-gray-100 dark:border-gray-700 pb-4 mb-4">
+                    <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">
+                        Provedor de API Fiscal
+                    </label>
+                    <select
+                        value={config.provedor_api || ''}
+                        onChange={e => atualizar('provedor_api', e.target.value)}
+                        className="w-full sm:w-72 px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-purple-500"
+                    >
+                        {PROVEDORES_API.map(p => (
+                            <option key={p.value} value={p.value}>{p.label}</option>
+                        ))}
+                    </select>
+                    <p className="text-[11px] text-gray-500 mt-2">
+                        O token de acesso do provedor NUNCA é digitado aqui — fica configurado direto no servidor
+                        (Edge Function), fora do alcance do aplicativo instalado no computador da loja.
+                    </p>
                 </div>
 
-                <h3 className="text-lg font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100 opacity-40">
-                    <AlertCircle size={20} /> Emissão de Notas
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 opacity-40 pointer-events-none">
-                    <button className="p-4 bg-gray-100 dark:bg-gray-900 rounded-lg text-center">
-                        <span className="block text-2xl font-black text-gray-400">0</span>
-                        <span className="text-[11px] text-gray-500">Notas este mês</span>
-                    </button>
-                    <button className="p-4 bg-gray-100 dark:bg-gray-900 rounded-lg text-center">
-                        <span className="block text-2xl font-black text-gray-400">—</span>
-                        <span className="text-[11px] text-gray-500">Último número emitido</span>
-                    </button>
-                    <button className="p-4 bg-purple-600 rounded-lg text-center text-white">
-                        <span className="block text-sm font-bold">Baixar XMLs do mês</span>
+                <div className="border-b border-gray-100 dark:border-gray-700 pb-4 mb-4">
+                    <p className="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wide">
+                        Numeração da NFC-e
+                    </p>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">Série</label>
+                            <input
+                                type="number"
+                                value={config.serie_padrao ?? 1}
+                                onChange={e => atualizar('serie_padrao', parseInt(e.target.value) || 1)}
+                                className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">
+                                Número inicial (próximo a emitir)
+                            </label>
+                            <input
+                                type="number"
+                                value={config.numero_inicial ?? ''}
+                                onChange={e => atualizar('numero_inicial', parseInt(e.target.value) || 0)}
+                                placeholder="Ex: 25881"
+                                className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                        </div>
+                    </div>
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2 font-bold">
+                        ⚠️ Preencha com o ÚLTIMO número emitido pelo sistema anterior + 1. Um número errado aqui
+                        pode colidir com uma nota já emitida e causar rejeição na SEFAZ.
+                    </p>
+                </div>
+
+                <div>
+                    <p className="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wide">
+                        Certificado Digital A1
+                    </p>
+                    {config.certificado_nome_arquivo ? (
+                        <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2 mb-2">
+                            <CheckCircle2 size={16} />
+                            <span>{config.certificado_nome_arquivo} — enviado</span>
+                        </div>
+                    ) : (
+                        <p className="text-[11px] text-gray-500 mb-2">Nenhum certificado enviado ainda.</p>
+                    )}
+                    <label className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 rounded-lg text-sm font-bold cursor-pointer transition-all">
+                        <Upload size={16} />
+                        {enviandoCertificado ? 'Enviando...' : 'Enviar arquivo .pfx/.p12'}
+                        <input
+                            type="file"
+                            accept=".pfx,.p12"
+                            className="hidden"
+                            disabled={enviandoCertificado}
+                            onChange={e => e.target.files?.[0] && handleUploadCertificado(e.target.files[0])}
+                        />
+                    </label>
+                    <p className="text-[11px] text-gray-500 mt-2">
+                        O arquivo fica guardado de forma privada, sem acesso pelo aplicativo instalado na loja.
+                        A senha do certificado deve ser passada separadamente (nunca digitada aqui).
+                    </p>
+                </div>
+
+                <div className="flex items-center gap-3 mt-4">
+                    <button
+                        type="button"
+                        onClick={handleSalvar}
+                        disabled={salvando}
+                        className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-60 text-white rounded-lg font-bold text-sm transition-all active:scale-95 flex items-center gap-2"
+                    >
+                        <Save size={16} />
+                        {salvando ? 'Salvando...' : 'Salvar'}
                     </button>
                 </div>
             </div>
+
+            {/* Bloco 3: Emissao — real quando ha provedor, bloqueada quando nao ha */}
+            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 relative overflow-hidden">
+                {!provedorConfigurado && (
+                    <div className="absolute inset-0 bg-gray-50/80 dark:bg-gray-900/60 backdrop-blur-[1px] z-10 flex items-center justify-center">
+                        <div className="bg-white dark:bg-gray-800 border border-amber-300 dark:border-amber-700 rounded-xl px-6 py-4 shadow-lg max-w-sm text-center">
+                            <Lock size={24} className="text-amber-500 mx-auto mb-2" />
+                            <p className="text-sm font-bold text-gray-800 dark:text-gray-100 mb-1">
+                                Disponível após contratar a API fiscal
+                            </p>
+                            <p className="text-[11px] text-gray-500">
+                                Escolha um provedor no bloco acima para ativar a emissão de NFC-e.
+                            </p>
+                        </div>
+                    </div>
+                )}
+
+                <h3 className={`text-lg font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100 ${!provedorConfigurado ? 'opacity-40' : ''}`}>
+                    <AlertCircle size={20} /> Emissão de Notas
+                </h3>
+                <div className={`grid grid-cols-1 sm:grid-cols-3 gap-4 mt-4 ${!provedorConfigurado ? 'opacity-40 pointer-events-none' : ''}`}>
+                    <div className="p-4 bg-gray-100 dark:bg-gray-900 rounded-lg text-center">
+                        <span className="block text-2xl font-black text-gray-700 dark:text-gray-200">{notasDoMes.length}</span>
+                        <span className="text-[11px] text-gray-500">Notas este mês</span>
+                    </div>
+                    <div className="p-4 bg-gray-100 dark:bg-gray-900 rounded-lg text-center">
+                        <span className="block text-2xl font-black text-gray-700 dark:text-gray-200">{ultimaNota?.numero ?? '—'}</span>
+                        <span className="text-[11px] text-gray-500">Último número emitido</span>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setMostrarRelatorio(v => !v)}
+                        className="p-4 bg-purple-600 hover:bg-purple-700 rounded-lg text-center text-white transition-all"
+                    >
+                        <span className="block text-sm font-bold">{mostrarRelatorio ? 'Ocultar relatório' : 'Ver relatório de notas'}</span>
+                    </button>
+                </div>
+            </div>
+
+            {/* Bloco 4: Relatorio de notas */}
+            {mostrarRelatorio && (
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-gray-100">Notas Fiscais</h3>
+                        <button
+                            type="button"
+                            onClick={carregarNotas}
+                            disabled={carregandoNotas}
+                            className="text-sm text-purple-600 hover:text-purple-700 font-bold flex items-center gap-1"
+                        >
+                            <RefreshCw size={14} className={carregandoNotas ? 'animate-spin' : ''} />
+                            Atualizar
+                        </button>
+                    </div>
+
+                    {notas.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-6">
+                            {carregandoNotas ? 'Carregando...' : 'Nenhuma nota registrada ainda.'}
+                        </p>
+                    ) : (
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="text-left text-[11px] uppercase text-gray-500 border-b border-gray-100 dark:border-gray-700">
+                                        <th className="py-2 pr-3">Série/Número</th>
+                                        <th className="py-2 pr-3">Status</th>
+                                        <th className="py-2 pr-3">Valor</th>
+                                        <th className="py-2 pr-3">Data</th>
+                                        <th className="py-2 pr-3">Detalhe</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {notas.map(nota => (
+                                        <tr key={nota.id} className="border-b border-gray-50 dark:border-gray-800">
+                                            <td className="py-2 pr-3 font-mono">{nota.serie}/{nota.numero}</td>
+                                            <td className="py-2 pr-3">
+                                                <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${corStatus(nota.status)}`}>
+                                                    {nota.status}
+                                                </span>
+                                            </td>
+                                            <td className="py-2 pr-3">R$ {nota.valor_total.toFixed(2)}</td>
+                                            <td className="py-2 pr-3">{new Date(nota.data_emissao).toLocaleString('pt-BR')}</td>
+                                            <td className="py-2 pr-3 text-[11px] text-gray-500">
+                                                {nota.motivo_rejeicao || (nota.status === 'autorizada' ? nota.protocolo_autorizacao : '—')}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     );
 }

@@ -1,8 +1,10 @@
 import { createClient } from '@supabase/supabase-js';
-import { Category, MenuItem, Addon, Order, Settings, Store, Customer, CashSession, CashTransaction, Promotion, LoyaltyRewardItem, FiscalConfig } from '../types';
+import { Category, MenuItem, Addon, Order, Settings, Store, Customer, CashSession, CashTransaction, Promotion, LoyaltyRewardItem, FiscalConfig, NotaFiscal } from '../types';
 
-import { storage } from './firebase';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+// Firebase removido em 28/09/2026: nunca esteve configurado neste projeto
+// (todas as chaves em .env.local vazias) -- uploadMenuImage/uploadStoreLogo
+// migraram para o Supabase Storage, bucket `assets` (ver essas funcoes
+// abaixo). Ver claude-acai.md, "Upload de imagem migrado de Firebase".
 
 // Configuração via variáveis de ambiente (.env / .env.local).
 // Defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY quando o novo banco for criado.
@@ -578,6 +580,128 @@ export const saveFiscalConfig = async (
     return data;
 };
 
+/**
+ * NFC-e — Fase 2, 28/09/2026. So a parte de BANCO (gravar/ler/atualizar
+ * `notas_fiscais`). A chamada de verdade para a API fiscal e' feita pela
+ * Edge Function `emitir-nfce` (ver supabase/functions/emitir-nfce) -- o
+ * front NUNCA fala direto com Focus NFe/eNotas, nunca ve token nenhum.
+ */
+
+/**
+ * Regra de ouro (skill nfce, item 7): GRAVAR como 'pendente' ANTES de
+ * chamar a API fiscal. Se a luz cair entre a chamada e a resposta, a nota
+ * fica registrada em vez de sumir. Chamado pelo createOrder logo apos criar
+ * o pedido -- NUNCA bloqueia a venda se der erro (mesmo padrao non-blocking
+ * do webhook/fidelidade, ver createOrder abaixo).
+ */
+export const criarNotaFiscalPendente = async (params: {
+    storeId: string;
+    orderId: string;
+    serie: number;
+    numero: number;
+    valorTotal: number;
+    emitidaPorEstacao?: string;
+}): Promise<NotaFiscal> => {
+    const { data, error } = await supabase
+        .from('notas_fiscais')
+        .insert({
+            store_id: params.storeId,
+            order_id: params.orderId,
+            serie: params.serie,
+            numero: params.numero,
+            valor_total: params.valorTotal,
+            status: 'pendente',
+            emitida_por_estacao: params.emitidaPorEstacao || null,
+        })
+        .select()
+        .single();
+    if (error) throw error;
+    return data;
+};
+
+/** Le a fila de notas em 'pendente' ou 'contingencia' -- para reprocessar. */
+export const fetchNotasFiscaisPendentes = async (storeId: string): Promise<NotaFiscal[]> => {
+    const { data, error } = await supabase
+        .from('notas_fiscais')
+        .select('*')
+        .eq('store_id', storeId)
+        .in('status', ['pendente', 'contingencia'])
+        .order('numero', { ascending: true });
+    if (error) throw error;
+    return data || [];
+};
+
+/** Relatorio: notas de um periodo, mais recentes primeiro. */
+export const fetchNotasFiscais = async (
+    storeId: string,
+    filtro?: { dataInicio?: string; dataFim?: string; status?: NotaFiscal['status'] }
+): Promise<NotaFiscal[]> => {
+    let query = supabase
+        .from('notas_fiscais')
+        .select('*')
+        .eq('store_id', storeId)
+        .order('data_emissao', { ascending: false });
+    if (filtro?.dataInicio) query = query.gte('data_emissao', filtro.dataInicio);
+    if (filtro?.dataFim) query = query.lte('data_emissao', filtro.dataFim);
+    if (filtro?.status) query = query.eq('status', filtro.status);
+    const { data, error } = await query;
+    if (error) throw error;
+    return data || [];
+};
+
+/**
+ * Proximo numero de nota para a serie da loja. NAO incrementa nada sozinho
+ * (a serializacao de verdade acontece na Edge Function, com lock); aqui e'
+ * so para a UI mostrar uma previa ou para o fallback local funcionar em
+ * contingencia. Usa o maior `numero` ja gravado OU o `numero_inicial`
+ * configurado manualmente (o que for maior) -- nunca reaproveita um numero
+ * que ja tenha nota gravada.
+ */
+export const calcularProximoNumeroNota = async (storeId: string, serie: number, numeroInicialConfigurado?: number): Promise<number> => {
+    const { data, error } = await supabase
+        .from('notas_fiscais')
+        .select('numero')
+        .eq('store_id', storeId)
+        .eq('serie', serie)
+        .order('numero', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    if (error) throw error;
+    const ultimoGravado = data?.numero || 0;
+    const base = Math.max(ultimoGravado, (numeroInicialConfigurado || 1) - 1);
+    return base + 1;
+};
+
+/**
+ * Upload do certificado digital A1 (.pfx/.p12) -- Fase 2, 28/09/2026.
+ *
+ * ⚠️ NAO usar o padrao do Firebase Storage (`uploadMenuImage`) aqui, por
+ * DOIS motivos, nao so um:
+ *   1. Aquele bucket e' de imagens de cardapio, publico -- errado para um
+ *      arquivo sensivel como certificado, mesmo que o Firebase estivesse
+ *      configurado.
+ *   2. O Firebase NEM ESTA CONFIGURADO neste projeto (confirmado por Ikarus,
+ *      28/09/2026): todas as chaves em `.env.local` estao vazias,
+ *      `isFirebaseConfigured` e' `false`, `storage` e' `null`. O proprio
+ *      `uploadMenuImage` nunca funcionou de verdade aqui -- e' codigo morto
+ *      esperando um projeto Firebase que ainda nao foi criado.
+ * Por isso o certificado vai para um bucket PRIVADO do Supabase Storage
+ * (`certificados-fiscais`, criado com `public: false`), cuja politica de
+ * leitura so permite a service role (Edge Function) -- nunca o front, nem
+ * com o usuario logado. So a senha do certificado NAO vai nem para o
+ * Storage: essa fica direto como secret da Edge Function
+ * (`supabase secrets set CERT_SENHA_<STORE_ID>=...`), passada fora desta
+ * tela (nunca digitada no navegador/Electron).
+ */
+export const uploadCertificadoFiscal = async (file: File, storeId: string): Promise<{ path: string; nomeArquivo: string }> => {
+    const path = `${storeId}/certificado.${file.name.split('.').pop()}`;
+    const { error } = await supabase.storage
+        .from('certificados-fiscais')
+        .upload(path, file, { upsert: true });
+    if (error) throw error;
+    return { path, nomeArquivo: file.name };
+};
+
 export const fetchLoyaltyRewardItems = async (storeId: string): Promise<LoyaltyRewardItem[]> => {
     const { data, error } = await supabase
         .from('loyalty_reward_items')
@@ -813,9 +937,58 @@ export const createOrder = async (order: any) => {
                     .catch(e => console.error("Error crediting loyalty points:", e));
             }
         }).catch(e => console.error("Error fetching settings for webhook:", e));
+
+        // NFC-e (Fase 2, 28/09/2026): so tenta se a loja tiver fiscal_config
+        // com emissao habilitada (ambiente configurado + provedor escolhido).
+        // NUNCA bloqueia a venda -- se a Sefaz/API fiscal falhar, a nota fica
+        // 'pendente'/'contingencia' no banco e o pedido segue normal. Regra
+        // de ouro (skill nfce, item 7): grava ANTES de chamar a API.
+        dispararEmissaoNotaFiscal(frontendOrder, order.store_id).catch(e =>
+            console.error('[NFC-e] Erro ao disparar emissao (pedido segue normal):', e)
+        );
     }
 
     return frontendOrder;
+};
+
+/**
+ * Dispara a emissao de NFC-e para um pedido recem-criado. So age se a loja
+ * tiver `fiscal_config` cadastrada E `provedor_api` preenchido (plug-and-play
+ * por loja -- ver claude-acai.md, cada cliente/copia do app configura o seu).
+ * Sem provedor contratado, fica tudo pendente sem nenhuma chamada externa.
+ */
+const dispararEmissaoNotaFiscal = async (order: Order, storeId: string): Promise<void> => {
+    const config = await fetchFiscalConfig(storeId);
+    if (!config || !config.provedor_api) {
+        // Sem config fiscal ou sem provedor escolhido ainda: nao e' erro,
+        // e' o estado normal enquanto a Fase 2 nao foi ligada para esta loja.
+        return;
+    }
+
+    const serie = config.serie_padrao || 1;
+    const numero = await calcularProximoNumeroNota(storeId, serie, config.numero_inicial);
+
+    // Grava como 'pendente' ANTES de qualquer chamada externa.
+    const nota = await criarNotaFiscalPendente({
+        storeId,
+        orderId: order.id!,
+        serie,
+        numero,
+        valorTotal: order.total,
+    });
+
+    // Repassa para a Edge Function, que decide o adaptador certo (Focus
+    // NFe / eNotas / outro) a partir de `provedor_api`. Timeout curto e
+    // fire-and-forget: se a Sefaz estiver fora do ar, a Edge Function marca
+    // a nota como 'contingencia' e uma rotina de reprocessamento (a criar)
+    // tenta de novo depois -- a venda ja aconteceu, nunca para por causa disto.
+    try {
+        await supabase.functions.invoke('emitir-nfce', {
+            body: { notaFiscalId: nota.id, storeId, orderId: order.id },
+        });
+    } catch (e) {
+        console.error('[NFC-e] Edge Function emitir-nfce falhou (nota fica pendente):', e);
+    }
 };
 
 export const updateOrder = async (orderId: string, updates: any) => {
@@ -1569,38 +1742,58 @@ export const fetchOrdersForSession = async (storeId: string, startTime: string, 
     return (data || []).map(mapOrderFromDB);
 };
 
+/**
+ * Upload de imagem de produto/anuncio -- migrado de Firebase para Supabase
+ * Storage em 28/09/2026. O Firebase NUNCA esteve configurado neste projeto
+ * (Ikarus confirmou: todas as chaves em `.env.local` vazias,
+ * `isFirebaseConfigured` sempre `false`, `storage` sempre `null`) -- ou
+ * seja, cadastrar um produto NOVO com foto nova sempre falhou em silencio
+ * (o erro so aparecia no console, o modal mostrava "Erro ao salvar item"
+ * generico). As fotos que JA aparecem no cardapio hoje nao passaram por
+ * aqui: vieram no campo `image` junto da migracao do Multipedidos, como
+ * link direto para `images.multipedidos.com.br` (confirmado por Ikarus
+ * colando a URL de uma foto real). Essas continuam funcionando desde que o
+ * Multipedidos continue no ar -- risco a considerar quando ele for
+ * desligado de vez.
+ *
+ * Reaproveita o bucket `assets` (PUBLICO) que `uploadLogoToStorage`/
+ * `uploadHeroImageToStorage` ja usam de verdade neste projeto -- nao cria
+ * bucket novo, so mais um prefixo de arquivo dentro do mesmo.
+ */
 export const uploadMenuImage = async (file: File, storeId: string): Promise<string | null> => {
     const fileExt = file.name.split('.').pop();
-    const fileName = `${storeId}/${Date.now()}.${fileExt}`;
+    const fileName = `${storeId}/produto_${Date.now()}.${fileExt}`;
 
-    try {
-        const storageRef = ref(storage, `menu-images/${fileName}`);
-        // console.log('[uploadMenuImage] Starting upload to Firebase:', fileName);
-        await uploadBytes(storageRef, file);
-        const downloadUrl = await getDownloadURL(storageRef);
-        // console.log('[uploadMenuImage] Upload complete. New URL:', downloadUrl);
-        return downloadUrl;
-    } catch (uploadError) {
-        console.error('Error uploading image to Firebase:', uploadError);
-        throw uploadError;
+    const { error } = await supabase.storage
+        .from('assets')
+        .upload(fileName, file, { upsert: false });
+    if (error) {
+        console.error('Error uploading image to Supabase Storage:', error);
+        throw error;
     }
+    const { data } = supabase.storage.from('assets').getPublicUrl(fileName);
+    return data.publicUrl;
 };
 
+/**
+ * Logo da loja via upload de arquivo generico (AdsTab/MenuItemModal usam
+ * `uploadMenuImage`; esta funcao ficava sem nenhum chamador ate 28/09/2026
+ * -- SettingsTab.tsx usa `uploadLogoToStorage`, que ja funcionava. Mantida
+ * so por compatibilidade caso algo a importe, migrada ao mesmo bucket.
+ */
 export const uploadStoreLogo = async (file: File, storeId: string): Promise<string | null> => {
     const fileExt = file.name.split('.').pop();
     const fileName = `${storeId}/logo-${Date.now()}.${fileExt}`;
 
-    try {
-        const storageRef = ref(storage, `menu-images/${fileName}`);
-        // console.log('[uploadStoreLogo] Starting upload to Firebase:', fileName);
-        await uploadBytes(storageRef, file);
-        const downloadUrl = await getDownloadURL(storageRef);
-        // console.log('[uploadStoreLogo] Upload complete. New URL:', downloadUrl);
-        return downloadUrl;
-    } catch (uploadError) {
-        console.error('Error uploading logo to Firebase:', uploadError);
-        throw uploadError;
+    const { error } = await supabase.storage
+        .from('assets')
+        .upload(fileName, file, { upsert: false });
+    if (error) {
+        console.error('Error uploading logo to Supabase Storage:', error);
+        throw error;
     }
+    const { data } = supabase.storage.from('assets').getPublicUrl(fileName);
+    return data.publicUrl;
 };
 
 export const fetchStoreBySlug = async (slug: string): Promise<Store | null> => {
