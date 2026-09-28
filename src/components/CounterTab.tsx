@@ -40,32 +40,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     /** Input de busca de produto. F3 (AdminPage) foca aqui via focusSearchSignal. */
     const buscaProdutoRef = useRef<HTMLInputElement>(null);
 
-    // BUG achado em 28/09/2026, 2 rodadas:
-    //
-    // Rodada 1: F4 (Configuracoes -> Balcao) seguido rapido de F3 podia
-    // deixar o campo de busca com "foco fantasma" -- `.focus()` chamado no
-    // MESMO ciclo de render em que o CounterTab acabou de montar, antes do
-    // layout assentar. "Corrigido" dando 1 frame (requestAnimationFrame)
-    // antes de focar.
-    //
-    // Rodada 2 (Ikarus testou e achou o problema real): `focusSearchSignal`
-    // e' estado do AdminPage, que NAO reseta quando o CounterTab remonta
-    // (F4 desmonta/remonta o CounterTab, mas o AdminPage continua vivo com
-    // o numero que o F3 ja tinha incrementado antes). Resultado: apertar F3
-    // uma vez, sair para Config, voltar com F4 -- o CounterTab remonta e ve
-    // `focusSearchSignal` JA diferente de zero desde o primeiro render,
-    // e focava a busca sozinho mesmo sem apertar F3 de novo. Digitar codigo
-    // de produto ou "B" da Balanca caia dentro do campo de busca por engano.
-    //
-    // Corrigido de vez: guarda o valor de `focusSearchSignal` que existia
-    // no MOMENTO EM QUE ESTE COMPONENTE MONTOU (ref inicializada uma vez,
-    // no corpo do componente) e so' foca quando o valor MUDAR em relacao a
-    // esse baseline -- nunca no proprio mount, seja qual for o numero.
-    const focusSearchBaselineRef = useRef(focusSearchSignal);
+    // REVERTIDO em 28/09/2026 -- as duas tentativas de "corrigir" o foco do
+    // F3 (requestAnimationFrame, depois o baseline ref) pioraram o
+    // problema: Ikarus relatou que depois delas nem clicar destravava mais
+    // os campos (antes, clicar na tela pelo menos resolvia). Voltado ao
+    // comportamento original de antes desta sessao. NAO mexer aqui de novo
+    // sem reproduzir o bug de foco localmente primeiro -- ver claude-acai.md.
     useEffect(() => {
-        if (focusSearchSignal === undefined || focusSearchSignal === focusSearchBaselineRef.current) return;
-        focusSearchBaselineRef.current = focusSearchSignal;
-        requestAnimationFrame(() => buscaProdutoRef.current?.focus());
+        if (focusSearchSignal) buscaProdutoRef.current?.focus();
     }, [focusSearchSignal]);
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [cart, setCart] = useState<CartItem[]>([]);
