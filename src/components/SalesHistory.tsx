@@ -183,6 +183,17 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
     const totalEntregaValue = entregaOrders.reduce((acc, o) => acc + o.total, 0);
     const totalRetiradaValue = retiradaOrders.reduce((acc, o) => acc + o.total, 0);
 
+    /**
+     * Balcão/Mesa + Retirada somados num so' valor -- pedido do Ikarus,
+     * 28/09/2026: "separar valor para fins de conferência de caixa o valor
+     * de vendas do balcão junto com valor de retirada, e o valor de vendas
+     * de entregas separado". SO' agrega os totais ja calculados acima --
+     * NAO mexe em `classificarTipoPedido`, impressao nem visualizacao de
+     * retiradas, que o Ikarus pediu explicitamente para nao tocar.
+     */
+    const totalBalcaoERetiradaValue = totalBalcaoValue + totalRetiradaValue;
+    const totalBalcaoERetiradaCount = balcaoOrders.length + retiradaOrders.length;
+
     // --- Status History Calculations ---
     const calculateAverageTime = (startStatus: string, endStatus: string, filterType?: 'Entrega' | 'Salão') => {
         let totalTime = 0;
@@ -397,23 +408,24 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
                         </div>
                     </div>
 
-                    {/* Vendas por TIPO (Balcão/Mesa, Entrega, Retirada) -- substitui o
-                        grafico de velas + a separacao por origem (App/Robo), pedido do
-                        Ikarus, 23/09/2026: "no historico remover as velas e esse modelo
-                        de crescimento, nao faz mais sentido, e mostrar as vendas
-                        separadas as do balcao separadas das vendas de entrega e
-                        retirada". */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    {/* Vendas por TIPO -- Balcão/Mesa + Retirada somados num so' card
+                        (conferencia de caixa: dinheiro que passa pelo caixa fisico da
+                        loja), Entrega separada (28/09/2026, pedido do Ikarus). Antes
+                        eram 3 cards (Balcão/Mesa, Entrega, Retirada), separados por
+                        ORIGEM (App/Robo) ate 23/09/2026. So' agrega os totais -- a
+                        classificacao em si (`classificarTipoPedido`), impressao e
+                        visualizacao de retiradas NAO mudaram, por pedido explicito. */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 relative overflow-hidden group">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-rose-500/10 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
                             <div className="flex justify-between items-start relative z-10">
                                 <div>
                                     <p className="text-sm text-gray-500 dark:text-gray-400 font-bold mb-1 flex items-center gap-2">
                                         <Store size={16} className="text-rose-500" />
-                                        Vendas de Balcão / Mesa
+                                        Vendas de Balcão / Mesa + Retirada
                                     </p>
-                                    <h3 className="text-3xl font-bold text-gray-900 dark:text-gray-100">R$ {totalBalcaoValue.toFixed(2)}</h3>
-                                    <p className="text-xs text-gray-400 mt-1 font-medium">{balcaoOrders.length} pedidos</p>
+                                    <h3 className="text-3xl font-bold text-gray-900 dark:text-gray-100">R$ {totalBalcaoERetiradaValue.toFixed(2)}</h3>
+                                    <p className="text-xs text-gray-400 mt-1 font-medium">{totalBalcaoERetiradaCount} pedidos</p>
                                 </div>
                                 <div className="p-3 bg-rose-100 dark:bg-rose-900/30 rounded-xl text-rose-600 dark:text-rose-400">
                                     <Store size={24} />
@@ -434,23 +446,6 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
                                 </div>
                                 <div className="p-3 bg-blue-100 dark:bg-blue-900/30 rounded-xl text-blue-600 dark:text-blue-400">
                                     <Bike size={24} />
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 relative overflow-hidden group">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/10 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-110"></div>
-                            <div className="flex justify-between items-start relative z-10">
-                                <div>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 font-bold mb-1 flex items-center gap-2">
-                                        <Smartphone size={16} className="text-purple-500" />
-                                        Vendas de Retirada
-                                    </p>
-                                    <h3 className="text-3xl font-bold text-gray-900 dark:text-gray-100">R$ {totalRetiradaValue.toFixed(2)}</h3>
-                                    <p className="text-xs text-gray-400 mt-1 font-medium">{retiradaOrders.length} pedidos</p>
-                                </div>
-                                <div className="p-3 bg-purple-100 dark:bg-purple-900/30 rounded-xl text-purple-600 dark:text-purple-400">
-                                    <Smartphone size={24} />
                                 </div>
                             </div>
                         </div>
