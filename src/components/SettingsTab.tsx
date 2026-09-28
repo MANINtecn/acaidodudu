@@ -133,6 +133,36 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
         });
     };
 
+    /**
+     * Liga/desliga horario PERSONALIZADO para um dia especifico -- 28/09/2026.
+     * Ligar cria a entrada em customHoursPerDay copiando o horario padrao
+     * atual (ponto de partida para o operador ajustar); desligar remove a
+     * entrada, o dia volta a usar openingTime/closingTime normalmente.
+     */
+    const toggleHorarioPersonalizado = (dayIndex: number) => {
+        setFormData(prev => {
+            const atual = { ...(prev.customHoursPerDay || {}) };
+            const chave = dayIndex.toString();
+            if (atual[chave]) {
+                delete atual[chave];
+            } else {
+                atual[chave] = { open: prev.openingTime || '18:00', close: prev.closingTime || '23:00' };
+            }
+            return { ...prev, customHoursPerDay: atual };
+        });
+    };
+
+    const atualizarHorarioPersonalizado = (dayIndex: number, campo: 'open' | 'close', valor: string) => {
+        setFormData(prev => {
+            const chave = dayIndex.toString();
+            const atual = prev.customHoursPerDay?.[chave] || { open: prev.openingTime || '18:00', close: prev.closingTime || '23:00' };
+            return {
+                ...prev,
+                customHoursPerDay: { ...(prev.customHoursPerDay || {}), [chave]: { ...atual, [campo]: valor } },
+            };
+        });
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setLoading(true);
@@ -431,6 +461,60 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                             />
                         </div>
                     </div>
+                    <p className="text-[10px] text-gray-500 mt-1 italic">
+                        * Horário padrão, usado nos dias sem horário personalizado abaixo.
+                    </p>
+
+                    {/* Horario PERSONALIZADO por dia -- 28/09/2026, pedido do Ikarus
+                        (ex: sexta/sabado com horario diferente dos demais dias). So'
+                        mostra checkbox para os dias que a loja abre (daysOfWeek). */}
+                    {(formData.daysOfWeek || []).length > 0 && (
+                        <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wider text-[10px] font-black">
+                                Horário personalizado por dia (opcional)
+                            </label>
+                            <div className="space-y-2">
+                                {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'].map((day, idx) => {
+                                    if (!(formData.daysOfWeek || []).includes(idx.toString())) return null;
+                                    const personalizado = formData.customHoursPerDay?.[idx.toString()];
+                                    return (
+                                        <div key={day} className="flex items-center gap-3 p-2 rounded-lg bg-gray-50 dark:bg-gray-900/40">
+                                            <label className="flex items-center gap-2 w-28 shrink-0 cursor-pointer">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!personalizado}
+                                                    onChange={() => toggleHorarioPersonalizado(idx)}
+                                                    className="rounded text-red-600 focus:ring-red-500"
+                                                />
+                                                <span className="text-xs font-bold text-gray-700 dark:text-gray-300">{day}</span>
+                                            </label>
+                                            {personalizado ? (
+                                                <div className="flex items-center gap-2 flex-1">
+                                                    <input
+                                                        type="time"
+                                                        value={personalizado.open}
+                                                        onChange={e => atualizarHorarioPersonalizado(idx, 'open', e.target.value)}
+                                                        className="flex-1 px-2 py-1 text-sm border rounded-lg text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 font-bold"
+                                                    />
+                                                    <span className="text-xs text-gray-400">até</span>
+                                                    <input
+                                                        type="time"
+                                                        value={personalizado.close}
+                                                        onChange={e => atualizarHorarioPersonalizado(idx, 'close', e.target.value)}
+                                                        className="flex-1 px-2 py-1 text-sm border rounded-lg text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 font-bold"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <span className="text-xs text-gray-400 italic">
+                                                    Usa o horário padrão ({formData.openingTime} às {formData.closingTime})
+                                                </span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 <PixWhatsappConfig formData={formData} setFormData={setFormData} />

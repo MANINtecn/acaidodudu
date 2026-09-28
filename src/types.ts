@@ -345,6 +345,16 @@ export interface Settings {
   lastRaffleWinner?: string;
   isRatingEnabled?: boolean;
   daysOfWeek?: string[];
+  /**
+   * Horario PERSONALIZADO por dia da semana -- Fase 1, 28/09/2026. Pedido
+   * do Ikarus: sexta/sabado abrir ou fechar num horario diferente dos
+   * demais dias. Chave = indice do dia ("0"=Dom .. "6"=Sab, mesmo padrao de
+   * `daysOfWeek`); valor = horario proprio daquele dia. Um dia SEM entrada
+   * aqui cai no `openingTime`/`closingTime` padrao (comportamento
+   * historico, nunca quebra quem nao configurou nada). undefined/{} =
+   * ninguem configurou ainda, todos os dias usam o padrao.
+   */
+  customHoursPerDay?: { [diaIndex: string]: { open: string; close: string } };
   deliveryFee?: number;
   minOrderValue?: number;
   isBotEnabled?: boolean;

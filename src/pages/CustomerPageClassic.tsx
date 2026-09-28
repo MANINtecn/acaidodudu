@@ -163,16 +163,23 @@ const useStoreStatus = (settings: Partial<Settings> | null) => {
         }
 
         // 3. Verifica Horários (apenas se manualStatus for 'auto' e o dia estiver liberado)
-        if (settings.openingTime && settings.closingTime) {
-            const [openH, openM] = settings.openingTime.split(':').map(Number);
-            const [closeH, closeM] = settings.closingTime.split(':').map(Number);
-            
+        // Horario PERSONALIZADO do dia (28/09/2026, pedido do Ikarus) tem
+        // prioridade sobre o padrao -- ver mesmo comentario em
+        // CustomerPageModern.tsx.
+        const horarioDoDia = settings.customHoursPerDay?.[currentDayIdx.toString()];
+        const horaAbertura = horarioDoDia?.open || settings.openingTime;
+        const horaFechamento = horarioDoDia?.close || settings.closingTime;
+
+        if (horaAbertura && horaFechamento) {
+            const [openH, openM] = horaAbertura.split(':').map(Number);
+            const [closeH, closeM] = horaFechamento.split(':').map(Number);
+
             const start = openH + openM / 60;
             let end = closeH + closeM / 60;
 
             // Lida com virada de meia-noite (ex: 18:00 às 02:00)
             const isOvernight = end < start;
-            
+
             let isOpen = false;
             if (isOvernight) {
                 isOpen = currentHour >= start || currentHour < end;
@@ -182,7 +189,7 @@ const useStoreStatus = (settings: Partial<Settings> | null) => {
 
             if (!isOpen) {
                 setIsStoreOpen(false);
-                setStatusMessage(`A loja abre das ${settings.openingTime} às ${settings.closingTime}.`);
+                setStatusMessage(`A loja abre das ${horaAbertura} às ${horaFechamento}.`);
                 return;
             }
         }

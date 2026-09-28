@@ -1266,6 +1266,7 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
         modernGroups: dbData?.modern_groups ?? dbData?.modernGroups ?? defaultSettings.modernGroups,
         openingTime: dbData?.opening_time ?? dbData?.openingTime ?? defaultSettings.openingTime,
         closingTime: dbData?.closing_time ?? dbData?.closingTime ?? defaultSettings.closingTime,
+        customHoursPerDay: dbData?.custom_hours_per_day ?? dbData?.customHoursPerDay,
         manualStatus: dbData?.manual_status ?? dbData?.manualStatus ?? defaultSettings.manualStatus,
         comboPrice: Number(dbData?.combo_price ?? dbData?.comboPrice ?? defaultSettings.comboPrice) || 13.0,
         deliveryFee: Number(dbData?.delivery_fee ?? dbData?.deliveryFee ?? defaultSettings.deliveryFee) || 0,
@@ -1468,7 +1469,10 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
     if (settings.daysOfWeek !== undefined) {
         dbSettings.days_of_week = settings.daysOfWeek;
     }
-    
+    if (settings.customHoursPerDay !== undefined) {
+        dbSettings.custom_hours_per_day = settings.customHoursPerDay;
+    }
+
     // Webhooks
     if (settings.webhookNewOrderUrl !== undefined) {
         dbSettings.webhook_new_order_url = settings.webhookNewOrderUrl;
