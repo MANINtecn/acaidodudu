@@ -20,7 +20,7 @@ import { Settings, Category } from '../types';
 import EstacaoImpressao from './EstacaoImpressao';
 import PixWhatsappConfig from './PixWhatsappConfig';
 import { SIRENES, testarSirene, VOLUME_MAXIMO, type TipoSirene } from '../services/sireneService';
-import { uploadLogoToStorage, uploadHeroImageToStorage } from '../services/supabaseService';
+import { uploadLogoToStorage, uploadHeroImageToStorage, zerarNumeracaoPedidos } from '../services/supabaseService';
 import { printOrder, generateReceiptText } from '../services/printerService';
 import { requestSerialPort } from '../services/scaleService';
 import { UpdateManager } from './UpdateManager';
@@ -38,6 +38,8 @@ interface SettingsTabProps {
 export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, onSave, installPrompt, onInstall }) => {
     const [formData, setFormData] = useState(settings);
     const [loading, setLoading] = useState(false);
+    const [zerandoNumeracao, setZerandoNumeracao] = useState(false);
+    const [numeracaoZerada, setNumeracaoZerada] = useState(false);
 
     useEffect(() => {
         setFormData(settings);
@@ -67,6 +69,27 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
         };
         fetchPrinters();
     }, []);
+
+    /**
+     * "Zerar numeracao agora" -- so' faz sentido no modo 'mensal' (no modo
+     * 'diario' o numero ja reinicia sozinho toda meia-noite). Atualiza
+     * `orderNumberingResetAt` no banco -- o trigger passa a contar so'
+     * pedidos criados a partir de agora. Ver add_order_numbering_mode.sql.
+     */
+    const handleZerarNumeracao = async () => {
+        if (!confirm('Zerar a numeração dos pedidos agora? O próximo pedido criado começará do #1.')) return;
+        setZerandoNumeracao(true);
+        try {
+            await zerarNumeracaoPedidos(formData.store_id);
+            setNumeracaoZerada(true);
+            setTimeout(() => setNumeracaoZerada(false), 3000);
+        } catch (err) {
+            console.error('[Settings] erro ao zerar numeracao:', err);
+            alert('Não foi possível zerar a numeração. Tente novamente.');
+        } finally {
+            setZerandoNumeracao(false);
+        }
+    };
 
     const handleTestPrint = async () => {
         const testOrder: any = {
@@ -1029,7 +1052,53 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                     </div>
                 </div>
 
+                {/* Numeracao de pedido -- 28/09/2026. Diario (padrao): reinicia
+                    sozinho toda meia-noite. Mensal: so' zera no botao manual. */}
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                        <SettingsIcon size={20} className="text-red-600 dark:text-red-500" /> Numeração dos Pedidos
+                    </h3>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Quando o número do pedido (#1, #2...) reinicia?
+                        </label>
+                        <select
+                            name="orderNumberingMode"
+                            value={formData.orderNumberingMode || 'diario'}
+                            onChange={handleChange}
+                            className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+                        >
+                            <option value="diario">Diariamente (reinicia sozinho toda meia-noite)</option>
+                            <option value="mensal">Mensalmente (só reinicia quando eu clicar em "Zerar")</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                            {formData.orderNumberingMode === 'mensal'
+                                ? 'A contagem NÃO reinicia sozinha — os pedidos vão acumulando até você clicar em "Zerar numeração agora".'
+                                : 'A contagem reinicia sozinha toda meia-noite (horário de Brasília) — comportamento padrão.'}
+                        </p>
+                    </div>
 
+                    {formData.orderNumberingMode === 'mensal' && (
+                        <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+                            <button
+                                type="button"
+                                onClick={handleZerarNumeracao}
+                                disabled={zerandoNumeracao}
+                                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white rounded-lg font-bold text-sm transition-all active:scale-95"
+                            >
+                                {zerandoNumeracao ? 'Zerando...' : 'Zerar numeração agora'}
+                            </button>
+                            {numeracaoZerada && (
+                                <span className="ml-3 text-sm font-bold text-green-600 dark:text-green-400">
+                                    Zerado! O próximo pedido começa do #1. ✅
+                                </span>
+                            )}
+                            <p className="text-xs text-gray-500 mt-2">
+                                Use no início do mês (ou quando quiser reiniciar a contagem manualmente).
+                            </p>
+                        </div>
+                    )}
+                </div>
 
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
                     <h3 className="text-lg font-bold mb-4 flex items-center gap-2 text-gray-900 dark:text-gray-100">

@@ -386,6 +386,23 @@ export interface Settings {
    */
   modeloMesas?: 'padrao' | 'personalizado';
 
+  /**
+   * Modo de reinicio do numero do pedido (#1, #2...) -- Fase 1, 28/09/2026.
+   * 'diario' (padrao/undefined) = reinicia sozinho toda meia-noite (horario
+   * de Brasilia), como sempre foi. 'mensal' = NAO reinicia sozinho nunca;
+   * so zera quando o operador clicar em "Zerar numeracao agora" nas
+   * Configuracoes (ver `zerarNumeracaoPedidos` em supabaseService.ts).
+   * O trigger do banco (`set_daily_order_number`) le esta flag para decidir
+   * se conta so' o dia ou todo o intervalo desde o ultimo reset manual.
+   */
+  orderNumberingMode?: 'diario' | 'mensal';
+  /**
+   * So' relevante quando orderNumberingMode = 'mensal'. Marca a partir de
+   * quando contar (o "zero" da contagem) -- atualizado toda vez que o
+   * operador clica em "Zerar numeracao agora". Em UTC (comparado no banco).
+   */
+  orderNumberingResetAt?: string;
+
   // ── PIX + comprovante pelo WhatsApp (tela pos-pedido do cliente) ──
   /** Liga a tela com a chave PIX e o botao de enviar comprovante. */
   pixEnabled?: boolean;

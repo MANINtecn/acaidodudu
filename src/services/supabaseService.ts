@@ -1221,6 +1221,7 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     printerCompatibilityMode: false,
     autoPrintDineIn: true,   // padrao: imprime sozinho (comportamento historico)
     autoPrintRetirada: true, // padrao: imprime sozinho (independente de Mesa desde 21/09/2026)
+    orderNumberingMode: 'diario', // padrao: reinicia sozinho toda meia-noite (comportamento historico)
     sireneTipo: 'sino',
     sireneVolume: 3,
     mostrarDicasAtalho: true,
@@ -1294,6 +1295,8 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
         sireneVolume: Number(dbData?.sirene_volume ?? dbData?.sireneVolume ?? defaultSettings.sireneVolume),
         mostrarDicasAtalho: dbData?.mostrar_dicas_atalho ?? dbData?.mostrarDicasAtalho ?? defaultSettings.mostrarDicasAtalho,
         modeloMesas: dbData?.modelo_mesas ?? dbData?.modeloMesas ?? defaultSettings.modeloMesas,
+        orderNumberingMode: dbData?.order_numbering_mode ?? dbData?.orderNumberingMode ?? defaultSettings.orderNumberingMode,
+        orderNumberingResetAt: dbData?.order_numbering_reset_at ?? dbData?.orderNumberingResetAt,
         pixEnabled: dbData?.pix_enabled ?? dbData?.pixEnabled ?? defaultSettings.pixEnabled,
         pixKey: dbData?.pix_key ?? dbData?.pixKey ?? defaultSettings.pixKey,
         pixKeyType: dbData?.pix_key_type ?? dbData?.pixKeyType ?? defaultSettings.pixKeyType,
@@ -1407,6 +1410,23 @@ export const fetchPublicSettings = async (storeId: string): Promise<Pick<Setting
 
     const result = mapSettingsDBToApp(data, storeData);
     return result as any; 
+};
+
+/**
+ * Zera manualmente a numeracao de pedidos (#1, #2...) -- so' faz sentido
+ * quando `orderNumberingMode = 'mensal'` (no modo 'diario' o numero ja
+ * zera sozinho toda meia-noite, esse botao seria redundante). Atualiza
+ * `orderNumberingResetAt` para AGORA -- o trigger do banco
+ * (`set_daily_order_number`) passa a contar so' pedidos criados DEPOIS
+ * deste instante, ao inves de reiniciar por data. Ver
+ * `add_order_numbering_mode.sql`.
+ */
+export const zerarNumeracaoPedidos = async (storeId: string): Promise<void> => {
+    const { error } = await supabase
+        .from('settings')
+        .update({ order_numbering_reset_at: new Date().toISOString() })
+        .eq('store_id', storeId);
+    if (error) throw error;
 };
 
 export const updateSettings = async (storeId: string, settings: Partial<Omit<Settings, 'id'>>) => {
@@ -1542,7 +1562,7 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
         'courierPrinter', 'courierPrinterPaperWidth',
         'preferredPrinter', 'printerPaperWidth',
         'printerCompatibilityMode',
-        'autoPrintDineIn', 'autoPrintRetirada',
+        'autoPrintDineIn', 'autoPrintRetirada', 'orderNumberingMode', 'orderNumberingResetAt',
         'sireneTipo', 'sireneVolume', 'mostrarDicasAtalho', 'modeloMesas', 'heroImageUrl', 'loyaltyModel',
         'pixEnabled', 'pixKey', 'pixKeyType', 'pixBeneficiary',
         'storeWhatsapp', 'pixResumoTemplate'
