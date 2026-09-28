@@ -511,6 +511,24 @@ export const claimOrderPrinting = async (orderId: string): Promise<boolean> => {
 };
 
 
+/**
+ * ⚠️ OBSOLETA -- NAO USAR. Mantida so' porque pode haver import externo
+ * (n8n/automacao antiga); NENHUM lugar do app deve chamar isto.
+ *
+ * BUG (achado e corrigido em WaiterPage.tsx, 28/09/2026): `new
+ * Date().toISOString().split('T')[0]` calcula "hoje" em UTC, nao no fuso de
+ * Brasilia. Depois das 21h locais (=meia-noite UTC) esta funcao ja acha que
+ * virou o dia seguinte e devolve numero 1, enquanto o TRIGGER DO BANCO
+ * (`set_daily_order_number`, correto, usa America/Sao_Paulo) ainda esta no
+ * dia de ontem ate meia-noite de verdade -- resultado: pedido criado com
+ * numero divergente do resto do dia, causa raiz do "a numeracao reinicia
+ * sozinha" relatado pelo Ikarus.
+ *
+ * A forma certa (ja usada em CounterTab/CustomerPage/WaiterPage): mandar
+ * `dailyOrderNumber: 0` ao criar o pedido e deixar o TRIGGER DO BANCO
+ * calcular -- ele roda no fuso certo e é atomico (evita race condition que
+ * o calculo no frontend tambem tinha).
+ */
 export const getNextDailyOrderNumber = async (storeId: string): Promise<number> => {
     const today = new Date().toISOString().split('T')[0];
     const { data, error } = await supabase

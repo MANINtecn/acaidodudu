@@ -303,11 +303,19 @@ export default function WaiterPage() {
         setIsPrintConfirmModalOpen(false);
         setIsSubmitting(true);
         try {
-            let dailyNumber = baseDailyOrderNumber;
-            if (!dailyNumber) {
-                const { getNextDailyOrderNumber } = await import('../services/supabaseService');
-                dailyNumber = await getNextDailyOrderNumber(currentStore.id);
-            }
+            // Mesa ja aberta com pedido anterior: reaproveita o mesmo numero
+            // (baseDailyOrderNumber, setado em handleTableSelect). Mesa NOVA:
+            // manda 0 e deixa o TRIGGER DO BANCO calcular -- mesmo padrao ja
+            // usado em CounterTab/CustomerPage. NUNCA mais usar
+            // getNextDailyOrderNumber() aqui: essa funcao calcula "hoje" com
+            // `new Date().toISOString()`, que e' UTC, nao horario de Brasilia
+            // -- depois das 21h locais (=meia-noite UTC) ela ja acha que virou
+            // o dia seguinte e devolve numero 1, enquanto o trigger do banco
+            // (correto, em America/Sao_Paulo) ainda esta no dia de ontem ate
+            // meia-noite de verdade. Resultado: pedido da mesa saia com
+            // numero divergente do Balcao/Cardapio no mesmo dia -- a causa
+            // do "reinicia sozinho" relatado pelo Ikarus, 28/09/2026.
+            const dailyNumber = baseDailyOrderNumber || 0;
 
             const orderPayload: any = {
                 store_id: currentStore.id,
