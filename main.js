@@ -486,7 +486,22 @@ function createWindow() {
 
 
 
-// Load .env from the same directory as main.js (works in dev and prod/asar)
+// Load .env from the same directory as main.js (works in dev and prod/asar).
+//
+// ⚠️ SEGURANCA (28/09/2026): o .env NAO e' mais empacotado dentro do .exe
+// (removido de "files" no package.json) -- ele continha
+// SUPABASE_SERVICE_ROLE_KEY real, que ignora TODO RLS do banco. Empacotar
+// o .env dava a qualquer um que extraisse o instalador (7-Zip, sem nem
+// precisar rodar o programa) controle irrestrito do banco inteiro.
+//
+// Em DEV, o .env continua na raiz do projeto e funciona normal. Em
+// PRODUCAO (instalador publicado), este dotenv.config() simplesmente nao
+// acha o arquivo -- process.env fica vazio, e e' esperado: toda credencial
+// real (Supabase key, OpenAI key, etc) deve ser digitada pela propria tela
+// do bot (WhatsAppBotTab.tsx -> Configuracoes), que salva em
+// bot_config.json (userData, fora do instalador) via getStoredConfig() --
+// ja e' o mecanismo PREFERENCIAL hoje (`config.supabaseKey ||
+// process.env.SUPABASE_SERVICE_ROLE_KEY`), o .env so' era fallback.
 const envPath = path.join(__dirname, ".env");
 dotenv.config({ path: envPath });
 

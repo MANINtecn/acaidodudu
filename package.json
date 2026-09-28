@@ -78,7 +78,6 @@
     "files": [
       "dist/**/*",
       "build/**/*",
-      ".env",
       "main.js",
       "preload.cjs",
       "servidor.cjs",
