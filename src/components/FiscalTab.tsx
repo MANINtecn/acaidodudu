@@ -14,6 +14,7 @@ interface FiscalTabProps {
  * nesta tela de novo. */
 const PROVEDORES_API = [
     { value: '', label: 'Nenhum contratado ainda' },
+    { value: 'brasil_nfe', label: 'Brasil NFe' },
     { value: 'focus_nfe', label: 'Focus NFe' },
     { value: 'enotas', label: 'eNotas' },
 ];
