@@ -642,7 +642,17 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
             // R: lança como RETIRADA (sem mesa). Mesmo fluxo da mesa, mas o
             // pedido não fica preso a um número — o cliente leva embora.
-            if (e.key.toUpperCase() === 'R' && !avisoAtalho) {
+            //
+            // BUG achado em 29/09/2026 (Ikarus testou e sentiu "travado"):
+            // a condicao antiga era `!avisoAtalho` puro -- bloqueava o R
+            // enquanto o aviso 'ok' (ex: "Adicionado. Digite a mesa e ENTER
+            // para lançar", que aparece por ~3.5s apos codigo+Enter) ainda
+            // estava na tela. Como 'ok' e' so informativo (nao exige decisao
+            // do operador, diferente de 'confirmar'/'enviar'), bloquear o R
+            // por causa dele fazia o atalho parecer travado por segundos,
+            // ate o aviso sumir sozinho. Corrigido: R so' e' bloqueado pelos
+            // avisos que REALMENTE aguardam decisao ('confirmar'/'enviar').
+            if (e.key.toUpperCase() === 'R' && avisoAtalho?.tipo !== 'confirmar' && avisoAtalho?.tipo !== 'enviar') {
                 e.preventDefault();
                 const temPesoR = scaleWeight > 0 && isScaleStable;
                 if (!temPesoR && cart.length === 0) {
@@ -1259,11 +1269,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             {settings?.mostrarDicasAtalho !== false && !teclasMesa && !avisoAtalho && settings?.isScaleEnabled &&
              !isCustomItemModalOpen && !isTableModalOpen && !isScaleModalOpen && !isCategoryModalOpen && !isAddonModalOpen && (
                 <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9990] pointer-events-none">
-                    <div className="bg-slate-900/90 border border-slate-700 rounded-lg px-4 py-1.5 shadow-lg backdrop-blur-sm">
-                        <span className="text-[11px] text-slate-400">
-                            Digite o <strong className="text-emerald-400">nº da mesa</strong> ou o
-                            <strong className="text-emerald-400"> código do produto</strong> ·
-                            <kbd className="px-1 bg-slate-800 rounded ml-1 text-slate-300">R</kbd> retirada
+                    {/* Aumentada e trocada para laranja (28/09/2026, pedido do
+                        Ikarus): o operador nao estava enxergando bem em verde
+                        pequeno, com a tela cheia de outras cores. */}
+                    <div className="bg-slate-900/90 border border-amber-500/40 rounded-lg px-5 py-2.5 shadow-lg backdrop-blur-sm">
+                        <span className="text-sm text-slate-300">
+                            Digite o <strong className="text-amber-400">nº da mesa</strong> ou o
+                            <strong className="text-amber-400"> código do produto</strong> ·
+                            <kbd className="px-1.5 py-0.5 bg-slate-800 rounded ml-1 text-amber-300 font-bold">R</kbd> retirada
                         </span>
                     </div>
                 </div>
