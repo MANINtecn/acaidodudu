@@ -692,9 +692,16 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
             // B: abre o modal da Balança para pesagem MANUAL -- atalho pedido
             // pelo Ikarus, 28/09/2026, para nao depender do clique do mouse.
-            // So' abre se nao houver outro modal/aviso em andamento (mesma
-            // regra do R/N) para nao competir com um fluxo ja em curso.
-            if (e.key.toUpperCase() === 'B' && !avisoAtalho && !modalAbertoRef.current) {
+            //
+            // BUG achado em 29/09/2026 (mesmo da tecla R, Ikarus testou e
+            // reproduziu com produto+balanca junto): a condicao antiga
+            // (`!avisoAtalho` puro) bloqueava B enquanto o aviso 'ok'
+            // (informativo, "Adicionado...") ainda estava na tela por ~3.5s.
+            // Numa loja com fila, o operador quer lancar produto E peso em
+            // sequencia rapida, sem esperar o aviso anterior sumir sozinho.
+            // Corrigido: so' bloqueia nos avisos que aguardam decisao de
+            // verdade ('confirmar'/'enviar') -- mesmo criterio ja usado no R.
+            if (e.key.toUpperCase() === 'B' && avisoAtalho?.tipo !== 'confirmar' && avisoAtalho?.tipo !== 'enviar' && !modalAbertoRef.current) {
                 e.preventDefault();
                 // Comeca do peso ja estavel na balanca automatica, se houver
                 // (mesmo comportamento do clique no botao "Balança" do mouse,
