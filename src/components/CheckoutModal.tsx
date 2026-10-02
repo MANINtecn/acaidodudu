@@ -7,6 +7,14 @@ interface CheckoutModalProps {
     onClose: () => void;
     onConfirm: (paymentDetails: PaymentDetails) => Promise<void>;
     order: Order;
+    /**
+     * F8 dentro do checkout -- pedido do Ikarus 02/10/2026: "você vai pôr ali
+     * na frente F8 pagamento fracionado". Fecha ESTE checkout e abre o
+     * SplitBillModal (que vive no AdminPage, fora desta árvore) pra mesa do
+     * pedido atual. Só aparece/funciona quando o pedido tem mesa (table_number)
+     * -- pedido avulso/balcão sem mesa não tem conta pra dividir.
+     */
+    onOpenSplitBill?: () => void;
 }
 
 export interface PaymentDetails {
@@ -18,7 +26,7 @@ export interface PaymentDetails {
     finalTotal: number;
 }
 
-export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, onConfirm, order }) => {
+export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, onConfirm, order, onOpenSplitBill }) => {
     const [method, setMethod] = useState<PaymentMethod>('Dinheiro');
     const [amountTendered, setAmountTendered] = useState<string>('');
     const [discount, setDiscount] = useState<string>('');
@@ -74,6 +82,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
             (campoValorRef.current ?? containerRef.current)?.focus();
         });
     }, [isOpen]);
+
+    // CRÍTICO (achado em 02/10/2026, véspera da demo: "selecionei Cartão com
+    // a tecla C, mas o Enter não fecha mais"): o foco inicial ia pro campo
+    // "Valor Recebido" (só existe com method === 'Dinheiro'). Ao trocar pra
+    // Cartão/PIX via tecla, esse campo é DESMONTADO -- e o navegador joga o
+    // foco pro <body>, fora do container do modal inteiro. onKeyDown só
+    // dispara com o foco dentro da árvore do container, então D/C/P/Enter
+    // paravam de funcionar silenciosamente depois da primeira troca de
+    // método. Corrigido: sempre que o método for algo SEM campo de valor
+    // (Cartão/PIX), devolve o foco pro container.
+    useEffect(() => {
+        if (!isOpen || method === 'Dinheiro') return;
+        requestAnimationFrame(() => containerRef.current?.focus());
+    }, [isOpen, method]);
 
     if (!isOpen) return null;
 
@@ -133,13 +155,41 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
             return;
         }
 
+        // F8: pagamento fracionado -- pedido do Ikarus 02/10/2026: "você vai
+        // pôr ali na frente F8 pagamento fracionado". Fecha este checkout e
+        // abre a tela de dividir conta pra mesma mesa/comanda. Só funciona
+        // com pedido de mesa (table_number) -- avulso/balcão sem mesa não tem
+        // conta pra dividir entre pessoas.
+        if (e.key === 'F8' && onOpenSplitBill && order.table_number) {
+            e.preventDefault();
+            onOpenSplitBill();
+            return;
+        }
+
+        // CRÍTICO (achado em 01/10/2026, véspera da demo: "apertei C de
+        // cartão e não foi, tive que clicar manual"): o foco inicial cai no
+        // campo "Valor Recebido" (campoValorRef) quando o método é Dinheiro
+        // -- e esse campo é um <input>, então `digitando` ficava true e o
+        // `return` abaixo engolia D/C/P antes de trocarem o método. Como o
+        // campo é numérico (type="number"), letras nunca são dígito de
+        // verdade nele -- então D/C/P têm que valer mesmo com o campo
+        // focado. Só dígitos/Backspace/etc continuam indo pro campo.
+        const tecla = e.key.toUpperCase();
+        if (tecla === 'D') { e.preventDefault(); setMethod('Dinheiro'); return; }
+        if (tecla === 'C') { e.preventDefault(); setMethod('Cartão'); return; }
+        if (tecla === 'P') { e.preventDefault(); setMethod('PIX'); return; }
+
+        // '=': preenche "Valor Recebido" com o valor exato (pagamento sem
+        // troco) -- achado pela auditoria de 01/10/2026: pagar "no dinheiro
+        // certo" é o caso mais comum, e hoje exige redigitar manualmente o
+        // mesmo total que já está exibido na tela. Mesmo critério de D/C/P:
+        // '=' nunca é dígito de verdade no campo numérico, então vale mesmo
+        // com ele focado.
+        if (e.key === '=') { e.preventDefault(); setAmountTendered(finalTotal.toFixed(2)); return; }
+
         if (digitando) return;
 
-        const tecla = e.key.toUpperCase();
-        if (tecla === 'D') { e.preventDefault(); setMethod('Dinheiro'); }
-        else if (tecla === 'C') { e.preventDefault(); setMethod('Cartão'); }
-        else if (tecla === 'P') { e.preventDefault(); setMethod('PIX'); }
-        else if (e.key === 'Enter') { e.preventDefault(); if (!isProcessing) handleConfirm(); }
+        if (e.key === 'Enter') { e.preventDefault(); if (!isProcessing) handleConfirm(); }
     };
 
     return (
@@ -157,10 +207,30 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                             <DollarSign className="text-green-600" />
                             Checkout
                         </h2>
-                        <p className="text-[11px] font-bold text-gray-400 dark:text-gray-500 mt-0.5">
-                            ESC cancela · D/C/P forma de pagamento · ENTER finaliza
-                        </p>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                        {/* Legenda de atalhos -- pedido do Ikarus 01/10/2026:
+                            "povo enjoado", tecla+ação tem que morar na MESMA
+                            pílula/borda, mesmo padrão já usado no Balcão. */}
+                        <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                            {[
+                                { tecla: 'ESC', acao: 'CANCELA' },
+                                { tecla: 'D', acao: 'DINHEIRO' },
+                                { tecla: 'C', acao: 'CARTÃO' },
+                                { tecla: 'P', acao: 'PIX' },
+                                { tecla: '=', acao: 'VALOR EXATO' },
+                                { tecla: 'ENTER', acao: 'FINALIZA' },
+                                // F8 pagamento fracionado -- pedido do Ikarus
+                                // 02/10/2026. Só aparece quando o pedido tem
+                                // mesa (table_number): avulso/balcão sem mesa
+                                // não tem conta pra dividir entre pessoas.
+                                ...(onOpenSplitBill && order.table_number ? [{ tecla: 'F8', acao: 'PAGAMENTO FRACIONADO' }] : []),
+                            ].map(({ tecla, acao }) => (
+                                <span key={tecla} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 rounded-full">
+                                    <kbd className="px-1.5 py-0.5 bg-amber-500/25 rounded text-[10px] font-black uppercase text-gray-900 dark:text-white">{tecla}</kbd>
+                                    <span className="text-[10px] font-black uppercase text-gray-900 dark:text-white">{acao}</span>
+                                </span>
+                            ))}
+                        </div>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                             Pedido #{order.dailyOrderNumber} • {order.customerName}
                         </p>
                     </div>

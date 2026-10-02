@@ -10,9 +10,13 @@ interface TableGroupCardProps {
     onCancel: (order: Order) => void;
     onAdvanceStatus: (order: Order) => void;
     onEdit: (order: Order) => void;
+    /** "MESA" (padrão) ou "COMANDA" -- Balcão V2 usa slots 1-20 como comanda,
+     * não mesa física. Achado em 30/09/2026, print do Ikarus mostrando
+     * "MESA 1/2" na tela de salão mesmo tendo lançado como comanda. */
+    rotulo?: string;
 }
 
-const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, onPrint, onCancel, onAdvanceStatus, onEdit }) => {
+const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, onPrint, onCancel, onAdvanceStatus, onEdit, rotulo = 'MESA' }) => {
     const [isExpanded, setIsExpanded] = useState(true); // Default expanded to show content
     
     // Sum total of all sub-orders
@@ -61,7 +65,7 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
             <div className="flex justify-between items-start mb-2">
                 <div className="flex flex-col">
                     <div className="flex items-center gap-2">
-                        <span className="text-base font-bold text-blue-600 dark:text-blue-400 uppercase tracking-tighter">MESA {tableNumber}</span>
+                        <span className="text-base font-bold text-blue-600 dark:text-blue-400 uppercase tracking-tighter">{rotulo} {tableNumber}</span>
                         {nomeDaMesa && (
                             <span className="text-base font-bold text-gray-700 dark:text-gray-200 uppercase tracking-tighter truncate max-w-[10rem]" title={nomeDaMesa}>
                                 · {nomeDaMesa}
@@ -141,7 +145,7 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
             {/* Footer / Actions */}
             <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-700">
                 <div className="flex justify-between items-center mb-3">
-                    <span className="text-[10px] font-black uppercase text-gray-400">Total da Mesa</span>
+                    <span className="text-[10px] font-black uppercase text-gray-400">Total da {rotulo === 'COMANDA' ? 'Comanda' : 'Mesa'}</span>
                     <span className="text-base font-bold text-gray-900 dark:text-gray-100">R$ {totalAmount.toFixed(2)}</span>
                 </div>
 
@@ -151,18 +155,36 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
                     nao um dos dois botoes pequenos lado a lado. */}
                 <button
                     onClick={() => {
-                        const billingRequested = orders.find(o => o.status === 'Conta Solicitada');
-                        if (billingRequested) {
-                            onAdvanceStatus({ ...billingRequested, total: totalAmount });
-                        } else {
-                            const activeOrders = orders.filter(o => o.status !== 'Entregue' && o.status !== 'Cancelado');
-                            // Prioritize advancing 'Novo' orders if the button is PRONTO
-                            const novoOrder = activeOrders.find(o => o.status === 'Novo');
-                            if (novoOrder) {
-                                onAdvanceStatus(novoOrder);
-                            } else if (activeOrders.length > 0) {
-                                onAdvanceStatus(activeOrders[0]);
-                            }
+                        // CRÍTICO (achado pela auditoria de 01/10/2026, causa
+                        // provável do caixa não bater para o cliente Marlon):
+                        // quando a ação é "FECHAR CONTA" (mesa com mais de um
+                        // sub-pedido -- cliente pediu, depois pediu mais),
+                        // SEMPRE manda o pedido VIRTUAL com a soma de todos
+                        // os sub-pedidos (igual abrirComandaDaMesa já faz),
+                        // nunca um sub-pedido isolado. Antes, em certos
+                        // estados (ex.: sub-pedido ainda 'Em Produção'), o
+                        // código pegava só UM sub-pedido -- o operador via e
+                        // cobrava um valor MENOR que o total real da mesa, e
+                        // o fechamento em lote marcava a mesa inteira como
+                        // paga mesmo assim.
+                        if (action.label === 'FECHAR CONTA') {
+                            const naoFinalizados = orders.filter(o => o.status !== 'Entregue' && o.status !== 'Cancelado');
+                            const base = naoFinalizados[0] || orders[0];
+                            onAdvanceStatus({
+                                ...base,
+                                status: 'Conta Solicitada',
+                                items: orders.flatMap(o => o.items || []),
+                                total: totalAmount,
+                            });
+                            return;
+                        }
+                        const activeOrders = orders.filter(o => o.status !== 'Entregue' && o.status !== 'Cancelado');
+                        // Prioritize advancing 'Novo' orders if the button is PRONTO
+                        const novoOrder = activeOrders.find(o => o.status === 'Novo');
+                        if (novoOrder) {
+                            onAdvanceStatus(novoOrder);
+                        } else if (activeOrders.length > 0) {
+                            onAdvanceStatus(activeOrders[0]);
                         }
                     }}
                     className={`w-full mb-2 flex items-center justify-center gap-2 p-3 text-white font-black rounded-lg transition-all active:scale-95 cursor-pointer text-sm min-h-[48px] shadow-lg ring-2 ring-white/20 ${action.color}`}
@@ -170,6 +192,10 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
                     {action.label} {action.icon}
                 </button>
 
+                {/* Mesa já com conta fechada (todos os sub-pedidos
+                    'Entregue') não pode ganhar acréscimo por aqui -- mesmo
+                    motivo do OrderCard: achado pela auditoria de 01/10/2026. */}
+                {mainStatus !== 'Entregue' && (
                 <div className="grid grid-cols-1 gap-2">
                     <button
                         onClick={() => onEdit(orders[0])}
@@ -178,6 +204,7 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
                         ADICIONAR <PlusCircle size={14} />
                     </button>
                 </div>
+                )}
             </div>
         </div>
     );

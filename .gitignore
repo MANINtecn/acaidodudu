@@ -74,3 +74,10 @@ test_rpc_customer.ts
 
 # Supabase CLI local cache (contains project refs/pooler URLs)
 supabase/.temp/
+
+# Backups locais e rascunhos soltos na raiz (não fazem parte do produto)
+backups/
+claude-codigos-balcao.html
+claude-ouvir-sirenes.html
+temp_menu.html
+deno.lock

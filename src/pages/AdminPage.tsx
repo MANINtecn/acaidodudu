@@ -41,6 +41,7 @@ import { reservarImpressao, liberarImpressao, liberarTodasAsVias } from '../serv
 import { tocarSirene, type TipoSirene } from '../services/sireneService';
 import { estacaoDeveTocar, estacaoDeveImprimir, estacaoAtiva, estacaoMostraJanela, classificarTipoPedido } from '../services/estacaoService';
 import { mesmaMesa, nomeDaComanda } from '../utils/mesaUtils';
+import { calcularValorCarrinho } from '../utils/orderUtils';
 import {
     fetchMenuForAdmin,
     createCategory,
@@ -69,7 +70,8 @@ import {
     updateAddon,
     deleteAddon,
     mapOrderFromDB,
-    batchUpdateTableOrders,
+    fetchAllOpenOrdersForTable,
+    clearTablePayments,
     fetchOrderById
 } from '../services/supabaseService';
 import OrderCard from '../components/OrderCard';
@@ -82,6 +84,7 @@ import { CategoryModal as CategoryModalComponent } from '../components/CategoryM
 import { MenuItemModal as MenuItemModalComponent } from '../components/MenuItemModal';
 import { AddonModal as AddonModalComponent } from '../components/AddonModal';
 import { CheckoutModal, PaymentDetails } from '../components/CheckoutModal';
+import { SplitBillModal } from '../components/SplitBillModal';
 import { EditOrderModal as EditOrderModalComponent } from '../components/EditOrderModal';
 import SalesHistory from '../components/SalesHistory';
 
@@ -123,6 +126,13 @@ const AdminPage = () => {
     const [activeTab, setActiveTab] = useState<'orders' | 'kitchen' | 'menu' | 'settings' | 'promotions' | 'cash' | 'addons' | 'counter' | 'raffle' | 'ads' | 'reviews' | 'history' | 'couriers' | 'whatsapp-bot' | 'delivery-zones' | 'comandos' | 'fidelidade' | 'fiscal'>('orders');
     /** Muda a cada F3, pedindo ao CounterTab para focar a busca de produto. */
     const [focusSearchSignal, setFocusSearchSignal] = useState(0);
+    // F7 dentro do Balcão V2 fechou uma comanda via checkout -- avisa o
+    // CounterTab fechar a tela da comanda sozinho (ela já virou pedido pago).
+    const [fecharComandaSignal, setFecharComandaSignal] = useState(0);
+    // F8 dentro do Balcão V2: número da mesa/comanda sendo dividida agora
+    // (null = modal fechado). Trazido do Papaleguas, pedido do Ikarus
+    // 01/10/2026.
+    const [splitBillTable, setSplitBillTable] = useState<number | null>(null);
     const [menuSubTab, setMenuSubTab] = useState<'items' | 'addons'>('items');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
     const [showUtilityMenu, setShowUtilityMenu] = useState(false);
@@ -178,7 +188,7 @@ const AdminPage = () => {
             // F4 falhar de forma intermitente: o CounterTab tem outro listener
             // no mesmo window, e o evento podia sair daqui já marcado e ser
             // descartado antes de virar troca de aba. Ver Regra 10.
-            const ehNavegacao = e.key === 'F3' || e.key === 'F4' || e.key === 'F5' || e.key === 'F6' || e.key === 'F7';
+            const ehNavegacao = e.key === 'F3' || e.key === 'F4' || e.key === 'F5' || e.key === 'F6' || e.key === 'F7' || e.key === 'F8';
             const ehDigito = /^[0-9]$/.test(e.key);
             const ehEnter = e.key === 'Enter';
             const ehEsc = e.key === 'Escape';
@@ -250,13 +260,91 @@ const AdminPage = () => {
 
             // F7 = checkout da comanda aberta. Fecha a conta sem mouse:
             // F5 -> numero -> ENTER -> F7 -> (D/C/P) -> ENTER
+            //
+            // Balcão V2, pedido do Ikarus 01/10/2026 ("não sair da mesma
+            // tela, no outro programa eles não saem"): se a aba ativa for o
+            // Balcão e tiver uma comanda aberta lá (comandaAtivaBalcaoRef,
+            // avisado pelo CounterTab via onComandaAtivaChange), monta o
+            // pedido virtual da mesa NA HORA e abre o checkout -- sem
+            // precisar ir pra aba Pedidos primeiro.
             if (e.key === 'F7') {
+                if (activeTabRef.current === 'counter' && comandaAtivaBalcaoRef.current != null) {
+                    const numero = comandaAtivaBalcaoRef.current;
+                    (async () => {
+                        // Pedido do Ikarus 02/10/2026: "por que esperar
+                        // lançar? já no faturar" -- se a comanda ainda só
+                        // está no carrinho (nunca enviada), envia sozinha
+                        // (mesmo handleFinalize de sempre) antes de abrir o
+                        // checkout. Só tenta enviar se ainda não existe
+                        // pedido no banco pra esse número.
+                        if (!montarComandaVirtualDaMesa(numero) && enviarComandaAtivaRef.current) {
+                            const ok = await enviarComandaAtivaRef.current();
+                            if (!ok) return; // erro já avisado pelo próprio handleFinalize
+                        }
+                        // CRÍTICO (achado 02/10/2026, relato do Ikarus:
+                        // "lancei, apertei F7, o pedido foi criado mas o
+                        // checkout não abriu"): mesmo com o await acima,
+                        // `ordersRef` só é sincronizado por um useEffect
+                        // separado -- lê um ciclo de render DEPOIS do
+                        // setOrders. Um pequeno retry garante achar o pedido
+                        // mesmo nessa folga, sem depender de timing exato.
+                        let comanda = montarComandaVirtualDaMesa(numero);
+                        for (let tentativa = 0; !comanda && tentativa < 5; tentativa++) {
+                            await new Promise(r => setTimeout(r, 100));
+                            comanda = montarComandaVirtualDaMesa(numero);
+                        }
+                        if (comanda) {
+                            checkoutVeioDoBalcaoRef.current = true;
+                            setCheckoutOrder(comanda);
+                            setIsCheckoutModalOpen(true);
+                        } else {
+                            showNotify('Lance pelo menos um produto antes de fechar a conta.', 'warning');
+                        }
+                    })();
+                    return;
+                }
                 const alvo = comandaAbertaRef.current;
                 if (alvo) {
                     setCheckoutOrder(alvo);
                     setIsCheckoutModalOpen(true);
                 } else {
                     showNotify('Abra uma comanda primeiro: F5, número da mesa e ENTER.', 'warning');
+                }
+                return;
+            }
+
+            // F8 = dividir a conta (trazido do Papaleguas, pedido do Ikarus
+            // 01/10/2026). Só dentro do Balcão V2, com uma comanda aberta --
+            // mesma fonte que o F7 usa (comandaAtivaBalcaoRef).
+            if (e.key === 'F8') {
+                if (activeTabRef.current === 'counter' && comandaAtivaBalcaoRef.current != null) {
+                    const numero = comandaAtivaBalcaoRef.current;
+                    (async () => {
+                        // Mesmo critério do F7: envia sozinho se a comanda
+                        // ainda só está no carrinho.
+                        if (!montarComandaVirtualDaMesa(numero) && enviarComandaAtivaRef.current) {
+                            const ok = await enviarComandaAtivaRef.current();
+                            if (!ok) return;
+                        }
+                        // CRÍTICO (achado 02/10/2026, print do Ikarus: "F8 abriu
+                        // mas total/pago/falta tudo R$ 0,00"): o SplitBillModal lê
+                        // o saldo DIRETO do banco (RPC get_table_balance) -- sem
+                        // o envio acima, uma comanda só no carrinho local abria
+                        // a tela "vazia", parecendo quebrada. Mesmo retry do F7
+                        // pra esperar ordersRef sincronizar depois do envio.
+                        let comanda = montarComandaVirtualDaMesa(numero);
+                        for (let tentativa = 0; !comanda && tentativa < 5; tentativa++) {
+                            await new Promise(r => setTimeout(r, 100));
+                            comanda = montarComandaVirtualDaMesa(numero);
+                        }
+                        if (comanda) {
+                            setSplitBillTable(numero);
+                        } else {
+                            showNotify('Lance pelo menos um produto antes de dividir a conta.', 'warning');
+                        }
+                    })();
+                } else {
+                    showNotify('Abra uma comanda no Balcão primeiro.', 'warning');
                 }
                 return;
             }
@@ -282,6 +370,45 @@ const AdminPage = () => {
     mesaBuscadaRef.current = mesaBuscada;
     const comandaAbertaRef = useRef<Order | null>(comandaAberta);
     comandaAbertaRef.current = comandaAberta;
+    // Número da comanda aberta DENTRO do Balcão V2 (CounterTab) -- pedido do
+    // Ikarus 01/10/2026: "não sair da mesma tela", F7 precisa funcionar sem
+    // precisar ir pra aba Pedidos primeiro. Atualizado via callback do
+    // próprio CounterTab (onComandaAtivaChange), não por polling.
+    const comandaAtivaBalcaoRef = useRef<number | null>(null);
+    const handleComandaAtivaBalcaoChange = useCallback((numero: number | null) => {
+        comandaAtivaBalcaoRef.current = numero;
+    }, []);
+    // Preenchida pelo CounterTab com handleFinalize -- pedido do Ikarus
+    // 02/10/2026: F7/F8 enviam a comanda sozinhos (se ainda só está no
+    // carrinho, nunca enviada) antes de abrir checkout/split.
+    const enviarComandaAtivaRef = useRef<(() => Promise<boolean>) | null>(null);
+    // Marca se o checkout em andamento foi aberto pelo F7 de DENTRO do Balcão
+    // -- handleConfirmCheckout usa isso pra avisar o CounterTab fechar a tela
+    // da comanda sozinho, em vez de deixar o operador "preso" numa comanda
+    // que já virou pedido pago.
+    const checkoutVeioDoBalcaoRef = useRef(false);
+
+    // Itens da mesa/comanda sendo dividida (F8) -- mesmo formato que o
+    // Papaleguas usa (ItemDaMesa), com a origem (order_id+cartId) preservada
+    // pra travar pagamento duplicado de item. Preço unitário já com adicionais.
+    const itensDoSplitBill = useMemo(() => {
+        if (splitBillTable == null) return [];
+        return orders
+            .filter(o => mesmaMesa(o.table_number, splitBillTable) && o.status !== 'Entregue' && o.status !== 'Cancelado')
+            .flatMap(o => (o.items || []).map((it: any, idx: number) => {
+                const addons = (it.selectedAddons || []).reduce((a: number, b: any) => a + (Number(b.price) || 0), 0);
+                const unit = (Number(it.price) || 0) + addons;
+                const qty = Number(it.quantity) || 1;
+                return {
+                    order_id: String(o.id || ''),
+                    cart_id: String(it.cartId || `${o.id}-${idx}`),
+                    name: it.name,
+                    unit_price: unit,
+                    quantity: qty,
+                    line_total: Number((unit * qty).toFixed(2)),
+                };
+            }));
+    }, [orders, splitBillTable]);
 
     /**
      * Abre a comanda de uma mesa pelo teclado.
@@ -294,7 +421,11 @@ const AdminPage = () => {
     const mostraEntrega = estacaoMostraJanela('entrega');
     const mostraSalao = estacaoMostraJanela('salao');
 
-    const abrirComandaDaMesa = useCallback((numeroMesa: number) => {
+    // Extraído de abrirComandaDaMesa (que só fazia setState, sem devolver
+    // nada) -- pedido do Ikarus 01/10/2026, "não sair da mesma tela": o F7
+    // dentro do Balcão V2 precisa do pedido virtual montado NA HORA, na mesma
+    // tecla, pra já abrir o checkout -- não dá pra esperar um re-render.
+    const montarComandaVirtualDaMesa = useCallback((numeroMesa: number): Order | null => {
         // mesmaMesa(): o banco devolve table_number como STRING. Com `===`
         // direto, "1" === 1 era false e isto dizia "mesa nao tem comanda"
         // com a comanda aberta na tela ao lado.
@@ -302,29 +433,37 @@ const AdminPage = () => {
             mesmaMesa(o.table_number, numeroMesa) &&
             o.status !== 'Entregue' && o.status !== 'Cancelado'
         );
-
-        if (daMesa.length === 0) {
-            setComandaAberta(null);
-            showNotify(`Mesa ${numeroMesa} não tem comanda aberta.`, 'warning');
-            return;
-        }
+        if (daMesa.length === 0) return null;
 
         // O nome pode vir em qualquer um dos pedidos da mesa, e chega
         // grudado no numero ("Mesa 1 · TECX SISTEMAS"). nomeDaComanda()
         // devolve so a parte digitada pelo operador.
         const nomeReal = nomeDaComanda(daMesa);
-
-        const comanda: Order = {
+        return {
             ...daMesa[0],
             customerName: nomeReal || daMesa[0].customerName,
             items: daMesa.flatMap(o => o.items || []),
             total: daMesa.reduce((soma, o) => soma + (Number(o.total) || 0), 0),
         };
+    }, []);
+
+    const abrirComandaDaMesa = useCallback((numeroMesa: number) => {
+        // "MESA" ou "COMANDA" (Balcão V2 -- slots 1-20). Achado em
+        // 30/09/2026, print do Ikarus mostrando "Mesa N" mesmo lançando
+        // pelo fluxo de comandas.
+        const rotulo = settings?.balcaoV2 ? 'Comanda' : 'Mesa';
+        const comanda = montarComandaVirtualDaMesa(numeroMesa);
+
+        if (!comanda) {
+            setComandaAberta(null);
+            showNotify(`${rotulo} ${numeroMesa} não tem comanda aberta.`, 'warning');
+            return;
+        }
 
         setComandaAberta(comanda);
         setSelectedOrder(comanda);
-        showNotify(`Mesa ${numeroMesa} · R$ ${comanda.total.toFixed(2)} · F7 para fechar`);
-    }, []);
+        showNotify(`${rotulo} ${numeroMesa} · R$ ${comanda.total.toFixed(2)} · F7 para fechar`);
+    }, [settings?.balcaoV2, montarComandaVirtualDaMesa]);
     const [showPrintSplash, setShowPrintSplash] = useState(false);
     const [darkMode, setDarkMode] = useState(() => {
         const saved = localStorage.getItem('theme');
@@ -395,8 +534,21 @@ const AdminPage = () => {
         ordersRef.current = orders;
     }, [orders]);
 
+    // CRÍTICO (achado em 01/10/2026, véspera da demo pro Marlon: "lancei a
+    // Comanda 1, depois a 2, depois a 3 rapidinho -- a 1 ficou PENDENTE pra
+    // sempre no Balcão, mesmo já tendo virado pedido de verdade"). Cada envio
+    // chama loadData(true), e o fetch da Comanda 1 (disparado primeiro) podia
+    // responder DEPOIS dos fetches 2 e 3 (race de rede comum no Supabase) --
+    // `setOrders(ordersData)` sobrescrevia tudo com um snapshot mais velho,
+    // sem a Comanda 1 ainda, fazendo o card dela "esquecer" que já foi
+    // enviada. Contador de chamada: só a resposta MAIS RECENTE (maior id) tem
+    // permissão de gravar o estado -- uma resposta antiga que chega atrasada
+    // é descartada.
+    const loadDataCallIdRef = useRef(0);
+
     const loadData = async (silent = false) => {
         if (!currentStore) return;
+        const chamadaId = ++loadDataCallIdRef.current;
         try {
             if (!silent) setLoading(true);
             const [ordersData, menuData, settingsData, promotionsData] = await Promise.all([
@@ -405,6 +557,8 @@ const AdminPage = () => {
                 fetchSettings(currentStore.id),
                 fetchAllPromotions(currentStore.id)
             ]);
+
+            if (chamadaId !== loadDataCallIdRef.current) return; // resposta obsoleta, descarta
 
             setOrders(ordersData);
             setCategories(menuData.categories);
@@ -422,10 +576,15 @@ const AdminPage = () => {
     // Lightweight refresh for real-time updates
     const refreshOrdersOnly = async () => {
         if (!currentStore) return;
+        // Mesmo guard de loadData: o polling de 30s roda em paralelo com
+        // envios manuais do Balcão, então uma resposta deste fetch pode
+        // chegar atrasada e sobrescrever um estado mais novo.
+        const chamadaId = ++loadDataCallIdRef.current;
         try {
             console.log(`[Polling] Checking for new orders... Store ID: ${currentStore.id}`);
             const ordersData = await fetchActiveOrders(currentStore.id);
-            
+            if (chamadaId !== loadDataCallIdRef.current) return; // resposta obsoleta, descarta
+
             // REDUNDANCY: Check for unprinted orders in the poll result
             if ((window as any).electron) {
                 const unprinted = ordersData.filter(o => 
@@ -1058,6 +1217,26 @@ const AdminPage = () => {
         }
     }, [printOrder, markOrderItemsAsPrinted]);
 
+    // CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei a comanda toda,
+    // abri uma nova no mesmo número, o F8 já mostrava pagamento de outro
+    // cliente"): table_payments vive preso ao table_number (slot 1-20), não
+    // ao pedido em si -- se o slot fica livre depois de cancelar/excluir e
+    // ninguém limpa, o próximo cliente que usar o mesmo número de comanda
+    // herda os pagamentos fracionados de quem usou antes. Chama isso depois
+    // de cancelar/excluir um pedido de mesa: se não sobrar NENHUM pedido
+    // aberto pra aquele número, zera o rastro de pagamentos dele.
+    const limparPagamentosSeMesaFicouVazia = async (tableNumber: any) => {
+        if (!currentStore || !tableNumber) return;
+        try {
+            const restantes = await fetchAllOpenOrdersForTable(currentStore.id, Number(tableNumber));
+            if (restantes.length === 0) {
+                await clearTablePayments(currentStore.id, Number(tableNumber));
+            }
+        } catch (_) {
+            // Não bloqueia o fluxo principal por causa de uma limpeza auxiliar.
+        }
+    };
+
     const handleStatusChange = async (orderId: string, newStatus: Order['status']) => {
         if (newStatus === 'Cancelado') {
             const confirmed = window.confirm("⚠️ ATENÇÃO: Você está prestes a CANCELAR este pedido.\n\nEsta ação notificará o cliente e interromperá o fluxo de produção. Deseja continuar?");
@@ -1065,8 +1244,11 @@ const AdminPage = () => {
         }
 
         try {
+            const pedido = ordersRef.current.find(o => o.id === orderId);
             await updateOrderStatus(orderId, newStatus);
-            
+            if (newStatus === 'Cancelado' && pedido?.table_number) {
+                await limparPagamentosSeMesaFicouVazia(pedido.table_number);
+            }
             await loadData(true);
         } catch (error) {
             console.error("Error updating status:", error);
@@ -1078,7 +1260,11 @@ const AdminPage = () => {
         const confirmed = window.confirm("🛑 AVISO PROFISSIONAL: A exclusão de um pedido é IRREVERSÍVEL e removerá todos os registros financeiros associados.\n\nTem certeza que deseja EXCLUIR permanentemente este pedido?");
         if (!confirmed) return;
         try {
+            const pedido = ordersRef.current.find(o => o.id === orderId);
             await deleteOrder(orderId);
+            if (pedido?.table_number) {
+                await limparPagamentosSeMesaFicouVazia(pedido.table_number);
+            }
             await loadData(true);
         } catch (error) {
             console.error("Error deleting order:", error);
@@ -1100,15 +1286,45 @@ const AdminPage = () => {
                 tax: details.tax
             };
             if (checkoutOrder.table_number) {
-                // MASS UPDATE for Tables
-                await batchUpdateTableOrders(currentStore.id, Number(checkoutOrder.table_number), {
-                    status: 'Entregue',
-                    paymentMethod: details.method,
-                    changeFor: details.method === 'Dinheiro' ? details.amountTendered.toString() : undefined,
-                    // Note: individual taxes/discounts might be tricky in batch, 
-                    // but for tables we usually apply them to the final closing.
-                    // For now, we update the composite state.
-                });
+                // CRÍTICO (achado pela auditoria de 01/10/2026, mesmo padrão
+                // da reclamação original do Marlon "o caixa nunca bate"):
+                // batchUpdateTableOrders aplica o MESMO update em TODOS os
+                // sub-pedidos da mesa de uma vez -- por isso nunca podia
+                // receber `total`, só status/paymentMethod. Resultado: um
+                // desconto ou taxa aplicado aqui no Checkout (details.discount/
+                // details.tax, já embutidos em details.finalTotal) NUNCA era
+                // salvo em nenhum sub-pedido -- o campo `total` de cada um
+                // continuava o valor cheio, sem desconto. O caixa (que soma
+                // order.total) contava a mais do que o dinheiro que realmente
+                // entrou na gaveta, TODA vez que havia desconto/taxa numa
+                // mesa/comanda.
+                // Corrigido: busca os sub-pedidos reais da mesa e rateia
+                // details.finalTotal entre eles, proporcional ao total
+                // original de cada um -- a SOMA bate exatamente com o valor
+                // cobrado na tela, e cada sub-pedido individual continua
+                // auditável no histórico.
+                const subPedidos = await fetchAllOpenOrdersForTable(currentStore.id, Number(checkoutOrder.table_number));
+                const somaOriginal = subPedidos.reduce((s, o) => s + (Number(o.total) || 0), 0);
+                let acumulado = 0;
+                for (let i = 0; i < subPedidos.length; i++) {
+                    const sub = subPedidos[i];
+                    const ehUltimo = i === subPedidos.length - 1;
+                    // Último sub-pedido absorve o resto da divisão -- evita que
+                    // arredondamento de centavos faça a soma ficar 1 centavo
+                    // diferente de details.finalTotal.
+                    const parteDoTotal = ehUltimo
+                        ? Number((details.finalTotal - acumulado).toFixed(2))
+                        : Number(((Number(sub.total) || 0) / (somaOriginal || 1) * details.finalTotal).toFixed(2));
+                    acumulado += parteDoTotal;
+                    await updateOrder(sub.id!, {
+                        status: 'Entregue',
+                        paymentMethod: details.method,
+                        changeFor: details.method === 'Dinheiro' ? details.amountTendered.toString() : undefined,
+                        total: parteDoTotal,
+                        discount: details.discount,
+                        tax: details.tax,
+                    });
+                }
             } else {
                 // Standard Single Order Update
                 await updateOrder(checkoutOrder.id!, updates);
@@ -1141,6 +1357,13 @@ const AdminPage = () => {
             // Comanda fechou: some tambem o badge "Mesa N · F7 fecha a
             // conta" — a mesa esta livre, nao ha o que fechar mais.
             setComandaAberta(null);
+            // F7 dentro do Balcão V2: avisa o CounterTab fechar a tela da
+            // comanda sozinho -- ela já virou pedido pago, não há mais nada a
+            // fazer ali (pedido do Ikarus, "não sair da mesma tela").
+            if (checkoutVeioDoBalcaoRef.current) {
+                checkoutVeioDoBalcaoRef.current = false;
+                setFecharComandaSignal(v => v + 1);
+            }
 
         } catch (error) {
             console.error("Checkout error:", error);
@@ -1206,6 +1429,15 @@ const AdminPage = () => {
 
     const handleCounterOrderComplete = useCallback(async (order: any) => {
         console.log('Attempting to create/update order:', order);
+        // Balcão V2 (decisão do Ikarus, 30/09): NUNCA redireciona pra aba
+        // Pedidos, nem imprime sozinho -- o operador lança e continua no
+        // Balcão. Sem isto, o redirect desmontava o CounterTab inteiro
+        // (activeTab !== 'counter' some o componente da árvore) e zerava o
+        // cache de rascunhos não-enviados: uma comanda "em standby" (item
+        // lançado, ainda sem enviar) desaparecia da lista quando OUTRA
+        // comanda era enviada em seguida. Achado em 30/09/2026, relato do
+        // Ikarus: "lancei a Comanda 3, voltei e a Comanda 2 tinha sumido".
+        const ehBalcaoV2 = !!settingsRef.current?.balcaoV2;
         try {
             if (order.id) {
                 await updateOrder(order.id, order);
@@ -1214,12 +1446,12 @@ const AdminPage = () => {
                 const result = await createOrder(order);
                 console.log('Order created successfully:', result);
 
-                if (result) {
+                if (result && !ehBalcaoV2) {
                     // Unified flow: Always go to orders tab and try to print.
                     // User requested to remove auto-checkout for Counter/Takeaway.
                     setActiveTab('orders');
 
-                    // Force-merge deliveryFee from input (order.deliveryFee) 
+                    // Force-merge deliveryFee from input (order.deliveryFee)
                     // because createOrder might return strict DB columns (which might exclude delivery_fee if column is missing/cached)
                     // This ensures the receipt matches the typed value.
                     const orderToPrint = {
@@ -1227,16 +1459,25 @@ const AdminPage = () => {
                         deliveryFee: order.deliveryFee,
                         delivery_fee: order.deliveryFee
                     };
- 
+
                     // Automatic print for ALL new orders created via Counter
                     // Updates (order.id exists) will be handled by handlePrintOrder's printed check
                     await handlePrintOrder(orderToPrint, true);
                 }
             }
-            if (order.table_number) {
+            if (order.table_number && !ehBalcaoV2) {
                 setActiveTab('orders');
             }
-            loadData(true);
+            // CRÍTICO (achado 02/10/2026, relato do Ikarus: "lancei produto,
+            // apertei F7, o pedido foi criado mas o checkout não abriu"):
+            // antes, `loadData(true)` rodava SEM await -- esta função
+            // (handleCounterOrderComplete, que é o onOrderComplete chamado
+            // por handleFinalize) resolvia sua Promise ANTES de orders/
+            // ordersRef serem atualizados. F7/F8 esperam o await de
+            // enviarComandaAtivaRef.current() terminar pra então buscar o
+            // pedido recém-criado em ordersRef -- sem o await aqui, essa
+            // busca sempre rodava cedo demais e nunca achava nada.
+            await loadData(true);
         } catch (error) {
             console.error('Error creating/updating order:', error);
             alert('Erro ao salvar pedido. Verifique o console para mais detalhes.');
@@ -1506,6 +1747,10 @@ const AdminPage = () => {
                         onOrderComplete={handleCounterOrderComplete}
                         promotions={promotions}
                         focusSearchSignal={focusSearchSignal}
+                        onComandaAtivaChange={handleComandaAtivaBalcaoChange}
+                        fecharComandaSignal={fecharComandaSignal}
+                        modalExternoAberto={isCheckoutModalOpen || splitBillTable != null}
+                        enviarComandaAtivaRef={enviarComandaAtivaRef}
                     />
                 )}
 
@@ -1584,6 +1829,7 @@ const AdminPage = () => {
                                     <TableGroupCard
                                         key={`table-${tableNum}`}
                                         tableNumber={parseInt(tableNum)}
+                                        rotulo={settings?.balcaoV2 ? 'COMANDA' : 'MESA'}
                                         orders={tableOrders as Order[]}
                                         onPrint={(o: Order) => handlePrintOrder(o, true)}
                                         onCancel={(o: Order) => handleStatusChange(o.id!, 'Cancelado')}
@@ -1820,6 +2066,7 @@ const AdminPage = () => {
                         <SettingsTab
                             settings={settings}
                             categories={categories}
+                            menuItems={menuItems}
                             onSave={handleSaveSettings}
                             installPrompt={installPrompt}
                             onInstall={handleInstallClick}
@@ -1862,7 +2109,7 @@ const AdminPage = () => {
                 {activeTab === 'orders' && mesaBuscada && (
                     <div className="fixed inset-0 z-[9998] flex items-center justify-center pointer-events-none">
                         <div className="bg-slate-900 border-4 border-blue-500 rounded-2xl px-10 py-6 shadow-2xl text-center">
-                            <span className="block text-[10px] font-black uppercase tracking-widest text-blue-400">Abrir mesa</span>
+                            <span className="block text-[10px] font-black uppercase tracking-widest text-blue-400">{settings?.balcaoV2 ? 'Abrir comanda' : 'Abrir mesa'}</span>
                             <span className="block text-6xl font-black text-white font-mono leading-none my-1">{mesaBuscada}</span>
                             <span className="block text-[11px] font-bold text-slate-400">ENTER abre · ESC cancela</span>
                         </div>
@@ -1873,7 +2120,7 @@ const AdminPage = () => {
                 {activeTab === 'orders' && comandaAberta && !mesaBuscada && (
                     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[9997] pointer-events-none">
                         <div className="bg-blue-600 text-white rounded-xl px-5 py-2.5 shadow-xl flex items-center gap-3">
-                            <span className="font-black text-sm">Mesa {comandaAberta.table_number}</span>
+                            <span className="font-black text-sm">{settings?.balcaoV2 ? 'Comanda' : 'Mesa'} {comandaAberta.table_number}</span>
                             <span className="font-mono font-bold">R$ {Number(comandaAberta.total).toFixed(2)}</span>
                             <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded font-bold">F7 fecha a conta</span>
                         </div>
@@ -1961,10 +2208,10 @@ const AdminPage = () => {
 
                                     // A. Create NEW order for new items (triggers auto-print)
                                     if (newItems.length > 0) {
-                                        const totalNewItems = newItems.reduce((sum, item) => {
-                                            const addonsPrice = item.selectedAddons?.reduce((acc: number, a: any) => acc + (a.price || 0), 0) || 0;
-                                            return sum + ((item.price + addonsPrice) * item.quantity);
-                                        }, 0);
+                                        // calcularValorCarrinho (não a conta manual antiga, que
+                                        // esquecia o preço de combo) -- achado pela auditoria de
+                                        // 01/10/2026, causa do caixa não bater com itens combo.
+                                        const totalNewItems = calcularValorCarrinho(newItems, settings?.comboPrice);
 
                                         const newSubOrder: any = {
                                             ...savedOrder,
@@ -1987,16 +2234,18 @@ const AdminPage = () => {
                                         const orderCartIds = new Set((tableOrder.items || []).map(i => i.cartId));
                                         const itemsForThisOrder = existingItems.filter(i => orderCartIds.has(i.cartId));
                                         
-                                        const newTotal = itemsForThisOrder.reduce((sum, item) => {
-                                            const addonsPrice = item.selectedAddons?.reduce((acc: number, a: any) => acc + (a.price || 0), 0) || 0;
-                                            return sum + ((item.price + addonsPrice) * item.quantity);
-                                        }, 0) + (tableOrder.deliveryFee || 0);
+                                        const newTotal = calcularValorCarrinho(itemsForThisOrder, settings?.comboPrice) + (tableOrder.deliveryFee || 0);
 
-                                        if (tableOrder.items && tableOrder.items.length > 0 && itemsForThisOrder.length === 0) {
-                                            // All items deleted from this sub-order
+                                        // CRÍTICO (achado pela auditoria de 01/10/2026, mesmo
+                                        // bug do CounterTab.tsx): sem nenhum item meu, SEMPRE
+                                        // deleta -- não deixar um sub-pedido vazio ativo no
+                                        // banco, mesmo que `tableOrder.items` já chegasse
+                                        // vazio/nulo. Antes isso caía no `else` e atualizava
+                                        // um pedido com items:[] em vez de removê-lo, e ele
+                                        // continuava contando no fechamento do dia.
+                                        if (itemsForThisOrder.length === 0) {
                                             await deleteOrder(tableOrder.id!);
                                         } else {
-                                            // Update the sub-order
                                             await handleUpdateOrder(tableOrder.id!, {
                                                 ...tableOrder,
                                                 items: itemsForThisOrder,
@@ -2033,12 +2282,49 @@ const AdminPage = () => {
                             setIsCheckoutModalOpen(false);
                             setCheckoutOrder(null);
                             setComandaAberta(null);
+                            // Cancelou o checkout sem confirmar pagamento:
+                            // a comanda continua aberta no Balcão, então NÃO
+                            // dispara fecharComandaSignal -- só reseta a flag
+                            // pra não vazar num próximo checkout de fora.
+                            checkoutVeioDoBalcaoRef.current = false;
                         }}
                         onConfirm={handleConfirmCheckout}
                         order={checkoutOrder}
+                        onOpenSplitBill={() => {
+                            // F8 dentro do Checkout -- pedido do Ikarus
+                            // 02/10/2026: fecha ESTE checkout (sem confirmar
+                            // pagamento nenhum) e abre o SplitBillModal pra
+                            // mesma mesa/comanda.
+                            const tableNum = Number(checkoutOrder.table_number);
+                            setIsCheckoutModalOpen(false);
+                            setCheckoutOrder(null);
+                            checkoutVeioDoBalcaoRef.current = false;
+                            setSplitBillTable(tableNum);
+                        }}
                     />
                 )
             }
+            {splitBillTable != null && (
+                <SplitBillModal
+                    isOpen={true}
+                    onClose={() => setSplitBillTable(null)}
+                    storeId={currentStore?.id || ''}
+                    tableNumber={splitBillTable}
+                    rotulo={settings?.balcaoV2 ? 'Comanda' : 'Mesa'}
+                    itens={itensDoSplitBill}
+                    onSettled={() => {
+                        // Mesa quitada e fechada -- mesmo tratamento do F7:
+                        // avisa o CounterTab fechar a tela da comanda, recarrega
+                        // os pedidos (o sub-pedido já virou 'Entregue' no banco
+                        // pela RPC settle_table).
+                        setSplitBillTable(null);
+                        loadData(true);
+                        if (activeTabRef.current === 'counter') {
+                            setFecharComandaSignal(v => v + 1);
+                        }
+                    }}
+                />
+            )}
 
             <AvailabilityReminderModal
                 isOpen={showAvailabilityReminder}

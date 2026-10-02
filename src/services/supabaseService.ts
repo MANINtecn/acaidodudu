@@ -1209,6 +1209,10 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
         { id: 2, name: 'PORÇÕES', image: '', categories: [] },
         { id: 3, name: 'BEBIDAS', image: '', categories: [] }
     ],
+    quickActionProduct: { label: 'Queridinho da Semana', menuItemId: undefined },
+    quickActionAccountLabel: 'Minha Conta',
+    instagramHandle: '',
+    storeAddress: '',
     isRaffleEnabled: false,
     rafflePrizeValue: 0,
     raffleDrawDate: undefined,
@@ -1226,6 +1230,7 @@ const defaultSettings: Omit<Settings, 'id' | 'store_id'> = {
     sireneVolume: 3,
     mostrarDicasAtalho: true,
     modeloMesas: 'padrao',
+    balcaoV2: false,
     pixEnabled: false,
     pixKey: '',
     pixKeyType: 'CNPJ',
@@ -1264,6 +1269,10 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
         // Map snake_case or camelCase DB columns to camelCase app properties
         storefrontTheme: dbData?.storefront_theme ?? dbData?.storefrontTheme ?? defaultSettings.storefrontTheme,
         modernGroups: dbData?.modern_groups ?? dbData?.modernGroups ?? defaultSettings.modernGroups,
+        quickActionProduct: dbData?.quick_action_product ?? dbData?.quickActionProduct ?? defaultSettings.quickActionProduct,
+        quickActionAccountLabel: dbData?.quick_action_account_label ?? dbData?.quickActionAccountLabel ?? defaultSettings.quickActionAccountLabel,
+        instagramHandle: dbData?.instagram_handle ?? dbData?.instagramHandle ?? defaultSettings.instagramHandle,
+        storeAddress: dbData?.store_address ?? dbData?.storeAddress ?? defaultSettings.storeAddress,
         openingTime: dbData?.opening_time ?? dbData?.openingTime ?? defaultSettings.openingTime,
         closingTime: dbData?.closing_time ?? dbData?.closingTime ?? defaultSettings.closingTime,
         customHoursPerDay: dbData?.custom_hours_per_day ?? dbData?.customHoursPerDay,
@@ -1296,6 +1305,7 @@ const mapSettingsDBToApp = (dbData: any, storeData?: any): Settings => {
         sireneVolume: Number(dbData?.sirene_volume ?? dbData?.sireneVolume ?? defaultSettings.sireneVolume),
         mostrarDicasAtalho: dbData?.mostrar_dicas_atalho ?? dbData?.mostrarDicasAtalho ?? defaultSettings.mostrarDicasAtalho,
         modeloMesas: dbData?.modelo_mesas ?? dbData?.modeloMesas ?? defaultSettings.modeloMesas,
+        balcaoV2: dbData?.balcao_v2 ?? dbData?.balcaoV2 ?? defaultSettings.balcaoV2,
         orderNumberingMode: dbData?.order_numbering_mode ?? dbData?.orderNumberingMode ?? defaultSettings.orderNumberingMode,
         orderNumberingResetAt: dbData?.order_numbering_reset_at ?? dbData?.orderNumberingResetAt,
         pixEnabled: dbData?.pix_enabled ?? dbData?.pixEnabled ?? defaultSettings.pixEnabled,
@@ -1390,7 +1400,7 @@ export const fetchSettings = async (storeId: string): Promise<Settings> => {
     return result;
 };
 
-export const fetchPublicSettings = async (storeId: string): Promise<Pick<Settings, 'modernGroups' | 'storefrontTheme' | 'openingTime' | 'closingTime' | 'manualStatus' | 'comboPrice' | 'webhookNewOrderUrl' | 'webhookInProductionUrl' | 'webhookOutForDeliveryUrl' | 'webhookArrivedAtDoorUrl' | 'isAppDiscountEnabled' | 'appDiscountPercentage' | 'logoUrl' | 'heroImageUrl' | 'loyaltyModel' | 'isRaffleEnabled' | 'rafflePrizeValue' | 'raffleDrawDate' | 'lastRaffleWinner' | 'isRatingEnabled' | 'deliveryFee' | 'courier_access_code' | 'defaultDDD' | 'isBotEnabled' | 'printerCompatibilityMode' | 'kitchenPrinter' | 'kitchenPrinterPaperWidth' | 'barPrinter' | 'barPrinterPaperWidth' | 'courierPrinter' | 'courierPrinterPaperWidth'>> => {
+export const fetchPublicSettings = async (storeId: string): Promise<Pick<Settings, 'modernGroups' | 'quickActionProduct' | 'quickActionAccountLabel' | 'instagramHandle' | 'storeAddress' | 'storefrontTheme' | 'openingTime' | 'closingTime' | 'manualStatus' | 'comboPrice' | 'webhookNewOrderUrl' | 'webhookInProductionUrl' | 'webhookOutForDeliveryUrl' | 'webhookArrivedAtDoorUrl' | 'isAppDiscountEnabled' | 'appDiscountPercentage' | 'logoUrl' | 'heroImageUrl' | 'loyaltyModel' | 'isRaffleEnabled' | 'rafflePrizeValue' | 'raffleDrawDate' | 'lastRaffleWinner' | 'isRatingEnabled' | 'deliveryFee' | 'courier_access_code' | 'defaultDDD' | 'isBotEnabled' | 'printerCompatibilityMode' | 'kitchenPrinter' | 'kitchenPrinterPaperWidth' | 'barPrinter' | 'barPrinterPaperWidth' | 'courierPrinter' | 'courierPrinterPaperWidth'>> => {
     const { data, error } = await supabase
         .from('settings')
         .select('*')
@@ -1446,6 +1456,18 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
     }
     if (settings.modernGroups !== undefined) {
         dbSettings.modern_groups = settings.modernGroups;
+    }
+    if (settings.quickActionProduct !== undefined) {
+        dbSettings.quick_action_product = settings.quickActionProduct;
+    }
+    if (settings.quickActionAccountLabel !== undefined) {
+        dbSettings.quick_action_account_label = settings.quickActionAccountLabel;
+    }
+    if (settings.instagramHandle !== undefined) {
+        dbSettings.instagram_handle = settings.instagramHandle;
+    }
+    if (settings.storeAddress !== undefined) {
+        dbSettings.store_address = settings.storeAddress;
     }
     if (settings.openingTime !== undefined) {
         dbSettings.opening_time = settings.openingTime;
@@ -1567,7 +1589,7 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
         'preferredPrinter', 'printerPaperWidth',
         'printerCompatibilityMode',
         'autoPrintDineIn', 'autoPrintRetirada', 'orderNumberingMode', 'orderNumberingResetAt',
-        'sireneTipo', 'sireneVolume', 'mostrarDicasAtalho', 'modeloMesas', 'heroImageUrl', 'loyaltyModel',
+        'sireneTipo', 'sireneVolume', 'mostrarDicasAtalho', 'modeloMesas', 'balcaoV2', 'heroImageUrl', 'loyaltyModel',
         'pixEnabled', 'pixKey', 'pixKeyType', 'pixBeneficiary',
         'storeWhatsapp', 'pixResumoTemplate'
     ];
@@ -1731,6 +1753,39 @@ export const deletePromotion = async (id: string | number) => {
 
 // --- Cash Flow Functions ---
 
+/**
+ * CRÍTICO (achado pela auditoria de 01/10/2026): a tabela `cash_sessions` no
+ * banco é snake_case (opening_float, closing_float, opening_time,
+ * closing_time -- confirmado via information_schema.columns), mas todo o
+ * código antes lia/escrevia em camelCase direto, sem nenhum mapeamento
+ * (diferente do padrão já usado em `settings`). Na prática isso significa
+ * que `session.openingFloat` sempre veio `undefined` do Supabase, e
+ * `createCashSession`/`updateCashSession` mandavam colunas que não existem
+ * -- uma causa adicional, bem concreta, do caixa nunca bater para o cliente
+ * Marlon (Açaí do Dudu).
+ */
+const mapCashSessionFromDB = (dbData: any): CashSession => ({
+    id: dbData.id,
+    store_id: dbData.store_id,
+    status: dbData.status,
+    openingFloat: Number(dbData.opening_float) || 0,
+    closingFloat: dbData.closing_float !== null && dbData.closing_float !== undefined ? Number(dbData.closing_float) : undefined,
+    openingTime: dbData.opening_time,
+    closingTime: dbData.closing_time,
+    summary: dbData.summary,
+});
+
+const toDbCashSession = (updates: Partial<CashSession>): any => {
+    const db: any = {};
+    if (updates.status !== undefined) db.status = updates.status;
+    if (updates.openingFloat !== undefined) db.opening_float = updates.openingFloat;
+    if (updates.closingFloat !== undefined) db.closing_float = updates.closingFloat;
+    if (updates.openingTime !== undefined) db.opening_time = updates.openingTime;
+    if (updates.closingTime !== undefined) db.closing_time = updates.closingTime;
+    if (updates.summary !== undefined) db.summary = updates.summary;
+    return db;
+};
+
 export const getOpenCashSession = async (storeId: string): Promise<CashSession | null> => {
     const { data, error } = await supabase
         .from('cash_sessions')
@@ -1740,28 +1795,28 @@ export const getOpenCashSession = async (storeId: string): Promise<CashSession |
         .limit(1)
         .single();
     if (error && error.code !== 'PGRST116') throw error;
-    return data;
+    return data ? mapCashSessionFromDB(data) : null;
 };
 
 export const createCashSession = async (storeId: string, openingFloat: number): Promise<CashSession> => {
     const { data, error } = await supabase
         .from('cash_sessions')
-        .insert({ openingFloat, status: 'open', store_id: storeId })
+        .insert({ opening_float: openingFloat, status: 'open', store_id: storeId })
         .select()
         .single();
     if (error) throw error;
-    return data;
+    return mapCashSessionFromDB(data);
 };
 
 export const updateCashSession = async (id: string, updates: Partial<CashSession>): Promise<CashSession> => {
     const { data, error } = await supabase
         .from('cash_sessions')
-        .update(updates)
+        .update(toDbCashSession(updates))
         .eq('id', id)
         .select()
         .single();
     if (error) throw error;
-    return data;
+    return mapCashSessionFromDB(data);
 };
 
 export const createCashTransaction = async (transaction: Omit<CashTransaction, 'id' | 'timestamp'>): Promise<CashTransaction> => {
@@ -1784,16 +1839,24 @@ export const getCashTransactionsForSession = async (sessionId: string): Promise<
     return data as CashTransaction[];
 };
 
-export const fetchCashSessionsHistory = async (storeId: string) => {
+export const fetchCashSessionsHistory = async (storeId: string): Promise<CashSession[]> => {
+    // CRÍTICO (achado 01/10/2026, feature nova "Histórico de Caixas" pra
+    // demo do Marlon): dois bugs que fariam esta função quebrar OU devolver
+    // dado errado pra tela, sem nunca ter sido usada em lugar nenhum antes:
+    // 1. `.order('closingTime', ...)` usava o nome CAMELCASE -- a coluna real
+    //    é `closing_time` (snake_case), igual todo o resto de cash_sessions.
+    // 2. `data as CashSession[]` fazia cast direto sem passar por
+    //    mapCashSessionFromDB -- a UI ia receber opening_float/closing_time
+    //    em vez de openingFloat/closingTime e tudo apareceria undefined.
     const { data, error } = await supabase
         .from('cash_sessions')
         .select('*')
         .eq('store_id', storeId)
         .eq('status', 'closed')
-        .order('closingTime', { ascending: false })
+        .order('closing_time', { ascending: false })
         .limit(30); // Last 30 sessions
     if (error) throw error;
-    return data as CashSession[];
+    return (data || []).map(mapCashSessionFromDB);
 };
 
 export const fetchOrdersForSession = async (storeId: string, startTime: string, endTime?: string) => {
@@ -1948,6 +2011,124 @@ export const batchUpdateTableOrders = async (storeId: string, tableNumber: numbe
 
     if (error) throw error;
     return data;
+};
+
+// ============================================================================
+// FECHAMENTO DE CONTA FRACIONADO (Balcão/Comanda) — 01/10/2026
+// ----------------------------------------------------------------------------
+// Trazido do Papaleguas (claude-split-bill.sql) a pedido do Ikarus, véspera da
+// demo pro Marlon: mesa grande onde cada um paga sua parte (por pessoa/valor
+// ou por produto consumido). O saldo vive no BANCO (tabela table_payments),
+// não na tela -- não se perde se a máquina travar ou outro operador assumir.
+// NÃO altera a tabela `orders` -- só fecha (status 'Entregue') quando o saldo
+// zera, pelo mesmo caminho que o checkout normal já usa.
+// ============================================================================
+
+export interface TablePayment {
+    id: string;
+    amount: number;
+    payment_method: string;
+    split_mode: 'VALOR' | 'PRODUTO';
+    payer_label?: string;
+    split_total?: number;
+    split_index?: number;
+    items_json?: any[];
+    created_at: string;
+}
+
+export interface TableBalance {
+    table_number: number;
+    open_orders: number;
+    total: number;
+    paid: number;
+    balance: number;
+    is_settled: boolean;
+    payments: TablePayment[];
+}
+
+/** Saldo da mesa numa única chamada (total, pago, falta, lista de recebimentos). */
+export const getTableBalance = async (storeId: string, tableNumber: number): Promise<TableBalance | null> => {
+    const { data, error } = await supabase.rpc('get_table_balance', {
+        p_store_id: storeId,
+        p_table_number: tableNumber
+    });
+    if (error) { console.error('getTableBalance:', error); return null; }
+    return data as TableBalance;
+};
+
+/** Registra um pagamento parcial. Retorna o saldo já atualizado. */
+export const addTablePayment = async (params: {
+    storeId: string;
+    tableNumber: number;
+    amount: number;
+    paymentMethod: string;
+    splitMode?: 'VALOR' | 'PRODUTO';
+    payerLabel?: string;
+    splitTotal?: number;
+    splitIndex?: number;
+    itemsJson?: any[] | null;
+    changeFor?: number | null;
+    waiterName?: string | null;
+}): Promise<{ success: boolean; error?: string } & Partial<TableBalance>> => {
+    const { data, error } = await supabase.rpc('add_table_payment', {
+        p_store_id: params.storeId,
+        p_table_number: params.tableNumber,
+        p_amount: params.amount,
+        p_payment_method: params.paymentMethod,
+        p_split_mode: params.splitMode || 'VALOR',
+        p_payer_label: params.payerLabel || null,
+        p_split_total: params.splitTotal || null,
+        p_split_index: params.splitIndex || null,
+        p_items_json: params.itemsJson || null,
+        p_change_for: params.changeFor || null,
+        p_waiter_name: params.waiterName || null
+    });
+    if (error) { console.error('addTablePayment:', error); return { success: false, error: error.message }; }
+    return data as any;
+};
+
+/** Estorna um pagamento marcado por engano. */
+export const voidTablePayment = async (paymentId: string, reason?: string) => {
+    const { data, error } = await supabase.rpc('void_table_payment', {
+        p_payment_id: paymentId,
+        p_reason: reason || null
+    });
+    if (error) { console.error('voidTablePayment:', error); return { success: false, error: error.message }; }
+    return data as any;
+};
+
+/** Fecha a mesa. Só conclui com saldo zerado -- force=true perdoa a diferença. */
+export const settleTable = async (storeId: string, tableNumber: number, force = false, waiterName?: string) => {
+    const { data, error } = await supabase.rpc('settle_table', {
+        p_store_id: storeId,
+        p_table_number: tableNumber,
+        p_force: force,
+        p_waiter_name: waiterName || null
+    });
+    if (error) { console.error('settleTable:', error); return { success: false, error: error.message }; }
+    return data as any;
+};
+
+/**
+ * CRÍTICO (achado em 02/10/2026, relato do Ikarus: "deletei a comanda toda,
+ * abri uma nova no mesmo número, o F8 já mostrava 'Pessoa 1 · R$15 pago' de
+ * um cliente completamente diferente"): `table_payments` é indexado por
+ * (store_id, table_number) -- como a "comanda" é só um número de slot
+ * reaproveitável (1-20), não um pedido único, o histórico de pagamentos
+ * fracionados de um cliente antigo FICAVA LIGADO ao slot pra sempre, e o
+ * próximo cliente que usasse aquele número herdava os pagamentos de outro.
+ * Chamar isto sempre que um slot fica vazio de verdade (todos os pedidos da
+ * mesa saíram do estado aberto, seja por checkout normal, cancelamento, ou
+ * exclusão manual) -- zera o rastro de pagamentos fracionados daquele número
+ * antes que ele seja reaproveitado por outra comanda/cliente.
+ */
+export const clearTablePayments = async (storeId: string, tableNumber: number) => {
+    const { error } = await supabase
+        .from('table_payments')
+        .delete()
+        .eq('store_id', storeId)
+        .eq('table_number', tableNumber);
+    if (error) console.error('clearTablePayments:', error);
 };
 
 export const updateStoreSubscription = async (storeId: string, updates: any) => {

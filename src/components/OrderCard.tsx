@@ -132,7 +132,12 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onPrint, onCancel, onDelet
                         )}
                     </div>
                 )}
-                {order.table_number && !order.customerName.toLowerCase().includes(`mesa ${order.table_number}`) && (
+                {order.table_number &&
+                 !order.customerName.toLowerCase().includes(`mesa ${order.table_number}`) &&
+                 !order.customerName.toLowerCase().includes(`comanda ${order.table_number}`) && (
+                    // Balcão V2 (slots 1-20) já embute "Comanda N" no
+                    // próprio customerName -- mostrar "Mesa N" aqui de novo
+                    // duplicava. Achado em 30/09/2026, print do Ikarus.
                     <p className="text-xs font-bold text-blue-600 dark:text-blue-400 mt-1">Mesa {order.table_number}</p>
                 )}
                 <div className="flex items-center gap-2 mt-1">
@@ -243,7 +248,12 @@ const OrderCard: React.FC<OrderCardProps> = ({ order, onPrint, onCancel, onDelet
                         </button>
                     )}
 
-                    {onEdit && (
+                    {/* Pedido já 'Entregue' (fechado/pago) não pode ser
+                        editado por aqui -- achado pela auditoria de
+                        01/10/2026: editar um pedido já cobrado mudava o
+                        total gravado sem reconciliar com o que o cliente
+                        realmente pagou, divergindo do caixa. */}
+                    {onEdit && order.status !== 'Entregue' && (
                         <button
                             onClick={() => onEdit(order)}
                             className={`col-span-1 flex items-center justify-center p-2 rounded-lg transition-colors ${isExternalOrder ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-200' : 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 hover:bg-blue-100'}`}

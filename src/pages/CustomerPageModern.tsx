@@ -14,11 +14,12 @@ import {
     fetchMenuForCustomer, fetchCustomerByPhone, fetchLastOrderByPhone, fetchCustomerLoyaltyHistory,
     redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones, canonicalPhone
 } from '../services/supabaseService';
-import { 
-    ShoppingCart as LucideShoppingCart, X as LucideX, 
+import {
+    ShoppingCart as LucideShoppingCart, X as LucideX,
     Plus as LucidePlus, Check as LucideCheck, Minus as LucideMinus, Bike, Star,
     Users, Search as LucideSearch, ArrowRight as LucideArrowRight,
-    Sun, Moon, Trash2 as LucideTrash
+    Sun, Moon, Trash2 as LucideTrash,
+    MapPin as LucideMapPin, Instagram as LucideInstagram, User as LucideUser
 } from 'lucide-react';
 import { normalizeString } from '../utils/searchUtils';
 import introJs from 'intro.js';
@@ -1728,6 +1729,90 @@ const ItemDetailModal: React.FC<{
     );
 };
 
+/**
+ * Barra fixa de 4 atalhos (pedido do Ikarus, 01/10/2026): produto em
+ * destaque configurável ("Queridinho da Semana"), mapa, Instagram e "Minha
+ * Conta". Fica sempre visível, em qualquer tela do cardápio -- renderizada
+ * nos dois pontos de `return` deste arquivo (landing e demais views).
+ */
+const QuickActionBar: React.FC<{
+    settings: Settings | null;
+    menuItems: MenuItem[];
+    onOpenProduct: (item: MenuItem) => void;
+    onOpenAccount: () => void;
+}> = ({ settings, menuItems, onOpenProduct, onOpenAccount }) => {
+    const produtoDestaque = settings?.quickActionProduct?.menuItemId
+        ? menuItems.find(i => i.id === settings.quickActionProduct!.menuItemId)
+        : null;
+    const rotuloProduto = settings?.quickActionProduct?.label || 'Queridinho da Semana';
+    const rotuloConta = settings?.quickActionAccountLabel || 'Minha Conta';
+    const endereco = settings?.storeAddress;
+    const instagram = settings?.instagramHandle;
+
+    // Mesma "pegada" visual dos botões de categoria logo acima (borda em
+    // gradiente colorido via padding, fundo interno escuro sólido, brilho na
+    // sombra) -- pedido do Ikarus, 01/10/2026: nenhum botão desta barra pode
+    // ficar "destacado" sobre os outros, e a barra em si não leva fundo.
+    const moldura = "relative flex items-center justify-center overflow-hidden transition-all duration-300 hover:scale-105 active:scale-95 rounded-2xl p-[3px]";
+    const miolo = "w-full h-full bg-gray-950 rounded-[14px] flex items-center justify-center gap-1.5";
+
+    return (
+        <div className="fixed bottom-0 left-0 right-0 z-30 px-3 py-2.5 flex items-center gap-2">
+            <button
+                type="button"
+                disabled={!produtoDestaque}
+                onClick={() => produtoDestaque && onOpenProduct(produtoDestaque)}
+                title={!produtoDestaque ? 'Nenhum produto configurado em Configurações' : undefined}
+                className={`${moldura} flex-1 h-16 bg-gradient-to-b from-orange-500 via-amber-400 to-purple-600 shadow-[0_0_20px_rgba(249,115,22,0.5)] disabled:opacity-40 disabled:cursor-not-allowed`}
+            >
+                <div className={`${miolo} flex-col px-1`}>
+                    <Star size={15} className="text-amber-300 shrink-0" />
+                    <span className="text-[10px] font-black uppercase tracking-wide text-white text-center leading-tight line-clamp-2">
+                        {rotuloProduto}
+                    </span>
+                </div>
+            </button>
+
+            <button
+                type="button"
+                disabled={!endereco}
+                onClick={() => endereco && window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(endereco)}`, '_blank')}
+                title={endereco || 'Endereço não configurado'}
+                className={`${moldura} w-16 h-16 shrink-0 bg-gradient-to-b from-green-400 to-emerald-600 shadow-[0_0_20px_rgba(16,185,129,0.5)] disabled:opacity-40 disabled:cursor-not-allowed`}
+            >
+                <div className={miolo}>
+                    <LucideMapPin size={22} className="text-emerald-400" />
+                </div>
+            </button>
+
+            <button
+                type="button"
+                disabled={!instagram}
+                onClick={() => instagram && window.open(`https://instagram.com/${instagram}`, '_blank')}
+                title={instagram ? `@${instagram}` : 'Instagram não configurado'}
+                className={`${moldura} w-16 h-16 shrink-0 bg-gradient-to-br from-yellow-400 via-pink-500 to-purple-600 shadow-[0_0_20px_rgba(217,70,239,0.5)] disabled:opacity-40 disabled:cursor-not-allowed`}
+            >
+                <div className={miolo}>
+                    <LucideInstagram size={22} className="text-pink-400" />
+                </div>
+            </button>
+
+            <button
+                type="button"
+                onClick={onOpenAccount}
+                className={`${moldura} flex-1 h-16 bg-gradient-to-b from-orange-500 via-amber-400 to-purple-600 shadow-[0_0_20px_rgba(168,85,247,0.5)]`}
+            >
+                <div className={`${miolo} flex-col px-1`}>
+                    <LucideUser size={15} className="text-purple-300 shrink-0" />
+                    <span className="text-[10px] font-black uppercase tracking-wide text-white text-center leading-tight line-clamp-2">
+                        {rotuloConta}
+                    </span>
+                </div>
+            </button>
+        </div>
+    );
+};
+
 const LandingPhoneField: React.FC<{ onPhoneSubmit: (phone: string) => void; isLoading: boolean }> = ({ onPhoneSubmit, isLoading }) => {
     const [phone, setPhone] = useState('');
 
@@ -1764,14 +1849,18 @@ const LandingPhoneField: React.FC<{ onPhoneSubmit: (phone: string) => void; isLo
                 <Star size={14} className="text-white fill-white shrink-0" />
             </div>
 
-            <div className="w-full flex items-center gap-2 bg-gradient-to-r from-amber-500/10 via-yellow-400/10 to-amber-500/10 px-3 py-2.5">
+            {/* Película escura sólida atrás do campo -- sem ela, em telas com
+                pouco contraste (fundo claro/foto atrás), o texto ficava
+                praticamente ilegível. Achado em 01/10/2026, print do Ikarus:
+                "a letra está em laranjado junto com a mesma cor da borda". */}
+            <div className="w-full flex items-center gap-2 bg-slate-900 px-3 py-2.5">
                 <input
                     type="tel"
                     value={phone}
                     onChange={handlePhoneChange}
-                    placeholder="Seu telefone (WhatsApp)"
+                    placeholder="Digite seu telefone aqui..."
                     maxLength={15}
-                    className="flex-grow bg-transparent border-none text-sm font-bold text-amber-950 placeholder-amber-700/50 focus:outline-none focus:ring-0"
+                    className="flex-grow bg-transparent border-none text-sm font-bold text-white placeholder-slate-400 focus:outline-none focus:ring-0"
                 />
                 <button
                     type="submit"
@@ -1781,7 +1870,7 @@ const LandingPhoneField: React.FC<{ onPhoneSubmit: (phone: string) => void; isLo
                     {isLoading ? '...' : 'Entrar'}
                 </button>
             </div>
-            <p className="w-full text-[11px] text-amber-900 dark:text-amber-950 text-center px-2 pb-2 leading-tight font-bold bg-amber-400/10">
+            <p className="w-full text-[11px] text-amber-200 text-center px-2 py-2 leading-tight font-bold bg-slate-900">
                 🎁 Informe seu telefone e entre na Fidelidade: clientes que ja pediram ganham desconto especial aqui!
             </p>
         </form>
@@ -2105,7 +2194,13 @@ const CustomerPage: React.FC = () => {
     const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
     const [isSavingNewCustomer, setIsSavingNewCustomer] = useState(false);
     const [isRepeatingOrder, setIsRepeatingOrder] = useState(false);
-    
+
+    // Barra fixa de 4 atalhos (visível em todas as telas) -- pedido do
+    // Ikarus, 01/10/2026. "Minha Conta" abre este modal com o MESMO campo de
+    // telefone da landing (LandingPhoneField/handleHeroPhoneSubmit), sem
+    // duplicar a lógica de reconhecimento de cliente.
+    const [showAccountPhoneModal, setShowAccountPhoneModal] = useState(false);
+
     // Modern Landing Page State
     const [viewMode, setViewMode] = useState<'landing' | 'filtered' | 'all'>('landing');
     const [selectedGroup, setSelectedGroup] = useState<any>(null);
@@ -3000,8 +3095,15 @@ const CustomerPage: React.FC = () => {
                     <LandingPhoneField onPhoneSubmit={handleHeroPhoneSubmit} isLoading={isSearchingCustomer} />
                 </div>
 
+                <QuickActionBar
+                    settings={settings}
+                    menuItems={menu.menuItems}
+                    onOpenProduct={handleOpenItemModal}
+                    onOpenAccount={() => setShowAccountPhoneModal(true)}
+                />
+
                 <DraggableCart onClick={() => setIsCartOpen(true)} itemCount={cart.length} isAnimating={false} />
-                
+
                 <SideCart
                     isOpen={isCartOpen}
                     onClose={() => setIsCartOpen(false)}
@@ -3069,6 +3171,20 @@ const CustomerPage: React.FC = () => {
                     onSaved={handleNewCustomerSaved}
                     isSaving={isSavingNewCustomer}
                 />
+
+                {/* "Minha Conta" (barra fixa): mesmo campo de telefone da
+                    landing, dentro de um modal, para abrir o acesso de
+                    fidelidade de qualquer tela -- pedido do Ikarus, 01/10. */}
+                {showAccountPhoneModal && (
+                    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowAccountPhoneModal(false)}>
+                        <div className="w-full max-w-sm" onClick={e => e.stopPropagation()}>
+                            <LandingPhoneField
+                                onPhoneSubmit={(phone) => { setShowAccountPhoneModal(false); handleHeroPhoneSubmit(phone); }}
+                                isLoading={isSearchingCustomer}
+                            />
+                        </div>
+                    </div>
+                )}
             </div>
         );
     }
@@ -3207,6 +3323,13 @@ const CustomerPage: React.FC = () => {
                 )}
             </main>
 
+            <QuickActionBar
+                settings={settings}
+                menuItems={menu.menuItems}
+                onOpenProduct={handleOpenItemModal}
+                onOpenAccount={() => setShowAccountPhoneModal(true)}
+            />
+
             <DraggableCart onClick={() => setIsCartOpen(true)} itemCount={cart.length} isAnimating={false} />
 
             <SideCart
@@ -3268,6 +3391,19 @@ const CustomerPage: React.FC = () => {
                 onSaved={handleNewCustomerSaved}
                 isSaving={isSavingNewCustomer}
             />
+
+            {/* "Minha Conta" (barra fixa) -- ver comentário igual na landing. */}
+            {showAccountPhoneModal && (
+                <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setShowAccountPhoneModal(false)}>
+                    <div className="w-full max-w-sm" onClick={e => e.stopPropagation()}>
+                        <LandingPhoneField
+                            onPhoneSubmit={(phone) => { setShowAccountPhoneModal(false); handleHeroPhoneSubmit(phone); }}
+                            isLoading={isSearchingCustomer}
+                        />
+                    </div>
+                </div>
+            )}
+
             {selectedItem && (
                 <ItemDetailModal
                     item={selectedItem}

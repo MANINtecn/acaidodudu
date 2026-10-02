@@ -16,7 +16,7 @@ import {
     Scale,
     Volume2
 } from 'lucide-react';
-import { Settings, Category } from '../types';
+import { Settings, Category, MenuItem } from '../types';
 import EstacaoImpressao from './EstacaoImpressao';
 import PixWhatsappConfig from './PixWhatsappConfig';
 import { SIRENES, testarSirene, VOLUME_MAXIMO, type TipoSirene } from '../services/sireneService';
@@ -28,6 +28,7 @@ import { UpdateManager } from './UpdateManager';
 interface SettingsTabProps {
     settings: Settings;
     categories: Category[];
+    menuItems?: MenuItem[];
     onSave: (s: Partial<Settings>) => Promise<void>;
     installPrompt: any;
     onInstall: () => void;
@@ -35,7 +36,7 @@ interface SettingsTabProps {
 
 
 
-export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, onSave, installPrompt, onInstall }) => {
+export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, menuItems = [], onSave, installPrompt, onInstall }) => {
     const [formData, setFormData] = useState(settings);
     const [loading, setLoading] = useState(false);
     const [zerandoNumeracao, setZerandoNumeracao] = useState(false);
@@ -406,6 +407,89 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                     </div>
                                 ))}
                             </div>
+
+                            {/* Barra fixa de 4 atalhos (visível em todas as telas do
+                                cardápio, não só na landing) -- pedido do Ikarus,
+                                01/10/2026. Reaproveita a mesma área de config dos
+                                3 botões de categoria acima. */}
+                            <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-700">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-3 uppercase tracking-wider text-[10px] font-black">Barra Fixa de Atalhos</label>
+                                <p className="text-xs text-gray-500 mb-4">4 botões que ficam sempre visíveis no cardápio, em qualquer tela. Dois são textos com nome livre (dá para transformar em promoção), dois são ícones fixos (mapa e Instagram).</p>
+
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                                        <div className="font-bold text-gray-500 text-xs mb-3 uppercase">Botão 1 · Produto em destaque</div>
+                                        <div className="mb-3">
+                                            <label className="block text-xs text-gray-500 mb-1">Nome do botão</label>
+                                            <input
+                                                type="text"
+                                                value={formData.quickActionProduct?.label || ''}
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    quickActionProduct: { ...formData.quickActionProduct, label: e.target.value, menuItemId: formData.quickActionProduct?.menuItemId }
+                                                })}
+                                                placeholder="Ex: Queridinho da Semana"
+                                                className="w-full p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs text-gray-500 mb-1">Produto que abre ao clicar</label>
+                                            <select
+                                                value={formData.quickActionProduct?.menuItemId ?? ''}
+                                                onChange={(e) => setFormData({
+                                                    ...formData,
+                                                    quickActionProduct: { label: formData.quickActionProduct?.label || 'Queridinho da Semana', menuItemId: e.target.value ? Number(e.target.value) : undefined }
+                                                })}
+                                                className="w-full p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                            >
+                                                <option value="">Selecione um produto...</option>
+                                                {menuItems.map(item => (
+                                                    <option key={item.id} value={item.id}>{item.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                                        <div className="font-bold text-gray-500 text-xs mb-3 uppercase">Botão 4 · Conta do cliente</div>
+                                        <label className="block text-xs text-gray-500 mb-1">Nome do botão</label>
+                                        <input
+                                            type="text"
+                                            value={formData.quickActionAccountLabel || ''}
+                                            onChange={(e) => setFormData({ ...formData, quickActionAccountLabel: e.target.value })}
+                                            placeholder="Ex: Minha Conta"
+                                            className="w-full p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        />
+                                        <p className="text-[11px] text-gray-500 mt-2">Abre o mesmo acesso do Programa de Fidelidade (telefone do cliente).</p>
+                                    </div>
+
+                                    <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                                        <div className="font-bold text-gray-500 text-xs mb-3 uppercase">Ícone · Mapa</div>
+                                        <label className="block text-xs text-gray-500 mb-1">Endereço da loja</label>
+                                        <input
+                                            type="text"
+                                            value={formData.storeAddress || ''}
+                                            onChange={(e) => setFormData({ ...formData, storeAddress: e.target.value })}
+                                            placeholder="Rua, número, bairro, cidade"
+                                            className="w-full p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        />
+                                        <p className="text-[11px] text-gray-500 mt-2">O ícone abre este endereço no Google Maps.</p>
+                                    </div>
+
+                                    <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+                                        <div className="font-bold text-gray-500 text-xs mb-3 uppercase">Ícone · Instagram</div>
+                                        <label className="block text-xs text-gray-500 mb-1">@ do Instagram (sem o @)</label>
+                                        <input
+                                            type="text"
+                                            value={formData.instagramHandle || ''}
+                                            onChange={(e) => setFormData({ ...formData, instagramHandle: e.target.value.replace(/^@/, '') })}
+                                            placeholder="acaidodudu"
+                                            className="w-full p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                        />
+                                        <p className="text-[11px] text-gray-500 mt-2">O ícone abre o perfil @{formData.instagramHandle || '...'} no Instagram.</p>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </div>
@@ -645,6 +729,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                     Cartoes com nome do cliente, 8 visiveis + rolagem.
                                 </span>
                             </button>
+                        </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex items-center gap-3">
+                        <input
+                            type="checkbox"
+                            name="balcaoV2"
+                            id="balcaoV2"
+                            checked={formData.balcaoV2 === true}
+                            onChange={handleCheckboxChange}
+                            className="h-5 w-5 rounded text-purple-600 focus:ring-purple-500 border-gray-300 dark:bg-gray-700 dark:border-gray-600"
+                        />
+                        <div>
+                            <label htmlFor="balcaoV2" className="text-sm font-bold text-gray-900 dark:text-gray-100 cursor-pointer">
+                                Balcão V2 · Comandas múltiplas
+                            </label>
+                            <p className="text-[11px] text-gray-500">
+                                O carrinho e a seleção de mesa viram um card único de comandas — dá para atender vários clientes ao mesmo tempo sem perder o que já foi lançado. Tecla C abre uma comanda nova.
+                            </p>
                         </div>
                     </div>
                 </div>

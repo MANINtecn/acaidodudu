@@ -300,6 +300,13 @@ export interface CashTransaction {
 export interface CashSummary {
   openingFloat: number;
   cashSales: number;
+  /** Vendas em PIX e Cartão no período -- faltavam no relatório impresso de
+   * fechamento (só "Dinheiro" aparecia). Causa real da reclamação do cliente
+   * Marlon em 01/10/2026: "Deu do total. Não vi especificações de pix.
+   * Dinheiro e cartão." -- ele olhava o PAPEL impresso, que nunca teve essa
+   * quebra, mesmo a tela do sistema já mostrando por método. */
+  pixSales: number;
+  cardSales: number;
   supplies: number;
   withdrawals: number;
   expected: number;
@@ -314,11 +321,31 @@ export interface ModernGroup {
   categories: number[];
 }
 
+/**
+ * Barra fixa de 4 atalhos do cardápio moderno (visível em todas as telas,
+ * não só na landing) -- pedido do Ikarus, 01/10/2026. Nomes e destinos são
+ * configuráveis em Configurações, junto dos modernGroups.
+ */
+export interface QuickActionButton {
+  /** Texto do botão (ex.: "Queridinho da Semana", ou renomeado p/ "Promoção"). */
+  label: string;
+  /** Produto que abre ao clicar -- só usado quando tipo for "produto". */
+  menuItemId?: number;
+}
+
 export interface Settings {
   id?: string;
   store_id: string;
   storefrontTheme?: 'classic' | 'modern';
   modernGroups?: ModernGroup[];
+  /** Botão 1 da barra fixa: produto em destaque (ex.: "Queridinho da Semana"). */
+  quickActionProduct?: QuickActionButton;
+  /** Botão 4 da barra fixa: abre o fluxo de telefone/fidelidade (ex.: "Minha Conta"). */
+  quickActionAccountLabel?: string;
+  /** @ do Instagram da loja (sem o @), para o botão-ícone da barra fixa. */
+  instagramHandle?: string;
+  /** Endereço físico da loja, usado pelo botão-ícone de mapa (abre no Google Maps). */
+  storeAddress?: string;
   openingTime: string;
   closingTime: string;
   manualStatus: 'open' | 'closed' | 'auto';
@@ -395,6 +422,13 @@ export interface Settings {
    * So muda a EXIBICAO — TOTAL_MESAS e handleSelectTable sao os mesmos.
    */
   modeloMesas?: 'padrao' | 'personalizado';
+  /**
+   * Liga o Balcao V2 (comandas multiplas): o carrinho + a coluna de
+   * Mesa/Retirada/Entrega viram um card unico de comandas, navegavel por
+   * seta ou clique, com o carrinho migrando para dentro de um modal aberto
+   * pela tecla C. undefined/false = Balcao V1 (como sempre foi).
+   */
+  balcaoV2?: boolean;
 
   /**
    * Modo de reinicio do numero do pedido (#1, #2...) -- Fase 1, 28/09/2026.

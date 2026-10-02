@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, memo, useRef, useCallback } from 'react';
-import { Plus, Minus, Trash2, Search, X, Bike, ShoppingBag, LogOut, Percent, Scale, Grid, ChevronDown } from 'lucide-react';
+import { Plus, Minus, Trash2, Search, X, Bike, ShoppingBag, LogOut, Percent, Scale, Grid, ChevronDown, Volume2, VolumeX, Check } from 'lucide-react';
 import type { Category, MenuItem, Addon, CartItem, OrderType, PaymentMethod, Settings, OrderStatus, Customer, Order, Promotion } from '../types';
-import { fetchAllOpenOrdersForTable, updateOrder, deleteOrder, fetchCustomerByPhone, upsertCustomer, searchCustomers } from '../services/supabaseService';
+import { fetchAllOpenOrdersForTable, updateOrder, deleteOrder, fetchCustomerByPhone, upsertCustomer, searchCustomers, clearTablePayments } from '../services/supabaseService';
 import { normalizeString } from '../utils/searchUtils';
-import { mesmaMesa, nomeDaComanda } from '../utils/mesaUtils';
+import { mesmaMesa, nomeDaComanda, nomeSemPrefixoDeMesa } from '../utils/mesaUtils';
+import { calcularValorCarrinho } from '../utils/orderUtils';
 import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
 import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, connectScale, getScaleRawLog, clearScaleRawLog, getScaleSnapshot, type ScaleStatus } from '../services/scaleService';
@@ -32,9 +33,47 @@ interface CounterTabProps {
      * mesmo se o F3 for apertado duas vezes seguidas sem nada mudar entre.
      */
     focusSearchSignal?: number;
+    /**
+     * Balcão V2, pedido do Ikarus 01/10/2026: "não sair da tela" -- avisa o
+     * AdminPage qual comanda está aberta agora (ou null) para o F7 global
+     * (que já existe e já sabe fazer checkout de mesa) funcionar também
+     * dentro do Balcão, sem duplicar o CheckoutModal nem a lógica de montar
+     * o pedido virtual da mesa (abrirComandaDaMesa já faz isso).
+     */
+    onComandaAtivaChange?: (numero: number | null) => void;
+    /**
+     * Muda de valor sempre que o F7 (global, AdminPage) termina um checkout
+     * de uma comanda do Balcão V2 com sucesso -- fecha a tela da comanda
+     * sozinha, senão o operador ficava "preso" olhando o carrinho de uma
+     * comanda que já virou pedido pago. Mesmo padrão do focusSearchSignal.
+     */
+    fecharComandaSignal?: number;
+    /**
+     * CRÍTICO (achado em 02/10/2026, véspera da demo: "abri F7, apertei C de
+     * cartão, dei Enter -- em vez de finalizar o pagamento, apareceu 'Comanda
+     * da mesa atualizada', o handleFinalize do Balcão disparou"): o
+     * CheckoutModal e o SplitBillModal são renderizados pelo AdminPage, FORA
+     * da árvore do CounterTab -- o handler global de teclado do Balcão não
+     * tem como saber, sozinho, que um desses modais está por cima da tela.
+     * Resultado: Enter (sem dígitos, dentro da comanda) continuava
+     * disparando handleFinalize() ao mesmo tempo que o checkout tentava
+     * confirmar o pagamento. true = suspende o handler de teclado do Balcão
+     * inteiro enquanto o modal de fora estiver aberto.
+     */
+    modalExternoAberto?: boolean;
+    /**
+     * Pedido do Ikarus 02/10/2026: "por que esperar lançar? já no faturar" --
+     * F7/F8 devem funcionar MESMO com a comanda ainda só no carrinho (nunca
+     * enviada). Esta ref é preenchida pelo CounterTab com uma função que
+     * envia a comanda ativa (mesmo handleFinalize de sempre) e devolve se deu
+     * certo -- o AdminPage chama ela antes de F7/F8 quando a comanda ainda
+     * não tem pedido no banco, e só abre o checkout/split DEPOIS do envio
+     * confirmar.
+     */
+    enviarComandaAtivaRef?: React.MutableRefObject<(() => Promise<boolean>) | null>;
 }
 
-export const CounterTab = memo(({ categories, menuItems, addons, settings, storeId, onOrderComplete, initialTable, activeOrders, onBack, promotions, focusSearchSignal }: CounterTabProps) => {
+export const CounterTab = memo(({ categories, menuItems, addons, settings, storeId, onOrderComplete, initialTable, activeOrders, onBack, promotions, focusSearchSignal, onComandaAtivaChange, fecharComandaSignal, modalExternoAberto, enviarComandaAtivaRef }: CounterTabProps) => {
     const [selectedCategoryId, setSelectedCategoryId] = useState<number>(categories[0]?.id || 0);
     const [searchTerm, setSearchTerm] = useState('');
     /** Input de busca de produto. F3 (AdminPage) foca aqui via focusSearchSignal. */
@@ -54,6 +93,37 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     const [orderType, setOrderType] = useState<OrderType>('Balcão');
     const [selectedTable, setSelectedTable] = useState<string>('');
     const [customerName, setCustomerName] = useState('');
+
+    // ── BALCÃO V2: COMANDAS 1-20 ──────────────────────────────────
+    // Decisão do Ikarus em 30/09/2026: a comanda do V2 é, por baixo dos
+    // panos, A MESMA COISA que uma mesa do V1 -- reaproveita table_number,
+    // handleSelectTable, fetchAllOpenOrdersForTable etc. Caixa, histórico e
+    // fechamento em lote já funcionam de graça, sem duplicar nada. A ÚNICA
+    // diferença é visual: 20 slots (não 30) rotulados "Comanda N" em vez de
+    // "Mesa N", num card grande em vez da grade antiga. Não há mais estado
+    // paralelo (localStorage, contador de rótulo, snapshots) -- o estado de
+    // verdade é o banco, refletido em `activeOrders` (mesma prop que a aba
+    // Pedidos usa). Como o interruptor Balcão V1/V2 é por máquina, mesa e
+    // comanda nunca coexistem na mesma tela ("ou usa a v1 ou a v2, não vão
+    // colidir" -- Ikarus).
+    const TOTAL_COMANDAS_V2 = 20;
+    const [isComandaModalOpen, setIsComandaModalOpen] = useState(false);
+
+    // Avisa o AdminPage qual comanda está aberta -- F7 (global, já existe)
+    // usa isso pra fazer checkout sem sair da tela do Balcão. Só dispara
+    // quando o número de verdade muda (evita chamadas repetidas em todo
+    // render do CounterTab).
+    useEffect(() => {
+        const numero = (settings?.balcaoV2 && isComandaModalOpen) ? parseInt(selectedTable, 10) : null;
+        onComandaAtivaChange?.(numero && !isNaN(numero) ? numero : null);
+    }, [settings?.balcaoV2, isComandaModalOpen, selectedTable, onComandaAtivaChange]);
+    /**
+     * N dentro da comanda (Balcão V2): renomeia a comanda ativa a qualquer
+     * momento, sem depender do fluxo de confirmação de envio -- pedido do
+     * Ikarus, 30/09. Usa customerName, igual ao V1 (ex.: "Comanda 3 · João").
+     */
+    const [isRenomeandoComanda, setIsRenomeandoComanda] = useState(false);
+    const campoRenomeComandaRef = useRef<HTMLInputElement>(null);
     const [isTableModalOpen, setIsTableModalOpen] = useState(false);
     const [isCustomItemModalOpen, setIsCustomItemModalOpen] = useState(false);
     const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false);
@@ -74,6 +144,54 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     const [isReadingScale, setIsReadingScale] = useState(false);
     const [isAddonModalOpen, setIsAddonModalOpen] = useState(false);
     const [editingCartItem, setEditingCartItem] = useState<CartItem | null>(null);
+    // Popup de escolha de sabor por teclado (Balcão V2, pedido do Ikarus em
+    // 01/10/2026 véspera da demo pro Marlon: "a gente não vai usar clique de
+    // hora nenhuma, tudo por comando"). Produto com 2+ addons elegíveis
+    // (mesmo sabor/categoria) abre ISSO sozinho assim que o código é digitado
+    // -- sem precisar de Enter -- e ↑↓/Enter/ESC navegam sem mouse.
+    // opcoes[0] é SEMPRE `null` ("Prosseguir sem adicional") -- pedido do
+    // Ikarus: "eu não posso obrigar as pessoas com os adicionais... tem que
+    // vir pré-selecionado, no topo da lista, pra agilizar". Os addons de
+    // verdade vêm a partir do índice 1.
+    // Suporte a produto com SABOR + CALDA em 2 passos (ex.: Milkshake) --
+    // pedido do Ikarus 02/10/2026: o mesmo fluxo que já existe no cardápio do
+    // site (addonGroup 'sabor'/'calda') precisa valer também no Balcão. Sem
+    // isso, um produto com os dois grupos deixava escolher só UM addon no
+    // total, misturando sabor e calda na mesma lista.
+    // `etapa` controla qual lista está sendo mostrada; `saborEscolhido` guarda
+    // a escolha da 1ª etapa enquanto a 2ª (calda) está sendo decidida.
+    // `marcados`: índices marcados em OPCIONAIS/ADICIONAIS (tecla S, pedido do
+    // Ikarus 02/10/2026 -- "leite condensado" E "leite em pó" ao mesmo tempo
+    // no mesmo açaí, por exemplo). Sabor/calda continuam escolha única
+    // (Enter escolhe e já avança) -- só a lista plana de addons sem grupo
+    // vira multi-seleção.
+    type SeletorSaborState = {
+        produto: MenuItem;
+        opcoes: (Addon | null)[];
+        indice: number;
+        etapa: 'unico' | 'sabor' | 'calda';
+        saborEscolhido?: Addon | null;
+        marcados: Set<number>;
+    };
+    const [seletorSabor, setSeletorSabor] = useState<SeletorSaborState | null>(null);
+    const seletorSaborRef = useRef<typeof seletorSabor>(null);
+    seletorSaborRef.current = seletorSabor;
+
+    // Popups de sabor PAUSADOS por comanda (pedido do Ikarus 02/10/2026): "C
+    // dentro do popup abre outra comanda pra atender outro cliente enquanto o
+    // primeiro decide". Ao trocar de comanda com o popup aberto, o estado
+    // inteiro (produto, opções, índice, marcados) fica guardado aqui; ao
+    // voltar pra essa comanda, reabre exatamente do mesmo ponto.
+    const seletoresPausadosRef = useRef<Record<number, SeletorSaborState>>({});
+
+    // Rola a lista pra acompanhar a navegação por seta -- sem isto, com mais
+    // de ~6 sabores (caso real: "Potes de Sorvete 1,8L" tem 10+), a opção
+    // selecionada saía da área visível e o operador navegava "às cegas".
+    useEffect(() => {
+        if (!seletorSabor) return;
+        const el = document.querySelector(`[data-sabor-idx="${seletorSabor.indice}"]`);
+        el?.scrollIntoView({ block: 'nearest' });
+    }, [seletorSabor?.indice]);
     const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('Dinheiro');
     const [changeFor, setChangeFor] = useState('');
     const [isProcessing, setIsProcessing] = useState(false);
@@ -196,15 +314,44 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         return statuses;
     }, [activeOrders]);
 
+    // Mute só do bipe de "comanda enviada" -- pedido do Ikarus 01/10/2026,
+    // véspera da demo: "quando finalizamos uma comanda não dá um bipe, que dê
+    // um bipe" + botão de mute pra quem não quiser esse som. Persistido por
+    // loja (mesmo padrão do cache de rascunhos) -- não mexe no bipe de
+    // item/erro, que continua sempre ativo (são avisos importantes).
+    const chaveMuteEnvio = `acaiDoDudu:muteBipeEnvio:${storeId}`;
+    const [muteBipeEnvio, setMuteBipeEnvio] = useState<boolean>(() => {
+        try {
+            return localStorage.getItem(chaveMuteEnvio) === '1';
+        } catch (_) {
+            return false;
+        }
+    });
+    const alternarMuteBipeEnvio = () => {
+        setMuteBipeEnvio(prev => {
+            const novo = !prev;
+            try { localStorage.setItem(chaveMuteEnvio, novo ? '1' : '0'); } catch (_) {}
+            return novo;
+        });
+    };
+    // Ref (Regra 10): `bipar` é chamado de dentro do handler de teclado
+    // global (ex.: handleFinalize via Enter), então precisa ler o mute
+    // síncrono, não da closure.
+    const muteBipeEnvioRef = useRef(false);
+    muteBipeEnvioRef.current = muteBipeEnvio;
+
     // Bipe via WebAudio: não depende de arquivo de som nem de permissão.
-    const bipar = useCallback((tipo: 'ok' | 'somou' | 'erro') => {
+    const bipar = useCallback((tipo: 'ok' | 'somou' | 'erro' | 'enviado') => {
+        if (tipo === 'enviado' && muteBipeEnvioRef.current) return;
         try {
             const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
             if (!Ctx) return;
             const ctx = new Ctx();
-            // ok: 1 bipe agudo | somou: 2 bipes | erro: 1 bipe grave e longo
+            // ok: 1 bipe agudo | somou: 2 bipes | erro: 1 bipe grave e longo |
+            // enviado: acorde curto subindo (mais "completo", de confirmação)
             const notas = tipo === 'erro' ? [{ f: 220, t: 0, d: 0.35 }]
                         : tipo === 'somou' ? [{ f: 880, t: 0, d: 0.12 }, { f: 880, t: 0.18, d: 0.12 }]
+                        : tipo === 'enviado' ? [{ f: 660, t: 0, d: 0.1 }, { f: 880, t: 0.1, d: 0.1 }, { f: 1320, t: 0.2, d: 0.18 }]
                         : [{ f: 880, t: 0, d: 0.15 }];
             notas.forEach(({ f, t, d }) => {
                 const osc = ctx.createOscillator();
@@ -231,6 +378,145 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
      * sub-pedido veio pelo cartId.
      */
     const [pedidosDaMesa, setPedidosDaMesa] = useState<Order[]>([]);
+
+    /**
+     * Tecla C (Balcão V2): abre a próxima comanda LIVRE entre os slots 1-20
+     * -- livre = nenhum pedido aberto naquele número (mesma checagem que a
+     * grade de mesas do V1 já faz via `tableStatuses`). Se todos os 20
+     * estiverem ocupados, avisa em vez de travar.
+     */
+    /**
+     * Cache de RASCUNHOS não-enviados, por número de slot (1-20). Resolve o
+     * caso real que o Ikarus descreveu em 30/09/2026: o operador está
+     * montando a Comanda 3 (ainda não enviou), chega outro cliente, aperta C
+     * pra abrir a Comanda 4 SEM perder o que já tinha em 3 -- e quando
+     * voltar pra 3 (clicando ou digitando o número), o carrinho continua lá.
+     *
+     * PERSISTIDO em localStorage (por loja): sem isto, ir em Configurações
+     * ou Cardápio pra checar algo e voltar ao Balcão desmontava o
+     * CounterTab (o AdminPage só renderiza este componente quando
+     * activeTab==='counter') e zerava tudo -- pedido do Ikarus, 30/09:
+     * "deveria persistir mesmo trocando de menu ou aba". Também sobrevive a
+     * fechar o app sem querer com uma comanda em standby.
+     */
+    const chaveRascunhosV2 = `acaiDoDudu:rascunhosComandaV2:${storeId}`;
+    // `pedidosDaMesa`/`currentOrderId` guardados junto -- achado pela
+    // auditoria de 02/10/2026 (CRÍTICO, determinístico, maior risco da
+    // rodada): antes só guardava {cart, customerName}. Comanda JÁ enviada
+    // (currentOrderId setado) nunca entrava aqui (salvarRascunhoAtual tinha
+    // `|| currentOrderId) return`) -- editar uma comanda enviada (ex.: "mais
+    // uma bala") e trocar de comanda (C/seta/dígito) ANTES de reenviar
+    // perdia o item adicionado silenciosamente: ao reabrir, handleSelectTable
+    // buscava o pedido do banco de novo e sobrescrevia o carrinho local,
+    // sem rastro da edição pendente.
+    const rascunhosComandaRef = useRef<Record<number, { cart: CartItem[]; customerName: string; pedidosDaMesa: Order[]; currentOrderId: string | null }>>({});
+
+    // CRÍTICO (achado pela auditoria de 01/10/2026, véspera da demo: mesmo
+    // padrão de race condition já corrigido em loadData/refreshOrdersOnly do
+    // AdminPage, mas que faltava replicar aqui): handleSelectTable faz um
+    // fetch assíncrono por comanda -- se o operador navegar rápido entre
+    // comandas (seta/C/dígito repetido, comum com fila), a resposta de uma
+    // comanda mais lenta pode chegar DEPOIS da resposta de uma comanda mais
+    // rápida e sobrescrever o carrinho que o operador já está editando.
+    const handleSelectTableCallIdRef = useRef(0);
+    /** Só existe para forçar `cardsComandas` (useMemo) a recalcular quando o
+     * cache de rascunhos muda -- a ref em si não dispara re-render. */
+    const [versaoRascunhos, setVersaoRascunhos] = useState(0);
+
+    // Lê o cache salvo desta loja ao montar o componente (ex.: voltando de
+    // outra aba, ou reabrindo o app com uma comanda em standby).
+    useEffect(() => {
+        try {
+            const bruto = localStorage.getItem(chaveRascunhosV2);
+            if (bruto) {
+                rascunhosComandaRef.current = JSON.parse(bruto);
+                setVersaoRascunhos(v => v + 1);
+            }
+        } catch (_) {
+            // localStorage indisponível ou lixo salvo -- ignora, não trava o Balcão.
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    /** Guarda o carrinho ATUAL no cache de rascunhos, se tiver item NÃO
+     * reenviado ainda. Chamar SEMPRE antes de sair do slot atual.
+     * CRÍTICO (achado pela auditoria de 02/10/2026): antes só salvava quando
+     * `!currentOrderId` (comanda nunca enviada) -- uma comanda JÁ enviada que
+     * ganhou item novo sem reenviar (ex.: reabriu, adicionou "mais uma bala",
+     * trocou de comanda antes de apertar Enter de novo) nunca era salva, e o
+     * item extra sumia ao reabrir.
+     * SEGUNDO BUG (achado em 02/10/2026, relato do Ikarus: "abri a comanda já
+     * enviada, dei Enter sem mudar nada, o valor DUPLICOU"): a correção
+     * acima salvava o rascunho toda vez que o cart tinha item, mesmo sem
+     * NENHUMA mudança real desde o último envio (ex.: só abriu e fechou com
+     * X). Esse rascunho "idêntico ao banco" virava a fonte de verdade ao
+     * reabrir (handleSelectTable prioriza rascunho sobre banco) e, no reenvio
+     * seguinte, o handleFinalize comparava os cartId do cart restaurado
+     * contra um snapshot velho de pedidosDaMesa -- bastava uma pequena
+     * divergência de referência pra itens que já estavam no banco serem
+     * tratados como "novos" e virarem um SEGUNDO sub-pedido, duplicando o
+     * total. Corrigido: só salva rascunho de uma comanda JÁ enviada se o
+     * cart realmente DIVERGE do que está em pedidosDaMesa (edição pendente de
+     * verdade) -- sem alteração nenhuma, não grava nada, e reabrir usa o
+     * banco como sempre deveria. */
+    const salvarRascunhoAtual = () => {
+        const numero = parseInt(selectedTable, 10);
+        if (!numero || cart.length === 0) return;
+        if (pedidosDaMesa.length > 0) {
+            const cartIdsSalvos = new Set(pedidosDaMesa.flatMap(o => (o.items || []).map(i => i.cartId)));
+            const cartIdsAtuais = new Set(cart.map(i => i.cartId));
+            const mudou = cart.length !== cartIdsSalvos.size ||
+                cart.some(i => !cartIdsSalvos.has(i.cartId)) ||
+                Array.from(cartIdsSalvos).some(id => !cartIdsAtuais.has(id));
+            if (!mudou) return; // nada editado desde o último envio -- não duplica rascunho
+        }
+        rascunhosComandaRef.current[numero] = { cart, customerName, pedidosDaMesa, currentOrderId };
+        persistirRascunhos();
+        setVersaoRascunhos(v => v + 1);
+    };
+
+    /** Escreve o cache inteiro no localStorage -- chamado sempre que ele
+     * muda (salvar um novo rascunho, ou consumir um ao reabrir o slot). */
+    const persistirRascunhos = () => {
+        try {
+            if (Object.keys(rascunhosComandaRef.current).length === 0) {
+                localStorage.removeItem(chaveRascunhosV2);
+            } else {
+                localStorage.setItem(chaveRascunhosV2, JSON.stringify(rascunhosComandaRef.current));
+            }
+        } catch (_) {
+            // Sem espaço ou localStorage bloqueado -- não trava o lançamento.
+        }
+    };
+
+    const abrirProximaComandaLivre = () => {
+        salvarRascunhoAtual();
+        // CRÍTICO (achado 02/10/2026, "o C dentro do popup parou de
+        // funcionar"): este laço não sabia de comandas com popup de sabor
+        // PAUSADO (seletoresPausadosRef). Uma comanda recém-aberta cujo
+        // ÚNICO conteúdo é um popup pausado (carrinho ainda vazio, sem
+        // rascunho salvo) era considerada "livre" -- o C dentro do popup
+        // acabava reabrindo A PRÓPRIA comanda que acabou de ser pausada, em
+        // vez de ir para uma nova, parecendo que a tecla não fazia nada.
+        for (let n = 1; n <= TOTAL_COMANDAS_V2; n++) {
+            if (!tableStatuses[n] && !rascunhosComandaRef.current[n] && !seletoresPausadosRef.current[n]) {
+                handleSelectTable(n.toString().padStart(2, '0'), `Comanda ${n}`);
+                setIsComandaModalOpen(true);
+                return;
+            }
+        }
+        // Nenhum slot 100% livre: tenta um com rascunho pendente (melhor
+        // reaproveitar do que travar o operador).
+        for (let n = 1; n <= TOTAL_COMANDAS_V2; n++) {
+            if (!tableStatuses[n]) {
+                handleSelectTable(n.toString().padStart(2, '0'), `Comanda ${n}`);
+                setIsComandaModalOpen(true);
+                return;
+            }
+        }
+        bipar('erro');
+        setAvisoAtalho({ tipo: 'erro', titulo: 'Todas as 20 comandas estão ocupadas', detalhe: 'Feche alguma antes de abrir uma nova.' });
+    };
 
     // Custom Item State
     const [customItemName, setCustomItemName] = useState('');
@@ -332,6 +618,102 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 selectedAddons: [],
                 isCombo: false
             }];
+        });
+    };
+
+    /** Mesmo filtro já usado no modal de adicionais (linha ~2770): produto com
+     * selectedAddons próprios usa só esses; senão, qualquer addon da mesma
+     * categoria. É o que decide se o código digitado abre o popup de sabor. */
+    const opcoesDeSaborDoProduto = (produto: MenuItem): Addon[] => {
+        if (produto.selectedAddons?.length) {
+            return addons.filter(a => produto.selectedAddons.some(sa => sa.id === a.id));
+        }
+        return addons.filter(a => a.categoryId === produto.categoryId);
+    };
+
+    /** Mesma regra do cardápio do site (CustomerPageModern): produto com
+     * addons marcados como 'calda' ganha fluxo em 2 passos -- 1º sabor
+     * (addonGroup 'sabor', se houver; senão a lista sem calda), 2º calda.
+     * Produto sem nenhum addon 'calda' continua no fluxo único de sempre. */
+    const montarEtapasDeSabor = (produto: MenuItem) => {
+        const todos = opcoesDeSaborDoProduto(produto);
+        const caldas = todos.filter(a => a.addonGroup === 'calda');
+        const sabores = todos.filter(a => a.addonGroup === 'sabor');
+        const temCalda = caldas.length > 0;
+        if (!temCalda) {
+            return { temCalda: false as const, etapa1: todos, caldas: [] as Addon[] };
+        }
+        const etapa1 = sabores.length > 0 ? sabores : todos.filter(a => a.addonGroup !== 'calda');
+        return { temCalda: true as const, etapa1, caldas };
+    };
+
+    /** Decide como abrir o popup pra um produto: fluxo único (lista com
+     * "Prosseguir sem adicional" no topo, MULTI-seleção com tecla S -- pedido
+     * do Ikarus 02/10/2026, ex.: leite condensado + leite em pó no mesmo
+     * açaí) ou os 2 passos de sabor+calda (esses continuam escolha única).
+     * `null` = não precisa de popup nenhum (0 opções). */
+    const montarSeletorInicial = (produto: MenuItem): typeof seletorSabor => {
+        const { temCalda, etapa1 } = montarEtapasDeSabor(produto);
+        if (temCalda) {
+            // Sabor+calda sempre abre popup, mesmo com 1 única opção em cada
+            // etapa -- escolher calda é uma decisão de verdade (ex.: Chantilly
+            // vs Leite Condensado), diferente do "pular" de um sabor único.
+            return { produto, opcoes: [null, ...etapa1], indice: 0, etapa: 'sabor', marcados: new Set() };
+        }
+        if (etapa1.length >= 1) {
+            return { produto, opcoes: [null, ...etapa1], indice: 0, etapa: 'unico', marcados: new Set() };
+        }
+        return null;
+    };
+
+    /** Lança o produto já com o(s) addon(s) embutido(s) -- usado pelo popup
+     * de sabor/calda (Enter) e também quando só existe 1 opção (lança sem
+     * perguntar). Aceita 1 ou 2 addons (sabor + calda). */
+    const addToCartComSabor = (item: MenuItem, ...sabores: (Addon | null | undefined)[]) => {
+        const selectedAddons = sabores.filter((s): s is Addon => !!s);
+        setCart(prev => [...prev, {
+            ...item,
+            cartId: `${item.id}-${Date.now()}`,
+            quantity: 1,
+            notes: '',
+            selectedAddons,
+            isCombo: false
+        }]);
+    };
+
+    /** Ordem VISUAL dos índices do popup: "sem adicional" primeiro, depois
+     * opcionais (grátis), depois adicionais (pagos) -- mesmo agrupamento que
+     * o JSX usa pra exibir em seções. Achado 02/10/2026: a navegação por seta
+     * seguia a ordem CRUA do array (como vieram do banco, intercalados), que
+     * não bate com a ordem visual das seções -- o cursor "pulava" de um jeito
+     * que parecia nunca alcançar os opcionais. Agora ↑↓ anda na mesma ordem
+     * que o operador VÊ na tela. */
+    const ordemVisualDoSeletor = (opcoes: (Addon | null)[]): number[] => {
+        const semAdicional: number[] = [];
+        const opcionais: number[] = [];
+        const adicionais: number[] = [];
+        opcoes.forEach((addon, idx) => {
+            if (addon === null) semAdicional.push(idx);
+            else if (Number(addon.price) === 0) opcionais.push(idx);
+            else adicionais.push(idx);
+        });
+        return [...semAdicional, ...opcionais, ...adicionais];
+    };
+
+    /** Marca/desmarca um opcional/adicional no popup -- usado tanto pelo
+     * atalho S (teclado) quanto pelo clique direto no item (pedido do Ikarus
+     * 02/10/2026: "os opcionais grátis não tão funcionando nem clicando" --
+     * antes só dava pra marcar navegando até o item com a seta e apertando
+     * S; clicar direto não fazia nada). Só vale na etapa 'unico' e fora do
+     * "Prosseguir sem adicional" (índice 0). Também move o cursor pro item
+     * clicado, pra Enter/S seguintes já operarem nele.
+     */
+    const alternarMarcacaoSeletor = (idx: number) => {
+        setSeletorSabor(prev => {
+            if (!prev || prev.etapa !== 'unico' || idx === 0) return prev;
+            const marcados = new Set(prev.marcados);
+            if (marcados.has(idx)) marcados.delete(idx); else marcados.add(idx);
+            return { ...prev, marcados, indice: idx };
         });
     };
 
@@ -448,7 +830,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             type: 'success'
         });
 
-        if (!selectedTable && !customerName) {
+        // No Balcão V2 nunca existe mesa/nome de verdade -- abrir o modal de
+        // Selecionar Mesa (conceito do V1) por cima da tela de comanda não
+        // faz sentido nesse modo. Achado pela auditoria de 30/09/2026.
+        if (!settings?.balcaoV2 && !selectedTable && !customerName) {
             setIsTableModalOpen(true);
         }
     };
@@ -459,9 +844,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
      * pediu a conta: reabrimos a mesa e lançamos.
      */
     const lancarPesoNaMesa = (numeroMesa: number, forcarReabertura = false) => {
-        if (numeroMesa < 1 || numeroMesa > TOTAL_MESAS) {
+        // No V2 os slots vão de 1 a 20 (TOTAL_COMANDAS_V2), não 30 -- e o
+        // texto é "Comanda", nunca "Mesa". Achado em 30/09/2026, print do
+        // Ikarus mostrando "Mesa 1/2/3" dentro do fluxo de comandas.
+        const limiteMaximo = balcaoV2Ref.current ? TOTAL_COMANDAS_V2 : TOTAL_MESAS;
+        const rotulo = balcaoV2Ref.current ? 'Comanda' : 'Mesa';
+        if (numeroMesa < 1 || numeroMesa > limiteMaximo) {
             bipar('erro');
-            setAvisoAtalho({ tipo: 'erro', titulo: `Mesa ${numeroMesa} não existe`, detalhe: `As mesas vão de 1 a ${TOTAL_MESAS}.` });
+            setAvisoAtalho({ tipo: 'erro', titulo: `${rotulo} ${numeroMesa} não existe`, detalhe: `${balcaoV2Ref.current ? 'As comandas vão' : 'As mesas vão'} de 1 a ${limiteMaximo}.` });
             return;
         }
 
@@ -492,8 +882,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             setAvisoAtalho({
                 tipo: 'confirmar',
                 mesa: numeroMesa,
-                titulo: `Mesa ${numeroMesa} está fechando a conta`,
-                detalhe: 'Pressione ESC para reabrir a mesa e lançar mesmo assim.'
+                titulo: `${rotulo} ${numeroMesa} está fechando a conta`,
+                detalhe: `Pressione ESC para reabrir ${balcaoV2Ref.current ? 'a comanda' : 'a mesa'} e lançar mesmo assim.`
             });
             return;
         }
@@ -540,15 +930,15 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             setAvisoAtalho({
                 tipo: 'enviar',
                 mesa: numeroMesa,
-                titulo: `MESA ${numeroMesa} · +${descricao} · R$ ${valor.toFixed(2)}`,
-                detalhe: `Mesa já tinha R$ ${jaNaMesa.toFixed(2)} · Ficará R$ ${(jaNaMesa + valor).toFixed(2)}  —  ENTER confirma · ESC cancela`
+                titulo: `${rotulo.toUpperCase()} ${numeroMesa} · +${descricao} · R$ ${valor.toFixed(2)}`,
+                detalhe: `${rotulo} já tinha R$ ${jaNaMesa.toFixed(2)} · Ficará R$ ${(jaNaMesa + valor).toFixed(2)}  —  ENTER confirma · ESC cancela`
             });
         } else {
             bipar('ok');
             setAvisoAtalho({
                 tipo: 'enviar',
                 mesa: numeroMesa,
-                titulo: `MESA ${numeroMesa} · ${descricao} · R$ ${valor.toFixed(2)}`,
+                titulo: `${rotulo.toUpperCase()} ${numeroMesa} · ${descricao} · R$ ${valor.toFixed(2)}`,
                 detalhe: 'ENTER confirma e envia · ESC cancela'
             });
         }
@@ -564,7 +954,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // render (não em useEffect) para nunca ficar um ciclo atrás do estado.
     const modalAbertoRef = useRef(false);
     modalAbertoRef.current = isTableModalOpen || isCustomItemModalOpen ||
-                             isScaleModalOpen || isCategoryModalOpen || isAddonModalOpen;
+                             isScaleModalOpen || isCategoryModalOpen || isAddonModalOpen ||
+                             // CRÍTICO (achado 02/10/2026): CheckoutModal/SplitBillModal
+                             // são renderizados pelo AdminPage, fora desta árvore -- sem
+                             // isto, Enter dentro do checkout (pra confirmar pagamento)
+                             // também disparava handleFinalize() do Balcão por baixo.
+                             !!modalExternoAberto;
 
     // Espelho do campo de nome, tambem atualizado no corpo do render.
     // Sem isto o handler lia `nomeAberto` da closure (um ciclo atras), nao saia
@@ -572,6 +967,114 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // nao aceitava digitar nem clique. Ver Regra 10.
     const nomeAbertoRef = useRef(false);
     nomeAbertoRef.current = nomeAberto;
+
+    // Balcão V2: espelhos síncronos (Regra 10), mesmo motivo dos de cima.
+    const balcaoV2Ref = useRef(false);
+    balcaoV2Ref.current = !!settings?.balcaoV2;
+    const cartRef = useRef<CartItem[]>([]);
+    cartRef.current = cart;
+    // CRÍTICO (achado pela auditoria de 01/10/2026): `avisoAtalho` era lido
+    // DIRETO da closure em ~9 pontos de aoTeclar, sem ref -- violação da
+    // Regra 10 que `scripts/checar-atalhos.cjs` não pegava porque sua lista
+    // fixa de proibidos nunca incluiu este estado. Hoje "funciona" só porque
+    // o useEffect de registro roda em todo render (sem array de deps) e
+    // recaptura o avisoAtalho atual -- mas é frágil: qualquer refactor futuro
+    // que adicione deps parciais a esse efeito faria o handler voltar a
+    // enxergar um avisoAtalho de um ciclo atrás, sem o lint acusar nada.
+    const avisoAtalhoRef = useRef<typeof avisoAtalho>(null);
+    avisoAtalhoRef.current = avisoAtalho;
+    // CRÍTICO (achado pela auditoria de 02/10/2026): handleFinalize é async
+    // (await no Supabase) e `isProcessing` nunca era checado pela tecla C --
+    // apertar C enquanto um envio ainda estava em voo podia reabrir a MESMA
+    // comanda com `salvarRascunhoAtual` gravando os mesmos itens que estavam
+    // sendo persistidos, ou (voltando rápido pra essa comanda) disparar um
+    // reenvio duplicado no banco. Mesmo critério já usado pra avisoAtalho
+    // 'confirmar'/'enviar': C fica bloqueado enquanto isProcessing for true.
+    const isProcessingRef = useRef(false);
+    isProcessingRef.current = isProcessing;
+    const abrirProximaComandaLivreRef = useRef<() => void>(() => {});
+    abrirProximaComandaLivreRef.current = abrirProximaComandaLivre;
+    const isRenomeandoComandaRef = useRef(false);
+    isRenomeandoComandaRef.current = isRenomeandoComanda;
+    const isComandaModalOpenRef = useRef(false);
+    isComandaModalOpenRef.current = isComandaModalOpen;
+    /**
+     * Fecha a tela da comanda ativa e volta para a lista. Se tiver item não
+     * enviado, salva no cache de rascunhos ANTES de esconder o modal --
+     * senão o carrinho "em standby" se perdia ao apertar X (achado em
+     * 30/09/2026, relato do Ikarus: montar a Comanda 3, trocar, voltar e
+     * achar vazia).
+     */
+    const fecharComandaAtivaRef = useRef<() => void>(() => {});
+    fecharComandaAtivaRef.current = () => { salvarRascunhoAtual(); setIsComandaModalOpen(false); };
+
+    // F7 (global, AdminPage) terminou um checkout da comanda ativa com
+    // sucesso -- fecha a tela sozinha, sem salvar rascunho (o pedido já virou
+    // 'Entregue', não há mais nada a enviar). Ignora o primeiro valor (0 ou
+    // undefined, antes de qualquer F7 acontecer).
+    const primeiroFecharSignal = useRef(true);
+    useEffect(() => {
+        if (primeiroFecharSignal.current) { primeiroFecharSignal.current = false; return; }
+        // CRÍTICO (achado em 02/10/2026, print do Ikarus: "fechei a Comanda 5
+        // pelo F7/F8, sumiu dos Pedidos, mas voltou PENDENTE no Balcão"): o
+        // checkout feito via F7/F8 roda inteiro no AdminPage, fora do
+        // handleFinalize -- então o `delete rascunhosComandaRef.current[...]`
+        // que limpa o cache ao enviar NUNCA rodava nesse caminho. Se o slot
+        // tinha um rascunho salvo de antes (ex.: o operador passou por outras
+        // comandas antes de fechar esta), ele sobrava no cache. Como o pedido
+        // vira 'Entregue' e some de activeOrders, o rascunho esquecido virava
+        // a ÚNICA fonte pra aquele slot -- e cardsComandas lia isso como
+        // "ainda tem algo pendente", mesmo já pago. Mesmo número que estava
+        // ativo no momento do fechamento (só se fecha via F7/F8 a comanda
+        // ativa) -- limpa o cache dela também, não só a tela.
+        const numero = parseInt(selectedTable, 10);
+        if (!isNaN(numero)) {
+            delete rascunhosComandaRef.current[numero];
+            persistirRascunhos();
+            setVersaoRascunhos(v => v + 1);
+        }
+        setIsComandaModalOpen(false);
+        // CRÍTICO (achado 02/10/2026, "a comanda só some do Balcão se eu
+        // trocar de aba e voltar"): cardsComandas adiciona `numeroAtivo`
+        // (= parseInt(selectedTable)) na lista de slots a mostrar SEMPRE que
+        // ele é um número válido 1-20, mesmo sem pedido nem rascunho --
+        // porque isso é o que faz a comanda recém-ABERTA aparecer na lista
+        // antes de ter item. Sem zerar `selectedTable` aqui, ele continuava
+        // apontando pro slot que acabou de ser pago, e o card dele continuava
+        // sendo calculado e exibido até o próximo re-render forçado por outra
+        // causa (como trocar de aba, que remonta o componente do zero).
+        setSelectedTable('');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [fecharComandaSignal]);
+    /**
+     * Setas ↑↓ (Balcão V2): anda entre os slots 1-20 que têm pedido aberto
+     * (mesmo `tableStatuses` que a grade de mesas do V1 usa). Slot vazio não
+     * entra no ciclo -- não tem pra onde "voltar".
+     */
+    const navegarComandaRef = useRef<(direcao: 1 | -1) => void>(() => {});
+    navegarComandaRef.current = (direcao: 1 | -1) => {
+        // Inclui slots com pedido no banco, rascunho não-enviado (cache
+        // local) E popup de sabor pausado -- achado pela auditoria de
+        // 02/10/2026 (CRÍTICO): faltava `seletoresPausadosRef` aqui, mesmo
+        // já corrigido em cardsComandas/abrirProximaComandaLivre. Sem isto,
+        // uma comanda com popup pausado e carrinho ainda vazio (popup era o
+        // primeiro item) era pulada pelas setas -- só dava pra voltar a ela
+        // digitando o número direto ou clicando no card.
+        const ocupados = Array.from(new Set([
+            ...Object.keys(tableStatuses).map(Number),
+            ...Object.keys(rascunhosComandaRef.current).map(Number),
+            ...Object.keys(seletoresPausadosRef.current).map(Number),
+        ])).filter(n => n >= 1 && n <= TOTAL_COMANDAS_V2).sort((a, b) => a - b);
+        if (ocupados.length === 0 || isProcessingRef.current) return;
+        const atual = parseInt(selectedTable, 10);
+        const posAtual = ocupados.indexOf(atual);
+        const proxima = posAtual === -1 ? 0 : (posAtual + direcao + ocupados.length) % ocupados.length;
+        const numero = ocupados[proxima];
+        if (numero === atual) return;
+        salvarRascunhoAtual();
+        handleSelectTable(numero.toString().padStart(2, '0'), `Comanda ${numero}`);
+        setIsComandaModalOpen(true);
+    };
 
     // Captura das teclas. Ignorada enquanto o foco está num campo de texto
     // (o operador pode estar digitando nome/observação) e com modal aberto.
@@ -595,29 +1098,161 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // trata ENTER e ESC no onKeyDown.
             if (nomeAbertoRef.current) return;
 
+            // Popup de sabor (Balcão V2, pedido do Ikarus 01/10/2026: "tudo
+            // por comando, não vamos usar clique de hora nenhuma"). Prioridade
+            // MÁXIMA -- intercepta ↑↓/Enter/ESC antes de qualquer outro atalho,
+            // mesmo com digitando=true (foco pode ter ficado em algum input
+            // residual) e mesmo com modalAbertoRef (não usa isAddonModalOpen).
+            if (seletorSaborRef.current) {
+                const sel = seletorSaborRef.current;
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    // Navega na ORDEM VISUAL (sem-adicional → opcionais →
+                    // adicionais), não na ordem crua do array -- pedido do
+                    // Ikarus 02/10/2026: "não consigo navegar nos opcionais
+                    // com as setas". Trava nas pontas (sem voltar ao início) --
+                    // "vamos travar o fim da lista, hoje eu volto ao começo".
+                    const ordem = ordemVisualDoSeletor(sel.opcoes);
+                    const posAtual = ordem.indexOf(sel.indice);
+                    const proxPos = posAtual + (e.key === 'ArrowDown' ? 1 : -1);
+                    if (proxPos < 0 || proxPos >= ordem.length) return; // já na ponta, não faz nada
+                    setSeletorSabor({ ...sel, indice: ordem[proxPos] });
+                    return;
+                }
+                // S: marca/desmarca o opcional/adicional atual -- pedido do
+                // Ikarus 02/10/2026 ("leite condensado E leite em pó no mesmo
+                // açaí"). Só vale na etapa 'unico' (lista plana sem grupo
+                // sabor/calda); sabor/calda continuam escolha única por Enter.
+                // "Prosseguir sem adicional" (índice 0) não marca -- não faz
+                // sentido junto com outras marcações.
+                if (e.key.toUpperCase() === 'S' && sel.etapa === 'unico' && sel.indice > 0) {
+                    e.preventDefault();
+                    alternarMarcacaoSeletor(sel.indice);
+                    bipar('ok');
+                    return;
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const escolhaAtual = sel.opcoes[sel.indice];
+                    if (sel.etapa === 'sabor') {
+                        // Sabor+calda (ex.: Milkshake): 1ª etapa escolhida,
+                        // agora mostra a lista de calda -- mesmo fluxo em 2
+                        // passos que já existe no cardápio do site.
+                        const { caldas } = montarEtapasDeSabor(sel.produto);
+                        setSeletorSabor({
+                            produto: sel.produto,
+                            opcoes: [null, ...caldas],
+                            indice: 0,
+                            etapa: 'calda',
+                            saborEscolhido: escolhaAtual,
+                            marcados: new Set(),
+                        });
+                        bipar('ok');
+                        return;
+                    }
+                    if (sel.etapa === 'unico') {
+                        // Lança com TODOS os marcados (S) de uma vez. Se nada
+                        // foi marcado, Enter na opção atual funciona como
+                        // atalho rápido (equivalente a marcar só ela) -- cobre
+                        // o caso comum de "só este aqui" sem precisar S+Enter.
+                        const addonsEscolhidos = sel.marcados.size > 0
+                            ? Array.from(sel.marcados).map(i => sel.opcoes[i]).filter((a): a is Addon => !!a)
+                            : (escolhaAtual ? [escolhaAtual] : []);
+                        addToCartComSabor(sel.produto, ...addonsEscolhidos);
+                        setSeletorSabor(null);
+                        bipar('ok');
+                        return;
+                    }
+                    // etapa 'calda': última escolha, lança no carrinho.
+                    addToCartComSabor(sel.produto, sel.saborEscolhido, escolhaAtual);
+                    setSeletorSabor(null);
+                    bipar('ok');
+                    return;
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    if (sel.etapa === 'calda') {
+                        // Volta pro passo de sabor em vez de fechar tudo --
+                        // evita perder a escolha de sabor por engano ao tentar
+                        // só corrigir a calda.
+                        const { etapa1 } = montarEtapasDeSabor(sel.produto);
+                        setSeletorSabor({ produto: sel.produto, opcoes: [null, ...etapa1], indice: 0, etapa: 'sabor', marcados: new Set() });
+                        return;
+                    }
+                    setSeletorSabor(null);
+                    return;
+                }
+                // C: PAUSA este popup (guarda produto/opções/índice/marcados)
+                // e abre a próxima comanda livre -- pedido do Ikarus
+                // 02/10/2026: "o cliente não decidiu ainda, atender outro
+                // enquanto isso". Ao reabrir esta comanda depois, o popup
+                // volta exatamente do mesmo ponto.
+                if (balcaoV2Ref.current && e.key.toUpperCase() === 'C' && !isProcessingRef.current) {
+                    e.preventDefault();
+                    const numeroPausado = parseInt(selectedTable, 10);
+                    if (!isNaN(numeroPausado)) {
+                        seletoresPausadosRef.current[numeroPausado] = sel;
+                    }
+                    setSeletorSabor(null);
+                    abrirProximaComandaLivreRef.current();
+                    return;
+                }
+                // Qualquer outra tecla enquanto o popup está aberto é
+                // ignorada -- não deixa vazar pro resto do handler (ex.:
+                // dígitos abrindo outra comanda por baixo do popup).
+                return;
+            }
+
             if (digitando || modalAbertoRef.current) return;
 
-            // F4/F5/F6 sao da NAVEGACAO (AdminPage). Sair antes de marcar o
-            // evento — senao o F4 falhava de forma intermitente, dependendo de
-            // qual listener rodava primeiro.
-            if (e.key === 'F4' || e.key === 'F5' || e.key === 'F6') return;
+            // F4/F5/F6/F7/F8 sao da NAVEGACAO (AdminPage). Sair antes de
+            // marcar o evento — senao o F4 falhava de forma intermitente,
+            // dependendo de qual listener rodava primeiro. F7/F8 adicionados
+            // em 01/10/2026: checkout rápido e dividir conta da comanda
+            // (pedido do Ikarus, "não sair da mesma tela") -- sem essa
+            // exclusão aqui, o handler do Balcão podia marcar o evento como
+            // tratado antes do listener global (AdminPage) conseguir agir.
+            if (e.key === 'F4' || e.key === 'F5' || e.key === 'F6' || e.key === 'F7' || e.key === 'F8') return;
 
             // Trava anti-duplicidade (ver comentário no addEventListener):
             // o mesmo evento chegava duas vezes e o produto entrava em dobro.
             if ((e as any).__pdvTratado) return;
             (e as any).__pdvTratado = true;
 
+            // C: abre uma comanda nova (Balcão V2 apenas). Só bloqueia com
+            // avisos que aguardam decisão de verdade, mesmo critério do R/B.
+            // Também bloqueia com um handleFinalize em voo (isProcessing) --
+            // achado pela auditoria de 02/10/2026, ver comentário na
+            // declaração de isProcessingRef.
+            if (balcaoV2Ref.current && e.key.toUpperCase() === 'C' &&
+                avisoAtalhoRef.current?.tipo !== 'confirmar' && avisoAtalhoRef.current?.tipo !== 'enviar' &&
+                !isProcessingRef.current) {
+                e.preventDefault();
+                abrirProximaComandaLivreRef.current();
+                return;
+            }
+
+            // X: fecha a comanda ativa e volta pra lista de comandas (Balcão
+            // V2 apenas, pedido do Ikarus em 30/09 -- atalho do botão X do
+            // canto, que hoje só é clicável com mouse). Salva antes de sair.
+            if (balcaoV2Ref.current && isComandaModalOpenRef.current && e.key.toUpperCase() === 'X' &&
+                avisoAtalhoRef.current?.tipo !== 'confirmar' && avisoAtalhoRef.current?.tipo !== 'enviar') {
+                e.preventDefault();
+                fecharComandaAtivaRef.current();
+                return;
+            }
+
             // ESC: confirma a reabertura de mesa com conta solicitada,
             // ou simplesmente limpa o que estiver pendente na tela.
             if (e.key === 'Escape') {
-                if (avisoAtalho?.tipo === 'confirmar' && avisoAtalho.mesa) {
+                if (avisoAtalhoRef.current?.tipo === 'confirmar' && avisoAtalhoRef.current.mesa) {
                     e.preventDefault();
-                    lancarPesoNaMesa(avisoAtalho.mesa, true);
+                    lancarPesoNaMesa(avisoAtalhoRef.current.mesa, true);
                     return;
                 }
                 // Cancelando um pedido montado: desfaz tambem o carrinho e a
                 // mesa, senao sobraria item "solto" para o proximo lancamento.
-                if (avisoAtalho?.tipo === 'enviar') {
+                if (avisoAtalhoRef.current?.tipo === 'enviar') {
                     e.preventDefault();
                     setCart([]);
                     setSelectedTable('');
@@ -630,13 +1265,51 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 }
                 setTeclasMesa('');
                 setAvisoAtalho(null);
+                // Balcão V2: ESC só fecha a tela da comanda se ela estiver
+                // VAZIA (nada lançado ainda) -- pedido do Ikarus, 30/09: com
+                // item no carrinho, ESC deve continuar limpando/cancelando
+                // (igual ao V1), não some da tela sem avisar. O carrinho
+                // sendo lido do cartRef evita fechar com base num estado
+                // de um ciclo atrás (Regra 10).
+                if (balcaoV2Ref.current && isComandaModalOpenRef.current && cartRef.current.length === 0) {
+                    setIsComandaModalOpen(false);
+                }
                 return;
             }
 
             if (/^[0-9]$/.test(e.key)) {
                 e.preventDefault();
-                setTeclasMesa(prev => (prev + e.key).slice(0, 4)); // mesa: 2 dígitos · código: até 4
+                const novoValor = (teclasMesa + e.key).slice(0, 4); // mesa: 2 dígitos · código: até 4
+                setTeclasMesa(novoValor);
                 setAvisoAtalho(null);
+
+                // Popup de sabor (Balcão V2): assim que o código digitado bate
+                // com um produto de verdade, SEM esperar Enter -- pedido do
+                // Ikarus 01/10/2026 ("assim que digitar o código do produto já
+                // aparece o popup"). Só dispara aqui se tiver 2+ sabores: com 0
+                // ou 1, o fluxo normal do Enter (abaixo) já lança direto.
+                if (balcaoV2Ref.current && isComandaModalOpenRef.current) {
+                    const numeroDigitado = parseInt(novoValor, 10);
+                    const produtoBatido = numeroDigitado >= 100 ? menuItems.find(p => p.codigo === numeroDigitado) : null;
+                    if (produtoBatido && produtoBatido.isAvailable !== false) {
+                        const seletor = montarSeletorInicial(produtoBatido);
+                        if (seletor) {
+                            setTeclasMesa('');
+                            setSeletorSabor(seletor);
+                            bipar('ok');
+                        }
+                    }
+                }
+                return;
+            }
+
+            // Setas ↑↓: navega entre as comandas em andamento (Balcão V2),
+            // na ordem em que foram criadas. Só fora do modal de comanda —
+            // dentro dele as setas não têm uso hoje, então não colide.
+            if (balcaoV2Ref.current && !isComandaModalOpenRef.current &&
+                (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+                e.preventDefault();
+                navegarComandaRef.current(e.key === 'ArrowDown' ? 1 : -1);
                 return;
             }
 
@@ -652,7 +1325,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // por causa dele fazia o atalho parecer travado por segundos,
             // ate o aviso sumir sozinho. Corrigido: R so' e' bloqueado pelos
             // avisos que REALMENTE aguardam decisao ('confirmar'/'enviar').
-            if (e.key.toUpperCase() === 'R' && avisoAtalho?.tipo !== 'confirmar' && avisoAtalho?.tipo !== 'enviar') {
+            if (e.key.toUpperCase() === 'R' && avisoAtalhoRef.current?.tipo !== 'confirmar' && avisoAtalhoRef.current?.tipo !== 'enviar') {
                 e.preventDefault();
                 const temPesoR = scaleWeight > 0 && isScaleStable;
                 if (!temPesoR && cart.length === 0) {
@@ -701,7 +1374,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // sequencia rapida, sem esperar o aviso anterior sumir sozinho.
             // Corrigido: so' bloqueia nos avisos que aguardam decisao de
             // verdade ('confirmar'/'enviar') -- mesmo criterio ja usado no R.
-            if (e.key.toUpperCase() === 'B' && avisoAtalho?.tipo !== 'confirmar' && avisoAtalho?.tipo !== 'enviar' && !modalAbertoRef.current) {
+            if (e.key.toUpperCase() === 'B' && avisoAtalhoRef.current?.tipo !== 'confirmar' && avisoAtalhoRef.current?.tipo !== 'enviar' && !modalAbertoRef.current) {
                 e.preventDefault();
                 // Comeca do peso ja estavel na balanca automatica, se houver
                 // (mesmo comportamento do clique no botao "Balança" do mouse,
@@ -709,6 +1382,20 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 // INDEPENDENTE dali em diante, nao acompanha mais o stream.
                 setManualWeight(isScaleStable ? scaleWeight : 0);
                 setIsScaleModalOpen(true);
+                return;
+            }
+
+            // N dentro da comanda (Balcão V2): renomeia a comanda ativa a
+            // qualquer momento, sem depender do fluxo de confirmação de
+            // envio -- pedido do Ikarus, 30/09. Prioridade sobre o N do V1
+            // (abaixo) quando o modal de comanda está aberto.
+            if (balcaoV2Ref.current && isComandaModalOpenRef.current && !isRenomeandoComandaRef.current &&
+                e.key.toUpperCase() === 'N' && avisoAtalhoRef.current?.tipo !== 'confirmar' && avisoAtalhoRef.current?.tipo !== 'enviar') {
+                e.preventDefault();
+                setIsRenomeandoComanda(true);
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => campoRenomeComandaRef.current?.focus());
+                });
                 return;
             }
 
@@ -723,7 +1410,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // blocos de baixo levando preventDefault(). Dava o classico
             // "primeira vez funciona, segunda nao". Ver Regra 10.
             if (e.key.toUpperCase() === 'N' && !nomeAbertoRef.current &&
-                (avisoAtalho?.tipo === 'enviar' || !avisoAtalho)) {
+                (avisoAtalhoRef.current?.tipo === 'enviar' || !avisoAtalhoRef.current)) {
                 e.preventDefault();
                 nomeAbertoRef.current = true;   // vale JA, sem esperar o render
                 setNomeAberto(true);
@@ -737,11 +1424,44 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             }
 
             // 2º ENTER (ou F2): confirma e ENVIA o pedido montado.
-            if ((e.key === 'Enter' || e.key === 'F2') && avisoAtalho?.tipo === 'enviar') {
+            if ((e.key === 'Enter' || e.key === 'F2') && avisoAtalhoRef.current?.tipo === 'enviar') {
                 e.preventDefault();
                 setAvisoAtalho(null);
                 setNomeAberto(false);
                 if (!isProcessing) handleFinalize();
+                return;
+            }
+
+            // Balcão V2: ENTER com o campo de dígitos VAZIO (nada digitado)
+            // envia a comanda ativa direto -- não existe "digitar a mesa"
+            // pra chegar no aviso 'enviar' do V1, então sem isto o operador
+            // ficava travado depois de lançar o produto (achado em 30/09,
+            // Ikarus: "C, N, nome, Enter, código, Enter e não lançou").
+            if (balcaoV2Ref.current && isComandaModalOpenRef.current &&
+                e.key === 'Enter' && !teclasMesa) {
+                e.preventDefault();
+                if (cartRef.current.length > 0 && !isProcessing) handleFinalize();
+                return;
+            }
+
+            // +/-: ajusta a quantidade do ÚLTIMO item lançado, sem precisar
+            // de mouse -- pedido "mais um" é o caso mais comum numa fila de
+            // açaiteria. Achado pela auditoria de 01/10/2026: hoje isso só
+            // existia como clique nos botões +/- da lista do carrinho.
+            // Delete/Q: desfaz (remove) o último item lançado -- corrige na
+            // hora um código digitado errado, sem precisar de mouse.
+            // Só dentro da comanda e sem dígitos pendentes, pra não colidir
+            // com nada do fluxo de código/mesa.
+            if (balcaoV2Ref.current && isComandaModalOpenRef.current && !teclasMesa &&
+                (e.key === '+' || e.key === '-' || e.key === 'Delete' || e.key.toUpperCase() === 'Q')) {
+                const ultimo = cartRef.current[cartRef.current.length - 1];
+                if (ultimo) {
+                    e.preventDefault();
+                    if (e.key === '+') updateQuantity(ultimo.cartId, 1);
+                    else if (e.key === '-') updateQuantity(ultimo.cartId, -1);
+                    else removeItem(ultimo.cartId);
+                    bipar('ok');
+                }
                 return;
             }
 
@@ -764,13 +1484,50 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         setAvisoAtalho({ tipo: 'erro', titulo: `${produto.name}`, detalhe: 'Produto está indisponível.' });
                         return;
                     }
-                    addToCart(produto);
+                    // Produto com exatamente 1 sabor elegível (e sem calda):
+                    // lança já com ele embutido, sem abrir popup (nada pra
+                    // escolher). Com 2+ ou com calda, o popup já teria aberto
+                    // no dígito digitado (acima) e nunca chegaria aqui -- mas
+                    // se chegar (ex.: colou o número com paste), ainda assim
+                    // não deve duplicar.
+                    const seletorEnter = montarSeletorInicial(produto);
+                    if (seletorEnter) {
+                        setSeletorSabor(seletorEnter);
+                        bipar('ok');
+                        return;
+                    }
+                    const opcoesSabor = opcoesDeSaborDoProduto(produto);
+                    addToCartComSabor(produto, opcoesSabor[0]);
                     bipar('ok');
-                    setAvisoAtalho({
-                        tipo: 'ok',
-                        titulo: `${produto.name} · R$ ${Number(produto.price).toFixed(2)}`,
-                        detalhe: 'Adicionado. Digite a mesa e ENTER para lançar.'
-                    });
+                    // Balcão V2: SEM aviso na tela -- pedido do Ikarus, 30/09
+                    // ("mais prático", sem modal verde a cada código digitado).
+                    // O item já aparece na lista do carrinho, o bipe confirma
+                    // que entrou. O V1 mantém o aviso -- lá ele orienta o
+                    // próximo passo (digitar a mesa).
+                    if (!balcaoV2Ref.current) {
+                        setAvisoAtalho({
+                            tipo: 'ok',
+                            titulo: `${produto.name} · R$ ${Number(produto.price).toFixed(2)}`,
+                            detalhe: 'Adicionado. Digite a mesa e ENTER para lançar.'
+                        });
+                    }
+                    return;
+                }
+
+                // Balcão V2: dígito (1-20) + ENTER sempre ABRE a comanda no
+                // modal (carrinho, busca, tudo) -- nunca lança direto, mesmo
+                // que já tenha peso/item esperando confirmação. Pedido do
+                // Ikarus, 30/09: apertar "2" mostrava um aviso azul de
+                // "confirma e envia", quando o esperado é simplesmente abrir
+                // a Comanda 2 pra continuar editando (igual clicar no card).
+                // isProcessingRef: mesmo critério do C, achado pela auditoria
+                // de 02/10/2026 -- trocar de comanda com um handleFinalize em
+                // voo (await no Supabase) podia reabrir essa mesma comanda no
+                // meio do envio e causar reenvio duplicado.
+                if (balcaoV2Ref.current && numero >= 1 && numero <= TOTAL_COMANDAS_V2 && !isProcessingRef.current) {
+                    salvarRascunhoAtual();
+                    handleSelectTable(numero.toString().padStart(2, '0'), `Comanda ${numero}`);
+                    setIsComandaModalOpen(true);
                     return;
                 }
 
@@ -816,15 +1573,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         return () => clearTimeout(id);
     }, [avisoAtalho]);
 
-    const total = cart.reduce((sum, item) => {
-        let itemPrice = Number(item.price) || 0;
-        if (item.isCombo && settings?.comboPrice) {
-            itemPrice += Number(settings.comboPrice) || 0;
-        }
-        const addonsPrice = item.selectedAddons?.reduce((s, a) => s + (Number(a.price) || 0), 0) || 0;
-        const itemTotal = (itemPrice + addonsPrice) * item.quantity;
-        return sum + itemTotal;
-    }, 0) + (orderType === 'Entrega' ? (Number(deliveryFee) || 0) : 0);
+    const total = calcularValorCarrinho(cart, settings?.comboPrice) + (orderType === 'Entrega' ? (Number(deliveryFee) || 0) : 0);
 
     const [searchPhone, setSearchPhone] = useState('');
     const [isSearchingCustomer, setIsSearchingCustomer] = useState(false);
@@ -966,16 +1715,53 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         setAddressDetails({ street, number, district, reference: extractedReference || customer.reference_point || '' });
     };
 
-    const handleSelectTable = async (tableNum: string) => {
+    /**
+     * Carrega (ou inicia) a comanda/mesa de número `tableNum`. Usada tanto
+     * pela grade de mesas do V1 quanto pelos slots de comanda do V2 (Balcão
+     * V2 reaproveita a MESMA mecânica de table_number -- caixa, histórico e
+     * fechamento em lote já funcionam de graça, ver decisão do Ikarus em
+     * 30/09/2026: "ou usa a v1 ou a v2, não vão colidir", já que o
+     * interruptor é por máquina).
+     * `rotuloVazio` customiza o nome usado quando a comanda está vazia
+     * (V1 usa "Mesa N", V2 usa "Comanda N") -- só diferença visual.
+     */
+    const handleSelectTable = async (tableNum: string, rotuloVazio?: string) => {
         setSelectedTable(tableNum);
         setIsTableModalOpen(false);
         setIsProcessing(true);
+        // Retoma o popup de sabor/opcional PAUSADO desta comanda (tecla C
+        // dentro do popup, pedido do Ikarus 02/10/2026) -- exatamente do
+        // mesmo ponto: produto, opções, índice e marcados intactos.
+        const numeroAbrindo = parseInt(tableNum, 10);
+        const pausado = seletoresPausadosRef.current[numeroAbrindo];
+        if (pausado) {
+            delete seletoresPausadosRef.current[numeroAbrindo];
+            setSeletorSabor(pausado);
+        }
+        const chamadaId = ++handleSelectTableCallIdRef.current;
         try {
             // Carrega TODOS os pedidos abertos da mesa, nao so o ultimo.
             // Antes usava fetchOpenOrderForTable, que tem .limit(1): a comanda
             // aparecia incompleta e excluir aqui nao refletia na aba Pedidos.
             const abertos = await fetchAllOpenOrdersForTable(storeId, parseInt(tableNum));
-            if (abertos.length > 0) {
+            if (chamadaId !== handleSelectTableCallIdRef.current) return; // resposta obsoleta, descarta
+            // CRÍTICO (achado pela auditoria de 02/10/2026): antes, quando a
+            // comanda já tinha pedido no banco (`abertos.length > 0`), o
+            // código IGNORAVA qualquer rascunho local e sobrescrevia
+            // cart/pedidosDaMesa/currentOrderId com o que veio do banco --
+            // uma edição feita e não reenviada (ex.: "mais uma bala" depois
+            // de já ter enviado a comanda) sumia silenciosamente. Agora: se
+            // existe rascunho pra este slot, ele é a fonte de verdade (tem a
+            // edição mais recente do operador), não o banco.
+            const rascunho = rascunhosComandaRef.current[parseInt(tableNum, 10)];
+            delete rascunhosComandaRef.current[parseInt(tableNum, 10)];
+            persistirRascunhos();
+            if (rascunho) {
+                setPedidosDaMesa(rascunho.pedidosDaMesa);
+                setCart(rascunho.cart);
+                setCurrentOrderId(rascunho.currentOrderId);
+                setCustomerName(rascunho.customerName);
+            } else if (abertos.length > 0) {
                 setPedidosDaMesa(abertos);
                 setCart(abertos.flatMap(o => o.items || []));
                 setCurrentOrderId(abertos[0].id || null);
@@ -983,14 +1769,30 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             } else {
                 setPedidosDaMesa([]);
                 setCurrentOrderId(null);
-                setCustomerName(`Mesa ${tableNum}`);
+                setCustomerName(rotuloVazio || `Mesa ${tableNum}`);
                 setCart([]);
+                // CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei a
+                // comanda, abri uma nova no mesmo número, o F8 já mostrava
+                // pagamento de outro cliente"): slot genuinamente vazio (sem
+                // pedido no banco, sem rascunho) = próxima vez que for usado
+                // é um cliente NOVO. Limpa qualquer table_payments que tenha
+                // sobrado de um cliente anterior que usou este mesmo número
+                // -- senão o histórico de "já recebido" do split bill
+                // aparecia herdado entre clientes diferentes. Fire-and-forget
+                // (não precisa bloquear a abertura da comanda por isso).
+                if (balcaoV2Ref.current) {
+                    clearTablePayments(storeId, numeroAbrindo).catch(() => {});
+                }
             }
         } catch (error) {
+            if (chamadaId !== handleSelectTableCallIdRef.current) return; // obsoleta, nao mostra erro de uma troca já abandonada
             console.error(error);
             showNotify('Erro ao verificar mesa.', 'error');
         } finally {
-            setIsProcessing(false);
+            // Só a chamada mais recente pode desligar o "carregando" -- uma
+            // resposta atrasada não pode liberar isProcessing no meio de uma
+            // troca de comanda mais nova que ainda está em andamento.
+            if (chamadaId === handleSelectTableCallIdRef.current) setIsProcessing(false);
         }
     };
 
@@ -1000,8 +1802,47 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         }
     }, [initialTable]);
 
-    const handleFinalize = async () => {
-        if (cart.length === 0) return;
+    const handleFinalize = async (): Promise<boolean> => {
+        // CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei todos os
+        // itens da comanda, achei que ela sumiria sozinha, mas continuou
+        // pendurada em Pedidos -- tive que ir lá cancelar manualmente"):
+        // antes, carrinho vazio sempre devolvia `return false` sem fazer
+        // nada, mesmo quando a comanda JÁ tinha pedido(s) no banco
+        // (pedidosDaMesa). Se o operador esvaziou o carrinho de propósito
+        // (removeu tudo), o esperado é excluir a comanda inteira -- mesmo
+        // efeito do botão "Descartar" da lista, só que a partir de dentro da
+        // tela de edição.
+        if (cart.length === 0) {
+            if (pedidosDaMesa.length > 0) {
+                setIsProcessing(true);
+                try {
+                    for (const pedido of pedidosDaMesa) {
+                        await deleteOrder(pedido.id!);
+                    }
+                    if (balcaoV2Ref.current) {
+                        clearTablePayments(storeId, parseInt(selectedTable, 10)).catch(() => {});
+                    }
+                    setPedidosDaMesa([]);
+                    setCurrentOrderId(null);
+                    delete rascunhosComandaRef.current[parseInt(selectedTable, 10)];
+                    persistirRascunhos();
+                    setVersaoRascunhos(v => v + 1);
+                    showNotify('Comanda excluída (ficou sem itens). ✅');
+                    if (balcaoV2Ref.current) {
+                        setIsComandaModalOpen(false);
+                        setSelectedTable('');
+                    }
+                    return true;
+                } catch (error) {
+                    console.error(error);
+                    showNotify('Erro ao excluir comanda vazia.', 'error');
+                    return false;
+                } finally {
+                    setIsProcessing(false);
+                }
+            }
+            return false;
+        }
         setIsProcessing(true);
         try {
             const isAvulso = orderType === 'Balcão' && !selectedTable;
@@ -1050,20 +1891,35 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     await upsertCustomer(customerPayload);
                 }
             } else if (isAvulso) finalAddress = 'Balcão (Avulso)';
-            else if (orderType === 'Balcão') finalAddress = `Mesa ${selectedTable}`;
+            else if (orderType === 'Balcão') finalAddress = balcaoV2Ref.current ? `Comanda ${selectedTable}` : `Mesa ${selectedTable}`;
+            // Balcão V2 (decisão do Ikarus, 30/09): a comanda É uma mesa de
+            // verdade (mesmo table_number, 1-20) -- só o RÓTULO exibido muda
+            // de "Mesa N" para "Comanda N". Reaproveita de graça o caixa/
+            // histórico/fechamento em lote que já funcionam pra mesa.
+            // printed:true evita que a cozinha/estações disparem auto-print
+            // -- o V2 não imprime sozinho, quem quiser imprimir usa o V1.
+            const rotuloComandaV2 = balcaoV2Ref.current ? `Comanda ${selectedTable}` : null;
+            // nomeSemPrefixoDeMesa() tira o "Comanda N ·"/"Mesa N ·" que já
+            // pode estar no customerName (ex.: reenviar uma comanda que
+            // handleSelectTable já recarregou com o prefixo). Sem isto,
+            // reenviar duplicava o rótulo ("Comanda 1 · Comanda 1 · Nome").
+            // Achado em 30/09/2026, print do Ikarus.
+            const nomeLimpo = nomeSemPrefixoDeMesa(customerName);
             const orderData = {
                 id: currentOrderId || undefined,
                 // LET THE DATABASE HANDLE THIS (Trigger set_daily_order_number)
                 // dailyOrderNumber: await getNextDailyOrderNumber(storeId), -> REMOVED TO FIX RACE CONDITION
-                dailyOrderNumber: 0, 
+                dailyOrderNumber: 0,
                 // Mesa COM nome digitado -> "Mesa 2 · João" (o nome ajuda a
                 // identificar quem e na hora de entregar/fechar).
                 // Sem nome, continua so "Mesa 2" como sempre foi.
-                customerName: isAvulso
-                    ? (customerName || 'Cliente Avulso')
-                    : (orderType === 'Balcão'
-                        ? (customerName ? `Mesa ${selectedTable} · ${customerName}` : `Mesa ${selectedTable}`)
-                        : (customerName || (orderType === 'Entrega' ? 'Entrega' : 'Balcão'))),
+                customerName: rotuloComandaV2
+                    ? (nomeLimpo ? `${rotuloComandaV2} · ${nomeLimpo}` : rotuloComandaV2)
+                    : (isAvulso
+                        ? (customerName || 'Cliente Avulso')
+                        : (orderType === 'Balcão'
+                            ? (nomeLimpo ? `Mesa ${selectedTable} · ${nomeLimpo}` : `Mesa ${selectedTable}`)
+                            : (customerName || (orderType === 'Entrega' ? 'Entrega' : 'Balcão')))),
                 phone: finalPhone || undefined,
                 address: finalAddress,
                 orderType,
@@ -1081,7 +1937,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 // garcom/app — imprimia "via garcom" e escapava da regra de
                 // auto-print de mesa/retirada.
                 origin: 'BALCÃO',
-                printed: false
+                printed: rotuloComandaV2 ? true : false
             };
 
             // MESA COM PEDIDOS ABERTOS: nao sobrescrever tudo num id so.
@@ -1096,11 +1952,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 const itensNovos = cart.filter(i => !idsOriginais.has(i.cartId));
                 const itensExistentes = cart.filter(i => idsOriginais.has(i.cartId));
 
-                const valorDe = (itens: CartItem[]) => itens.reduce((soma, item) => {
-                    const adicionais = (item.selectedAddons || [])
-                        .reduce((a: number, x: any) => a + (Number(x.price) || 0), 0);
-                    return soma + ((Number(item.price) || 0) + adicionais) * (Number(item.quantity) || 1);
-                }, 0);
+                // Usa calcularValorCarrinho (mesma função do total exibido na
+                // tela) -- achado pela auditoria de 01/10/2026: esta cópia
+                // manual não somava o preço de combo, então um item marcado
+                // como combo ficava com total GRAVADO menor que o exibido,
+                // divergindo silenciosamente no fechamento de caixa.
+                const valorDe = (itens: CartItem[]) => calcularValorCarrinho(itens, settings?.comboPrice);
 
                 // A. Itens novos viram um sub-pedido proprio (dispara impressao).
                 if (itensNovos.length > 0) {
@@ -1119,10 +1976,19 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     const idsDoPedido = new Set((pedido.items || []).map(i => i.cartId));
                     const meusItens = itensExistentes.filter(i => idsDoPedido.has(i.cartId));
 
-                    if ((pedido.items || []).length > 0 && meusItens.length === 0) {
-                        // Todos os itens deste sub-pedido foram removidos.
+                    // CRÍTICO (achado pela auditoria de 01/10/2026): antes a
+                    // condição era `pedido.items.length > 0 && meusItens
+                    // .length === 0` para deletar -- se `pedido.items` já
+                    // chegasse vazio/nulo por qualquer motivo (ex.: pedido
+                    // "fantasma" criado por falha anterior), NEM o delete
+                    // NEM o update disparavam, e esse sub-pedido ficava
+                    // órfão no banco, continuando a contar no fechamento do
+                    // dia mesmo sem nenhum item seu na mesa. Agora: sem
+                    // nenhum item meu, sempre deleta, independente do que
+                    // `pedido.items` já era.
+                    if (meusItens.length === 0) {
                         await deleteOrder(pedido.id!);
-                    } else if (meusItens.length > 0) {
+                    } else {
                         await updateOrder(pedido.id!, {
                             ...pedido,
                             items: meusItens,
@@ -1136,21 +2002,61 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 await onOrderComplete(orderData);
             }
 
-            setCart([]);
-            setSelectedTable('');
-            setCurrentOrderId(null);
-            setPedidosDaMesa([]);
-            setCustomerName('');
+            // Balcão V2 (decisão do Ikarus, 30/09): a comanda continua
+            // ocupando o slot 1-20 até o checkout (reabrir mais tarde já
+            // mostra o pedido enviado, igual mesa ocupada no V1) -- mas a
+            // TELA fecha sozinha de volta pra lista assim que envia, sem
+            // precisar apertar X. Pedido do Ikarus, 30/09: "o usuário é
+            // preguiçoso" -- exigir X depois de todo envio é atrito
+            // desnecessário, já que não há mais nada a fazer nesta comanda
+            // agora (ela virou pedido de verdade).
+            if (!balcaoV2Ref.current) {
+                setCart([]);
+                setSelectedTable('');
+                setCurrentOrderId(null);
+                setPedidosDaMesa([]);
+                setCustomerName('');
+            } else {
+                // CRÍTICO (achado em 01/10/2026, print do Ikarus: "Comanda 2
+                // continua PENDENTE/vermelha mesmo já aparecendo na aba
+                // Pedidos"): o slot pode ter um rascunho salvo em
+                // rascunhosComandaRef de uma visita anterior (salvarRascunhoAtual
+                // grava ao trocar de comanda). Sem apagar aqui, cardsComandas
+                // prioriza o rascunho (linha "if (rascunho)") sobre o pedido já
+                // enviado no banco, e o card nunca mais vira verde sozinho.
+                delete rascunhosComandaRef.current[parseInt(selectedTable, 10)];
+                persistirRascunhos();
+                setVersaoRascunhos(v => v + 1);
+                setIsComandaModalOpen(false);
+            }
             if (!(pedidosDaMesa.length > 0 && orderType === 'Balcão' && selectedTable)) {
                 showNotify(isAvulso ? 'Venda Avulsa registrada! 💰' : 'Pedido salvo com sucesso! ✅');
             }
+            // Bipe de confirmação ao ENVIAR a comanda -- pedido do Ikarus
+            // 01/10/2026: hoje só existia bipe ao adicionar item ('ok') ou
+            // somar peso ('somou'), nada tocava na finalização de verdade.
+            bipar('enviado');
+            return true;
         } catch (error) {
             console.error(error);
             showNotify('Erro ao salvar pedido.', 'error');
+            return false;
         } finally {
             setIsProcessing(false);
         }
     };
+
+    // Expõe handleFinalize pro AdminPage via ref -- pedido do Ikarus
+    // 02/10/2026: "por que esperar lançar? já no faturar" -- F7/F8 agora
+    // enviam a comanda sozinhos (se ainda não foi enviada) antes de abrir o
+    // checkout/split. Atualizado a cada render pra nunca ficar com uma
+    // versão velha de handleFinalize (que fecha sobre cart/selectedTable
+    // atuais).
+    useEffect(() => {
+        if (enviarComandaAtivaRef) {
+            enviarComandaAtivaRef.current = handleFinalize;
+        }
+    });
 
     const handleOrderTypeChange = (type: OrderType) => {
         setOrderType(type);
@@ -1164,6 +2070,138 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         setIsExistingCustomer(false);
         setCurrentOrderId(null);
     };
+
+    /**
+     * Cards do "Comandas em Andamento" (Balcão V2) -- memoizado. Antes era
+     * uma IIFE dentro do JSX que recalculava tudo (inclusive o total de
+     * TODAS as comandas abertas) em QUALQUER render do CounterTab, mesmo um
+     * causado por algo sem relação (ex.: digitar na busca de produto).
+     * Achado pela auditoria de 30/09/2026. Só recalcula quando algo que
+     * afeta a lista de fato muda.
+     */
+    /**
+     * "Comandas em Andamento" (Balcão V2): um card por slot (1-20) que tem
+     * pedido aberto no banco (mesma fonte que a aba Pedidos usa,
+     * `activeOrders`/`tableStatuses`) -- a comanda É uma mesa de verdade
+     * (decisão do Ikarus, 30/09), então não existe mais estado local
+     * separado. O slot que está aberto na tela agora (selectedTable, dentro
+     * de 1-20) aparece marcado como "ativa", usando os valores AO VIVO do
+     * carrinho em vez do que já foi salvo -- assim o card reflete o que o
+     * operador está digitando, não só o último envio.
+     */
+    const cardsComandas = useMemo(() => {
+        if (!settings?.balcaoV2) return [];
+        type CardComanda = { id: string; identificador: string; itens: number; valor: number; ativa: boolean; enviada: boolean };
+
+        const numeroAtivo = parseInt(selectedTable, 10);
+        const slotsComPedido = new Set([
+            ...activeOrders
+                .filter(o => o.table_number && Number(o.table_number) >= 1 && Number(o.table_number) <= TOTAL_COMANDAS_V2)
+                .map(o => Number(o.table_number)),
+            // Slots com rascunho não-enviado (comanda "em standby") também
+            // aparecem na lista -- achado em 30/09/2026: o operador montava a
+            // Comanda 3, trocava pra Comanda 4, e a 3 sumia da lista mesmo
+            // com item dentro.
+            ...Object.keys(rascunhosComandaRef.current).map(Number),
+            // Slots com popup de sabor PAUSADO (tecla C dentro do popup,
+            // 02/10/2026) -- sem isto, uma comanda que abriu o popup como
+            // PRIMEIRO item (carrinho ainda vazio, sem rascunho) sumia da
+            // lista por completo enquanto pausada, sem jeito de voltar a ela
+            // pelo card.
+            ...Object.keys(seletoresPausadosRef.current).map(Number),
+        ]);
+        if (numeroAtivo >= 1 && numeroAtivo <= TOTAL_COMANDAS_V2) slotsComPedido.add(numeroAtivo);
+
+        return Array.from(slotsComPedido).sort((a, b) => a - b).map((numero): CardComanda => {
+            const ehAtiva = numero === numeroAtivo;
+            const rascunho = rascunhosComandaRef.current[numero];
+            // nomeSemPrefixoDeMesa() tira o "Comanda N ·" que já vem embutido
+            // no customerName (handleFinalize salva os dois juntos) -- sem
+            // isto o card duplicava "Comanda 1 - Comanda 01 · Nome" (achado
+            // em 30/09/2026, print do Ikarus).
+            const nomeExtra = ehAtiva
+                ? nomeSemPrefixoDeMesa(customerName)
+                : rascunho
+                    ? nomeSemPrefixoDeMesa(rascunho.customerName)
+                    : nomeDaComanda(activeOrders.filter(o => Number(o.table_number) === numero));
+            const identificador = `Comanda ${numero}` + (nomeExtra ? ` - ${nomeExtra}` : '');
+            if (ehAtiva) {
+                // ATIVA mas já existe pedido no banco pra este slot = já foi
+                // enviada (currentOrderId sozinho não bastava: handleFinalize
+                // não recarrega mais a comanda depois de enviar -- só fecha o
+                // modal -- então currentOrderId ficava null até reabrir de
+                // novo. Usar activeOrders reflete assim que o pedido chega
+                // via polling/realtime, sem esperar reabrir. Achado em
+                // 30/09/2026, print do Ikarus: "Comanda 3 ficou ativa, mas
+                // continuou laranja" mesmo já enviada.
+                const jaEnviada = !!currentOrderId || activeOrders.some(o => Number(o.table_number) === numero);
+                return {
+                    id: `slot-${numero}`,
+                    identificador,
+                    itens: cart.length,
+                    valor: calcularValorCarrinho(cart, settings?.comboPrice),
+                    ativa: true,
+                    enviada: jaEnviada,
+                };
+            }
+            // CRÍTICO (achado em 01/10/2026, véspera da demo -- print do
+            // Ikarus mostrando "Comanda 1" vermelha/Pendente com item e valor
+            // mesmo já tendo virado pedido de verdade): a ordem de checagem
+            // estava ERRADA na raiz. Antes, `if (rascunho)` vinha PRIMEiro e
+            // sempre retornava enviada:false -- um rascunho esquecido no
+            // cache (por qualquer motivo: falha de limpeza em algum caminho,
+            // fechar o app no meio, F5) fazia o card mentir "Pendente" PARA
+            // SEMPRE, mesmo com o pedido certinho em activeOrders/no banco.
+            // Corrigido invertendo a prioridade: ter pedido real no banco
+            // SEMPRE vale mais que ter rascunho em cache. Rascunho só decide
+            // o status quando não há NENHUM pedido no banco pra esse slot.
+            const pedidosDoSlot = activeOrders.filter(o => Number(o.table_number) === numero);
+            if (pedidosDoSlot.length > 0) {
+                return {
+                    id: `slot-${numero}`,
+                    identificador,
+                    itens: pedidosDoSlot.reduce((s, o) => s + (o.items || []).length, 0),
+                    valor: pedidosDoSlot.reduce((s, o) => s + (Number(o.total) || 0), 0),
+                    ativa: false,
+                    enviada: true,
+                };
+            }
+            if (rascunho) {
+                return {
+                    id: `slot-${numero}`,
+                    identificador,
+                    itens: rascunho.cart.length,
+                    valor: calcularValorCarrinho(rascunho.cart, settings?.comboPrice),
+                    ativa: false,
+                    enviada: false,
+                };
+            }
+            // Popup de sabor pausado (tecla C) com carrinho ainda vazio (o
+            // popup era o PRIMEIRO item da comanda) -- sem este bloco caía no
+            // "enviada: true" genérico abaixo, mostrando "Enviada" (verde)
+            // pra uma comanda que na real está esperando o operador voltar e
+            // decidir o sabor/adicional. Achado 02/10/2026.
+            const pausado = seletoresPausadosRef.current[numero];
+            if (pausado) {
+                return {
+                    id: `slot-${numero}`,
+                    identificador,
+                    itens: 1,
+                    valor: 0,
+                    ativa: false,
+                    enviada: false,
+                };
+            }
+            return {
+                id: `slot-${numero}`,
+                identificador,
+                itens: 0,
+                valor: 0,
+                ativa: false,
+                enviada: true,
+            };
+        });
+    }, [settings?.balcaoV2, settings?.comboPrice, activeOrders, selectedTable, cart, customerName, currentOrderId, versaoRascunhos, seletorSabor]);
 
     return (
         // h-full (nao min-h-full): min-h-full forca "pelo menos a tela inteira" e,
@@ -1251,7 +2289,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 <div className="fixed inset-0 z-[9998] flex items-center justify-center pointer-events-none">
                     <div className="bg-slate-900 border-4 border-emerald-500 rounded-2xl px-10 py-6 shadow-2xl text-center">
                         <span className="block text-[10px] font-black uppercase tracking-widest text-emerald-400">
-                            {parseInt(teclasMesa, 10) >= 100 ? 'Código do Produto' : 'Mesa'}
+                            {parseInt(teclasMesa, 10) >= 100 ? 'Código do Produto' : (settings?.balcaoV2 ? 'Comanda' : 'Mesa')}
                         </span>
                         <span className="block text-6xl font-black text-white font-mono leading-none my-1">{teclasMesa}</span>
                         {/* Mini-colinha: mostra so o que vale NESTE passo. */}
@@ -1259,7 +2297,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             <div className="mt-2 pt-2 border-t border-slate-700 flex flex-col gap-0.5">
                                 <span className="text-[11px] font-bold text-slate-300">
                                     <kbd className="px-1 bg-slate-800 rounded text-emerald-400">ENTER</kbd>
-                                    {parseInt(teclasMesa, 10) >= 100 ? ' adiciona ao pedido' : ' lança na mesa'}
+                                    {parseInt(teclasMesa, 10) >= 100 ? ' adiciona ao pedido' : (settings?.balcaoV2 ? ' abre a comanda' : ' lança na mesa')}
                                 </span>
                                 <span className="text-[10px] text-slate-500">
                                     <kbd className="px-1 bg-slate-800 rounded">←</kbd> apaga ·
@@ -1281,9 +2319,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         pequeno, com a tela cheia de outras cores. */}
                     <div className="bg-slate-900/90 border border-amber-500/40 rounded-lg px-5 py-2.5 shadow-lg backdrop-blur-sm">
                         <span className="text-sm text-slate-300">
-                            Digite o <strong className="text-amber-400">nº da mesa</strong> ou o
-                            <strong className="text-amber-400"> código do produto</strong> ·
-                            <kbd className="px-1.5 py-0.5 bg-slate-800 rounded ml-1 text-amber-300 font-bold">R</kbd> retirada
+                            {settings?.balcaoV2 ? (
+                                <>Digite o <strong className="text-amber-400">nº da comanda</strong> ou o
+                                <strong className="text-amber-400"> código do produto</strong></>
+                            ) : (
+                                <>Digite o <strong className="text-amber-400">nº da mesa</strong> ou o
+                                <strong className="text-amber-400"> código do produto</strong> ·
+                                <kbd className="px-1.5 py-0.5 bg-slate-800 rounded ml-1 text-amber-300 font-bold">R</kbd> retirada</>
+                            )}
                         </span>
                     </div>
                 </div>
@@ -1552,6 +2595,304 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 <CounterMenuGrid items={filteredItems} onAdd={addToCart} />
             </div>
 
+            {/* CARRINHO DA COMANDA ATIVA (Balcão V2) — ocupa o MESMO lugar do
+                card de comandas quando uma comanda está sendo editada. Nunca
+                em overlay: a barra da balança (acima, fora deste bloco) tem
+                que continuar visível para pegar peso a qualquer momento
+                (pedido do Ikarus, 30/09). */}
+            {settings?.balcaoV2 && isComandaModalOpen ? (
+            /* Uma coluna SÓ para a comanda (pedido do Ikarus, 30/09): sem
+               busca de produto separada -- o lançamento é só código+Enter
+               (herdado do V1) ou B para pegar o peso da balança. */
+            <div className="flex-[6] min-h-0 flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-green-100 dark:border-green-900/30 md:overflow-hidden">
+                <div className="p-4 bg-green-50/50 dark:bg-green-900/10 border-b border-green-100 dark:border-green-900/20 flex justify-between items-center gap-3">
+                    {isRenomeandoComanda ? (
+                        <input
+                            ref={campoRenomeComandaRef}
+                            type="text"
+                            // So' o nome LIMPO (sem "Comanda N ·") -- sem isto o
+                            // campo vinha com o rotulo dentro, obrigando o
+                            // operador a apagar antes de digitar. Achado em
+                            // 30/09/2026, print do Ikarus.
+                            value={nomeSemPrefixoDeMesa(customerName)}
+                            onChange={e => setCustomerName(e.target.value)}
+                            onKeyDown={e => {
+                                // ENTER fecha o campo E JÁ ENVIA a comanda --
+                                // pedido do Ikarus, 30/09: "digitei o nome,
+                                // não tinha porque me fazer clicar de novo em
+                                // Enviar Comanda". Vale com ou sem nome
+                                // digitado (Enter vazio também envia).
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setIsRenomeandoComanda(false);
+                                    // Devolve o foco para fora do input antes de
+                                    // qualquer outra coisa -- sem isto o campo
+                                    // some da tela mas o navegador mantem o foco
+                                    // nele (agora invisivel), e o handler global
+                                    // de teclado continua achando que "esta
+                                    // digitando", ignorando o proximo codigo de
+                                    // produto. Achado em 30/09/2026 (Ikarus: "C,
+                                    // N, nome, Enter, código, Enter e não lançou").
+                                    (e.target as HTMLInputElement).blur();
+                                    if (cart.length > 0 && !isProcessing) handleFinalize();
+                                }
+                                // ESC só cancela o nome, não envia nada.
+                                if (e.key === 'Escape') {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    setIsRenomeandoComanda(false);
+                                    (e.target as HTMLInputElement).blur();
+                                }
+                            }}
+                            placeholder="Nome do cliente (opcional)"
+                            className="flex-1 px-3 py-1.5 rounded-lg text-sm font-bold text-green-900 dark:text-green-100 bg-white dark:bg-gray-900 border-2 border-green-400 outline-none"
+                        />
+                    ) : (
+                        <h3 className="font-black text-green-700 dark:text-green-400 uppercase tracking-widest text-xs flex flex-col items-center gap-2 flex-wrap flex-1 min-w-0">
+                            {/* Selo da comanda -- pedido do Ikarus 01/10/2026: antes
+                                era só texto verde com uma bolinha pulsante do lado,
+                                fácil de passar batido numa loja cheia. Agora é um
+                                selo de verdade: centralizado, com borda e um anel
+                                de pulso de verdade (animate-ping), não só a
+                                bolinha sólida. */}
+                            <span className="relative inline-flex items-center gap-1.5 px-4 py-1.5 bg-green-600 text-white rounded-full border-2 border-green-400 shadow-lg shadow-green-600/30">
+                                <span className="absolute inset-0 rounded-full border-2 border-green-400 animate-ping opacity-75"></span>
+                                <span className="w-2 h-2 bg-white rounded-full shrink-0"></span>
+                                <span className="text-sm tracking-wide">
+                                    {selectedTable ? `Comanda ${selectedTable}` : 'Comanda nova'}
+                                    {nomeSemPrefixoDeMesa(customerName) ? ` - ${nomeSemPrefixoDeMesa(customerName)}` : ''}
+                                </span>
+                            </span>
+                            {/* Legenda de atalhos do cabeçalho da comanda -- pedido
+                                do Ikarus 01/10/2026: "o povo é enjoado", tecla
+                                numa caixinha e a descrição solta do lado confundia
+                                qual ação era de qual tecla. Agora cada par
+                                tecla+ação mora dentro da MESMA pílula/borda. */}
+                            <span className="flex items-center gap-1.5 flex-wrap justify-center">
+                                {[
+                                    { tecla: 'N', acao: 'RENOMEIA' },
+                                    { tecla: 'CÓDIGO + ENTER', acao: 'LANÇA' },
+                                    { tecla: '+/-', acao: 'QTD' },
+                                    { tecla: 'DEL', acao: 'REMOVE ÚLTIMO' },
+                                    { tecla: 'B', acao: 'BALANÇA' },
+                                    { tecla: 'ENTER', acao: 'ENVIA' },
+                                    { tecla: 'F7', acao: 'CHECKOUT' },
+                                    { tecla: 'F8', acao: 'DIVIDIR CONTA' },
+                                    { tecla: 'X', acao: 'FECHA' },
+                                ].map(({ tecla, acao }) => (
+                                    <span key={tecla} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 rounded-full">
+                                        <kbd className="px-1.5 py-0.5 bg-amber-500/25 rounded text-[10px] font-black uppercase text-gray-900 dark:text-white">{tecla}</kbd>
+                                        <span className="text-[10px] font-black uppercase text-gray-900 dark:text-white">{acao}</span>
+                                    </span>
+                                ))}
+                            </span>
+                        </h3>
+                    )}
+                    {/* Mute do bipe de "comanda enviada" -- pedido do Ikarus
+                        01/10/2026, não afeta os outros bipes (item/erro). */}
+                    <button
+                        type="button"
+                        onClick={alternarMuteBipeEnvio}
+                        className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg shrink-0"
+                        title={muteBipeEnvio ? 'Som de comanda enviada: desligado (clique pra ligar)' : 'Som de comanda enviada: ligado (clique pra desligar)'}
+                    >
+                        {muteBipeEnvio ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => fecharComandaAtivaRef.current()}
+                        className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-lg shrink-0"
+                        title="Voltar para a lista de comandas (tecla X)"
+                    >
+                        <X size={18} />
+                    </button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
+                    {cart.map(item => (
+                        <div key={item.cartId} className="bg-gray-50/50 dark:bg-gray-700/20 rounded-2xl p-3 border border-gray-100 dark:border-gray-700">
+                            <div className="flex justify-between items-start mb-2">
+                                <span className="font-bold text-gray-800 dark:text-gray-100 text-xs uppercase tracking-tight leading-tight flex-1">{item.name}</span>
+                                <span className="font-black text-gray-900 dark:text-white text-xs ml-2 whitespace-nowrap">R$ {(((Number(item.price) || 0) + item.selectedAddons.reduce((s, a) => s + (Number(a.price) || 0), 0)) * item.quantity).toFixed(2)}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="flex items-center bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-600 shadow-sm p-0.5">
+                                    <button onClick={() => updateQuantity(item.cartId, -1)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500 transition-colors"><Minus size={14} /></button>
+                                    <span className="px-2 text-xs font-black min-w-[20px] text-center">{item.quantity}</span>
+                                    <button onClick={() => updateQuantity(item.cartId, 1)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg text-green-600 transition-colors"><Plus size={14} /></button>
+                                </div>
+                                {/* Pedido do Ikarus em 01/10/2026: produto como "Potes de
+                                    Sorvete 1,8L" não tem preço próprio -- o preço inteiro
+                                    está no adicional (sabor). Sem destaque, o item ficava
+                                    "R$ 0.00" sem indicar que falta escolher o sabor, e o
+                                    cliente reclamava da demora. Pisca (animate-pulse) e
+                                    fica vermelho quando ainda não tem nenhum adicional
+                                    escolhido, pra chamar atenção.
+                                    CORRIGIDO em 02/10/2026: o botão aparecia pra QUALQUER
+                                    item sem addon selecionado -- inclusive "Açaí/Sorvete
+                                    por Quilo" (produto pesado na balança, sem sabor
+                                    configurável nenhum), induzindo o operador a clicar
+                                    achando que faltava escolher algo. Só mostra quando o
+                                    produto de fato TEM opções de sabor cadastradas
+                                    (opcoesDeSaborDoProduto > 0). */}
+                                {opcoesDeSaborDoProduto(item).length > 0 && (
+                                    <button
+                                        onClick={() => openAddonModal(item)}
+                                        className={`flex-1 px-2.5 py-1.5 text-[10px] font-black rounded-lg uppercase tracking-wider transition-all border ${
+                                            item.selectedAddons.length === 0
+                                                ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 animate-pulse'
+                                                : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-green-200/50 dark:border-green-700/50 hover:bg-green-100'
+                                        }`}
+                                    >
+                                        {item.selectedAddons.length === 0 ? '⚠ Escolher sabor' : `Adds (${item.selectedAddons.length})`}
+                                    </button>
+                                )}
+                                <button onClick={() => removeItem(item.cartId)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"><Trash2 size={16} /></button>
+                            </div>
+                        </div>
+                    ))}
+                    {cart.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-full text-gray-300 dark:text-gray-600 opacity-50 space-y-2">
+                            <ShoppingBag size={48} strokeWidth={1} />
+                            <p className="font-bold uppercase tracking-widest text-[10px]">Carrinho vazio</p>
+                            <p className="text-[10px]">Digite o código do produto + ENTER, ou aperte B para pegar o peso</p>
+                        </div>
+                    )}
+                </div>
+                <div className="p-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-700 space-y-3">
+                    <div className="flex justify-between items-end">
+                        <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">TOTAL</span>
+                        <span className="text-2xl font-black text-primary tracking-tighter">R$ {Number(total).toFixed(2)}</span>
+                    </div>
+                    <button
+                        onClick={() => handleFinalize()}
+                        disabled={cart.length === 0 || isProcessing}
+                        className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
+                            cart.length === 0 || isProcessing
+                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed shadow-none'
+                                : 'bg-green-600 hover:bg-green-700 text-white shadow-green-600/20'
+                        }`}
+                    >
+                        {isProcessing ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <><span>Enviar Comanda</span><Plus size={18} strokeWidth={3} /></>}
+                    </button>
+                </div>
+            </div>
+            ) : settings?.balcaoV2 ? (
+            /* CARD ÚNICO DE COMANDAS (Balcão V2) — substitui as colunas de
+               Carrinho + Mesa/Retirada/Entrega. Lista as comandas em
+               andamento; clicar numa abre o carrinho dela (acima). */
+            <div className="flex-[6] min-h-0 flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-orange-100 dark:border-orange-900/30 md:overflow-hidden">
+                <div className="p-4 bg-orange-50/50 dark:bg-orange-900/10 border-b border-orange-100 dark:border-orange-900/20 flex justify-between items-center">
+                    <h3 className="font-black text-orange-700 dark:text-orange-400 uppercase tracking-widest text-xs flex items-center gap-2">
+                        <span className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></span>
+                        Comandas em Andamento ({cardsComandas.length})
+                    </h3>
+                    <button
+                        type="button"
+                        onClick={() => abrirProximaComandaLivreRef.current()}
+                        className="px-3 py-1.5 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-all shadow-md shadow-orange-600/20 flex items-center gap-1.5 text-xs font-black uppercase tracking-wider"
+                        title="Abrir comanda nova (tecla C)"
+                    >
+                        <Plus size={15} strokeWidth={3} />
+                        <span>Comanda <kbd className="px-1 bg-white/20 rounded ml-0.5">C</kbd></span>
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
+                    {(() => {
+                        if (cardsComandas.length === 0) {
+                            return (
+                                <div className="flex flex-col items-center justify-center h-full text-gray-300 dark:text-gray-600 opacity-50 space-y-2">
+                                    <ShoppingBag size={48} strokeWidth={1} />
+                                    <p className="font-bold uppercase tracking-widest text-[10px]">Nenhuma comanda aberta</p>
+                                    <p className="text-[10px]">Aperte <kbd className="px-1 bg-gray-200 dark:bg-gray-700 rounded">C</kbd> para começar</p>
+                                </div>
+                            );
+                        }
+
+                        return (
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                {cardsComandas.map(c => {
+                                    const numero = c.id.replace('slot-', '');
+                                    // Cores por status (pedido do Ikarus, 30/09):
+                                    // laranja = é a que está aberta na tela agora;
+                                    // vermelho = rascunho pendente, ainda não enviado
+                                    //   (precisa terminar o atendimento);
+                                    // verde = já enviada, virou pedido de verdade.
+                                    // Verde tem prioridade sobre "ativa": uma comanda ja
+                                    // enviada fica verde mesmo sendo a que esta aberta na
+                                    // tela agora -- laranja so' enquanto ainda nao enviou
+                                    // nada (pedido do Ikarus, 30/09).
+                                    const cor = c.enviada ? 'green' : c.ativa ? 'orange' : 'red';
+                                    return (
+                                    <div key={c.id} className="relative group">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (c.ativa) { setIsComandaModalOpen(true); return; }
+                                                salvarRascunhoAtual();
+                                                handleSelectTable(numero.padStart(2, '0'), `Comanda ${numero}`);
+                                                setIsComandaModalOpen(true);
+                                            }}
+                                            className={`w-full text-left p-3 rounded-xl border-2 transition-all ${
+                                                cor === 'orange' ? 'border-orange-500 bg-orange-50 dark:bg-orange-900/20 shadow-md' :
+                                                cor === 'red' ? 'border-red-400 bg-red-50 dark:bg-red-900/20 hover:border-red-500' :
+                                                'border-green-400 bg-green-50 dark:bg-green-900/20 hover:border-green-500'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between mb-1 pr-5">
+                                                <span className={`font-black text-sm ${
+                                                    cor === 'orange' ? 'text-orange-700 dark:text-orange-300' :
+                                                    cor === 'red' ? 'text-red-700 dark:text-red-300' :
+                                                    'text-green-700 dark:text-green-300'
+                                                }`}>
+                                                    {c.identificador}
+                                                </span>
+                                                {c.enviada && <span className="text-[9px] font-black text-green-600 uppercase">Enviada</span>}
+                                                {!c.enviada && c.ativa && <span className="text-[9px] font-black text-orange-600 uppercase">Ativa</span>}
+                                                {!c.enviada && !c.ativa && <span className="text-[9px] font-black text-red-600 uppercase">Pendente</span>}
+                                            </div>
+                                            <div className="flex items-center justify-between text-[11px] text-gray-500 dark:text-gray-400">
+                                                <span>{c.itens} {c.itens === 1 ? 'item' : 'itens'}</span>
+                                                <span className="font-bold">R$ {c.valor.toFixed(2)}</span>
+                                            </div>
+                                        </button>
+                                        {/* Descartar rascunho direto da lista -- só para
+                                            comandas NÃO enviadas (rascunho pendente, com ou
+                                            sem estar aberta na tela agora). Uma comanda já
+                                            ENVIADA é pedido de verdade: cancelar isso é
+                                            operação da aba Pedidos, não daqui. */}
+                                        {!c.enviada && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (!confirm(`Descartar ${c.identificador}? Os itens lançados serão perdidos.`)) return;
+                                                    if (c.ativa) {
+                                                        setCart([]);
+                                                        setCustomerName(`Comanda ${numero}`);
+                                                    } else {
+                                                        delete rascunhosComandaRef.current[parseInt(numero, 10)];
+                                                        persistirRascunhos();
+                                                        setVersaoRascunhos(v => v + 1);
+                                                    }
+                                                }}
+                                                className="absolute top-2 right-2 p-1 text-black dark:text-white hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                                title={`Descartar ${c.identificador}`}
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        )}
+                                    </div>
+                                    );
+                                })}
+                            </div>
+                        );
+                    })()}
+                </div>
+            </div>
+            ) : (
+            <>
             {/* COLUMN 2: SELECTED ITEMS (CART) - GREEN THEME */}
             <div className="flex-[3] min-h-0 flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-green-100 dark:border-green-900/30 md:overflow-hidden">
                 <div className="p-4 bg-green-50/50 dark:bg-green-900/10 border-b border-green-100 dark:border-green-900/20 flex justify-between items-center">
@@ -1848,6 +3189,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     </button>
                 </div>
             </div>
+            </>
+            )}
             </div>
 
             {/* MODALS REMAINS FOR CUSTOM ITEM AND ADDONS AS THEY ARE STILL NECESSARY */}
@@ -2109,6 +3452,15 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             <button onClick={() => setIsAddonModalOpen(false)}><X /></button>
                         </div>
                         <div className="space-y-2">
+                            {/* Marcação visual igual ao popup por comando (borda
+                                verde + check) -- pedido do Ikarus 02/10/2026:
+                                "quando clicamos no sabor dele deveria marcar
+                                igual fizemos com o comando S, em todos os
+                                produtos, por comando ou por clique". Este modal
+                                é o de clique via botão "Adds" do carrinho;
+                                antes usava border-primary (roxo fraco), sem
+                                nenhum check -- não dava pra saber o que já
+                                tinha sido marcado de relance. */}
                             {addons.filter(addon => {
                                 const originalItem = menuItems.find(i => i.id === editingCartItem.id);
                                 if (originalItem && originalItem.selectedAddons?.length) return originalItem.selectedAddons.some(a => a.id === addon.id);
@@ -2116,8 +3468,19 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             }).map(addon => {
                                 const isSelected = editingCartItem.selectedAddons.some(a => a.id === addon.id);
                                 return (
-                                    <button key={addon.id} onClick={() => handleAddAddon(addon)} className={`w-full flex justify-between items-center p-3 rounded-lg border ${isSelected ? 'border-primary bg-primary/10' : 'border-gray-200 dark:border-gray-700'}`}>
-                                        <span className="font-medium">{addon.name}</span>
+                                    <button
+                                        key={addon.id}
+                                        onClick={() => handleAddAddon(addon)}
+                                        className={`w-full flex justify-between items-center p-3 rounded-lg border-2 transition-colors ${
+                                            isSelected
+                                                ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                                                : 'border-gray-200 dark:border-gray-700'
+                                        }`}
+                                    >
+                                        <span className="font-medium flex items-center gap-1.5">
+                                            {isSelected && <Check size={14} className="shrink-0" />}
+                                            {addon.name}
+                                        </span>
                                         <span className="text-sm font-bold">+ R$ {addon.price.toFixed(2)}</span>
                                     </button>
                                 );
@@ -2127,6 +3490,108 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     </div>
                 </div>
             )}
+
+            {/* Popup de escolha de sabor por teclado (Balcão V2) -- SEM clique.
+                Abre sozinho assim que o código digitado bate com um produto de
+                2+ sabores (ver bloco de dígitos do handler). ↑↓ navega, Enter
+                lança o sabor escolhido na comanda, ESC cancela sem lançar
+                nada. Pedido do Ikarus, 01/10/2026, véspera da demo: "tudo é
+                atalho, não vamos usar clique de hora nenhuma". */}
+            {seletorSabor && (() => {
+                // Separa opcional (R$0,00) de adicional (pago) dentro da MESMA
+                // lista -- pedido do Ikarus 02/10/2026: "tá misturado o que é
+                // opcional de graça junto com os adicionais com valor". Mantém
+                // a ordem/índice original (data-sabor-idx) pra ↑↓/scroll
+                // continuarem funcionando, só agrupa visualmente com um
+                // cabeçalho de seção entre os dois blocos.
+                const graficos = seletorSabor.opcoes.map((addon, idx) => ({ addon, idx }));
+                const semAdicional = graficos.filter(g => g.addon === null);
+                const opcionais = graficos.filter(g => g.addon !== null && Number(g.addon!.price) === 0);
+                const adicionais = graficos.filter(g => g.addon !== null && Number(g.addon!.price) > 0);
+                // Multi-seleção (S, só etapa 'unico'): item MARCADO fica com
+                // borda verde pintada -- diferente do cursor atual (azul),
+                // pedido do Ikarus 02/10/2026: "nós pintamos a borda quando
+                // selecionado". Os dois estados podem coexistir (cursor em
+                // cima de um item já marcado).
+                const linha = (g: { addon: Addon | null; idx: number }) => {
+                    const ehCursor = g.idx === seletorSabor.indice;
+                    const ehMarcado = seletorSabor.marcados.has(g.idx);
+                    const clicavel = seletorSabor.etapa === 'unico' && g.idx > 0;
+                    return (
+                    <div
+                        key={g.addon ? g.addon.id : 'sem-adicional'}
+                        data-sabor-idx={g.idx}
+                        onClick={clicavel ? () => alternarMarcacaoSeletor(g.idx) : undefined}
+                        className={`w-full flex justify-between items-center p-3 rounded-lg border-2 transition-colors ${clicavel ? 'cursor-pointer' : ''} ${
+                            ehMarcado
+                                ? (ehCursor ? 'border-green-500 bg-green-600 text-white shadow-lg shadow-green-600/30' : 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400')
+                                : ehCursor
+                                    ? 'border-blue-600 bg-blue-600 text-white shadow-lg shadow-blue-500/30'
+                                    : g.addon === null
+                                        ? 'border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 border-dashed'
+                                        : 'border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200'
+                        }`}
+                    >
+                        <span className="font-bold flex items-center gap-1.5">
+                            {ehCursor ? '▶ ' : ''}
+                            {ehMarcado && <Check size={14} className="shrink-0" />}
+                            {g.addon ? g.addon.name : 'Prosseguir sem adicional'}
+                        </span>
+                        {g.addon && (
+                            <span className="text-sm font-bold">
+                                {Number(g.addon.price) === 0 ? 'Grátis' : `+ R$ ${Number(g.addon.price).toFixed(2)}`}
+                            </span>
+                        )}
+                    </div>
+                    );
+                };
+                return (
+                <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full shadow-2xl max-h-[80vh] overflow-y-auto">
+                        <div className="flex justify-between items-center mb-4">
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-900 dark:text-white">{seletorSabor.produto.name}</h3>
+                                {seletorSabor.etapa !== 'unico' && (
+                                    <p className="text-[11px] font-black uppercase text-blue-600 dark:text-blue-400 mt-0.5">
+                                        {seletorSabor.etapa === 'sabor' ? '1/2 · Escolha o sabor' : '2/2 · Escolha a calda'}
+                                    </p>
+                                )}
+                            </div>
+                            <span className="text-[10px] font-black text-gray-400 uppercase">ESC {seletorSabor.etapa === 'calda' ? 'volta' : 'cancela'}</span>
+                        </div>
+                        <div className="space-y-2">
+                            {semAdicional.map(linha)}
+                            {opcionais.length > 0 && (
+                                <>
+                                    <p className="text-[10px] font-black uppercase text-gray-400 pt-2">Opcionais (grátis)</p>
+                                    {opcionais.map(linha)}
+                                </>
+                            )}
+                            {adicionais.length > 0 && (
+                                <>
+                                    <p className="text-[10px] font-black uppercase text-gray-400 pt-2">Adicionais (com valor)</p>
+                                    {adicionais.map(linha)}
+                                </>
+                            )}
+                        </div>
+                        <div className="mt-4 flex items-center justify-center gap-1.5 flex-wrap">
+                            {[
+                                { tecla: '↑↓', acao: 'NAVEGA' },
+                                ...(seletorSabor.etapa === 'unico' ? [{ tecla: 'S', acao: 'MARCA' }] : []),
+                                { tecla: 'ENTER', acao: seletorSabor.etapa === 'sabor' ? 'PRÓXIMO' : 'LANÇA NA COMANDA' },
+                                { tecla: 'C', acao: 'PAUSA · NOVA COMANDA' },
+                                { tecla: 'ESC', acao: seletorSabor.etapa === 'calda' ? 'VOLTA' : 'CANCELA' },
+                            ].map(({ tecla, acao }) => (
+                                <span key={tecla} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 rounded-full">
+                                    <kbd className="px-1.5 py-0.5 bg-amber-500/25 rounded text-[10px] font-black uppercase text-gray-900 dark:text-white">{tecla}</kbd>
+                                    <span className="text-[10px] font-black uppercase text-gray-900 dark:text-white">{acao}</span>
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+                );
+            })()}
         </div>
     );
 });

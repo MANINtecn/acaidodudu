@@ -23,9 +23,20 @@ const PROIBIDOS = [
     'isScaleModalOpen',
     'isCategoryModalOpen',
     'isAddonModalOpen',
+    // Achado pela auditoria de 01/10/2026: avisoAtalho decide se C/R/B/N/X
+    // disparam, mas nao estava nesta lista -- so' "funcionava" porque o
+    // useEffect de registro roda em todo render (sem array de deps) e
+    // recaptura o valor atual. Um refactor futuro que adicione deps parciais
+    // a esse efeito faria o handler ver um avisoAtalho velho sem o lint
+    // acusar nada. Corrigido tambem no codigo (avisoAtalhoRef).
+    'avisoAtalho',
 ];
 
-const fonte = fs.readFileSync(ARQUIVO, 'utf8');
+// \r\n: o editor as vezes salva linhas mistas (CRLF) no Windows. Sem
+// normalizar, o \r sobra no fim de cada linha e o regex de comentario
+// (`.*$`) para de casar antes do fim real -- falso positivo na Regra 10
+// vendo o proprio COMENTARIO que explica a regra. Achado em 30/09/2026.
+const fonte = fs.readFileSync(ARQUIVO, 'utf8').replace(/\r\n/g, '\n');
 const linhas = fonte.split('\n');
 
 // Delimita o corpo do handler de teclado pelo nivel de chaves.

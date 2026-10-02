@@ -337,10 +337,30 @@ class PrinterService {
           <span>Vendas em Dinheiro:</span>
           <span>R$ ${summary.cashSales.toFixed(2)}</span>
         </div>
-        
+        <div class="row">
+          <span>Vendas em PIX:</span>
+          <span>R$ ${(summary.pixSales || 0).toFixed(2)}</span>
+        </div>
+        <div class="row">
+          <span>Vendas em Cartão:</span>
+          <span>R$ ${(summary.cardSales || 0).toFixed(2)}</span>
+        </div>
+        <div class="row">
+          <span>Suprimentos:</span>
+          <span>R$ ${summary.supplies.toFixed(2)}</span>
+        </div>
+        <div class="row">
+          <span>Sangrias:</span>
+          <span>R$ ${summary.withdrawals.toFixed(2)}</span>
+        </div>
+
         <div class="row total">
           <span>SALDO FINAL EM CAIXA:</span>
           <span>R$ ${summary.closingFloat.toFixed(2)}</span>
+        </div>
+        <div class="row">
+          <span>Diferença (contado - esperado):</span>
+          <span>R$ ${summary.difference.toFixed(2)}</span>
         </div>
         
         <script>

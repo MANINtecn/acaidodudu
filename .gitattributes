@@ -1,0 +1,17 @@
+# Força LF em arquivos de código, independente do core.autocrlf de cada
+# máquina. Sem isto o Git no Windows converte para CRLF na working copy, e
+# scripts que fazem regex por linha (ex.: scripts/checar-atalhos.cjs) podem
+# dar falso positivo com o \r sobrando no fim de cada linha -- foi a causa
+# raiz de um "Regra 10 violada" fantasma em 30/09/2026, apontando para um
+# COMENTÁRIO que só mencionava o nome da variável, não uma leitura de verdade.
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.cjs text eol=lf
+*.mjs text eol=lf
+*.json text eol=lf
+*.css text eol=lf
+*.html text eol=lf
+*.sql text eol=lf
+*.md text eol=lf
