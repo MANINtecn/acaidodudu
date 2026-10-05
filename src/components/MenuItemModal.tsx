@@ -96,6 +96,13 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
             return;
         }
 
+        // NCM errado faz a SEFAZ rejeitar a nota: confere na origem.
+        const ncmDigitos = String(formData.ncm ?? '').replace(/\D/g, '');
+        if (ncmDigitos && ncmDigitos.length !== 8) {
+            alert('O NCM precisa ter exatamente 8 dígitos (ou ficar em branco).');
+            return;
+        }
+
         setLoading(true);
         try {
             let imageUrl = formData.image;
@@ -109,6 +116,11 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
 
             await onSave({
                 ...formData,
+                // Campos fiscais vazios viram null (limpam o valor antigo no banco).
+                ncm: (ncmDigitos || null) as any,
+                cest: (String(formData.cest ?? '').replace(/\D/g, '') || null) as any,
+                cfopFiscal: (String(formData.cfopFiscal ?? '').replace(/\D/g, '') || null) as any,
+                csosnFiscal: (String(formData.csosnFiscal ?? '').replace(/\D/g, '') || null) as any,
                 image: imageUrl,
                 store_id: storeId
             });
@@ -236,6 +248,86 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
                         </div>
                     </div>
 
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                        <p className="text-sm font-bold text-gray-700 dark:text-gray-200 mb-1">Dados fiscais (NFC-e)</p>
+                        <p className="text-xs text-gray-500 mb-3">
+                            O <strong>NCM é obrigatório para emitir nota</strong>: sem ele a nota é rejeitada. CFOP e CSOSN em branco usam o padrão da loja.
+                        </p>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">NCM (8 dígitos)</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={8}
+                                    value={formData.ncm ?? ''}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, ncm: e.target.value.replace(/\D/g, '').slice(0, 8) }))}
+                                    placeholder="Ex: 21050010"
+                                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">CEST (opcional)</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={7}
+                                    value={formData.cest ?? ''}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, cest: e.target.value.replace(/\D/g, '').slice(0, 7) }))}
+                                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Unidade</label>
+                                <select
+                                    value={formData.unidadeFiscal ?? 'UN'}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, unidadeFiscal: e.target.value }))}
+                                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                >
+                                    <option value="UN">UN (unidade)</option>
+                                    <option value="KG">KG (peso)</option>
+                                    <option value="L">L (litro)</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">CFOP (opcional)</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={4}
+                                    value={formData.cfopFiscal ?? ''}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, cfopFiscal: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
+                                    placeholder="Ex: 5102"
+                                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">CSOSN (opcional)</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    maxLength={3}
+                                    value={formData.csosnFiscal ?? ''}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, csosnFiscal: e.target.value.replace(/\D/g, '').slice(0, 3) }))}
+                                    placeholder="Ex: 102"
+                                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Origem</label>
+                                <select
+                                    value={formData.origemFiscal ?? 0}
+                                    onChange={(e) => setFormData(prev => ({ ...prev, origemFiscal: parseInt(e.target.value) }))}
+                                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                >
+                                    <option value={0}>0 — Nacional</option>
+                                    <option value={1}>1 — Estrangeira (importação direta)</option>
+                                    <option value={2}>2 — Estrangeira (mercado interno)</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
                     <div className="flex items-center">
                         <input
                             type="checkbox"
@@ -247,6 +339,36 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
                         />
                         <label htmlFor="isAvailable" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
                             Disponível para venda
+                        </label>
+                    </div>
+
+                    <div className="flex items-start">
+                        <input
+                            type="checkbox"
+                            id="somenteBalcao"
+                            name="somenteBalcao"
+                            checked={!!formData.somenteBalcao}
+                            onChange={(e) => setFormData(prev => ({ ...prev, somenteBalcao: e.target.checked }))}
+                            className="mt-0.5 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="somenteBalcao" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                            Só balcão/salão
+                            <span className="block text-xs text-gray-500">Não aparece no cardápio do site (ex.: ADD3, ADD5).</span>
+                        </label>
+                    </div>
+
+                    <div className="flex items-start">
+                        <input
+                            type="checkbox"
+                            id="saboresComQuantidade"
+                            name="saboresComQuantidade"
+                            checked={!!formData.saboresComQuantidade}
+                            onChange={(e) => setFormData(prev => ({ ...prev, saboresComQuantidade: e.target.checked }))}
+                            className="mt-0.5 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="saboresComQuantidade" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                            Sabores com quantidade
+                            <span className="block text-xs text-gray-500">No site, o cliente escolhe a quantidade de cada sabor (ex.: picolés).</span>
                         </label>
                     </div>
 

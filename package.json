@@ -1,7 +1,7 @@
 {
   "name": "acai-do-dudu",
   "private": true,
-  "version": "1.0.68",
+  "version": "1.0.75",
   "description": "Sistema de PDV Açaí do Dudu",
   "author": "TECX SISTEMAS",
   "main": "main.js",
@@ -73,12 +73,14 @@
       }
     ],
     "extraResources": [
-      "printer_raw.ps1"
+      "printer_raw.ps1",
+      "printer_worker.ps1"
     ],
     "files": [
       "dist/**/*",
       "build/**/*",
       "main.js",
+      "print-worker.js",
       "preload.cjs",
       "servidor.cjs",
       "servidor.js",

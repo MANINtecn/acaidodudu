@@ -108,6 +108,8 @@ export const mapMenuItemFromDB = (item: any, addons?: Addon[]): MenuItem => {
         codigo: item.codigo !== null && item.codigo !== undefined ? Number(item.codigo) : undefined,
         categoryId: item.category_id || item.categoryId,
         isAvailable: item.is_available ?? item.isAvailable ?? true,
+        somenteBalcao: item.somente_balcao ?? item.somenteBalcao ?? false,
+        saboresComQuantidade: item.sabores_com_quantidade ?? item.saboresComQuantidade ?? false,
         eligibleForCombo: item.eligible_for_combo ?? item.eligibleForCombo ?? false,
         isCombo: item.is_combo ?? item.isCombo ?? false,
         allowedAddons: itemSpecificAddonIds,
@@ -126,7 +128,7 @@ export const mapMenuItemFromDB = (item: any, addons?: Addon[]): MenuItem => {
 
 export const mapMenuItemToDB = (item: Partial<MenuItem>) => {
     const {
-        id, categoryId, isAvailable, eligibleForCombo, isCombo,
+        id, categoryId, isAvailable, somenteBalcao, saboresComQuantidade, eligibleForCombo, isCombo,
         selectedAddons, allowedAddons, addons,
         unidadeFiscal, origemFiscal, cfopFiscal, csosnFiscal,
         ...rest
@@ -135,6 +137,8 @@ export const mapMenuItemToDB = (item: Partial<MenuItem>) => {
     const payload: any = { ...rest };
     if (categoryId !== undefined) payload.category_id = categoryId;
     if (isAvailable !== undefined) payload.is_available = isAvailable;
+    if (somenteBalcao !== undefined) payload.somente_balcao = somenteBalcao;
+    if (saboresComQuantidade !== undefined) payload.sabores_com_quantidade = saboresComQuantidade;
     if (eligibleForCombo !== undefined) payload.eligible_for_combo = eligibleForCombo;
     if (isCombo !== undefined) payload.is_combo = isCombo;
     if (selectedAddons !== undefined) payload.selected_addons = Array.isArray(selectedAddons) ? selectedAddons.map((a: any) => a.id) : selectedAddons;
@@ -206,7 +210,13 @@ export const mapAddonToDB = (addon: Partial<Addon>) => {
 };
 
 // --- Menu Management Functions ---
-export const fetchMenuForCustomer = async (storeId: string) => {
+/**
+ * Cardápio para quem compra. Por padrão ESCONDE os produtos `somente_balcao`
+ * (ADD3, ADD5...); o garçom (salão) passa `incluirSomenteBalcao: true`.
+ * O filtro é feito aqui, depois de ler, e não na query, para continuar
+ * funcionando mesmo antes da coluna existir no banco.
+ */
+export const fetchMenuForCustomer = async (storeId: string, opcoes?: { incluirSomenteBalcao?: boolean }) => {
     // Change sort to ID to respect insertion order (New categories go to end)
     const { data: categories, error: catError } = await supabase.from('categories').select('*').eq('store_id', storeId).order('id', { ascending: true });
     if (catError) throw catError;
@@ -218,7 +228,9 @@ export const fetchMenuForCustomer = async (storeId: string) => {
     if (addonError) throw addonError;
 
     const addons = (addonsRaw || []).map(mapAddonFromDB);
-    const mappedItems = (menuItems || []).map((item: any) => mapMenuItemFromDB(item, addons));
+    const mappedItems = (menuItems || [])
+        .map((item: any) => mapMenuItemFromDB(item, addons))
+        .filter((item: MenuItem) => opcoes?.incluirSomenteBalcao || !item.somenteBalcao);
 
     mappedItems.sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
     return { categories, menuItems: mappedItems, addons };
@@ -713,13 +725,50 @@ export const calcularProximoNumeroNota = async (storeId: string, serie: number, 
  * tela (nunca digitada no navegador/Electron).
  */
 export const uploadCertificadoFiscal = async (file: File, storeId: string): Promise<{ path: string; nomeArquivo: string }> => {
-    const path = `${storeId}/certificado.${file.name.split('.').pop()}`;
+    // Nome unico por envio: sem upsert (que exigiria policy de leitura/UPDATE no
+    // bucket, e o bucket nao pode ser legivel pelo app). A Edge Function
+    // `cadastrar-empresa-brasilnfe` apaga o arquivo depois de enviar ao Brasil NFe.
+    const path = `${storeId}/certificado-${Date.now()}.${file.name.split('.').pop()}`;
     const { error } = await supabase.storage
         .from('certificados-fiscais')
-        .upload(path, file, { upsert: true });
+        .upload(path, file, { upsert: false });
     if (error) throw error;
     return { path, nomeArquivo: file.name };
 };
+
+export interface CscAmbienteInput { id?: string; token?: string }
+export interface CadastroBrasilNFeResultado {
+    ok: boolean;
+    erro?: string;
+    etapas?: string[];
+    avisos?: string[];
+    certificadoValidade?: string | null;
+    url?: string;
+    expirado?: boolean;
+    dtExpiracao?: string;
+}
+
+const chamarCadastroBrasilNFe = async (body: Record<string, unknown>): Promise<CadastroBrasilNFeResultado> => {
+    const { data, error } = await supabase.functions.invoke('cadastrar-empresa-brasilnfe', { body });
+    if (error) return { ok: false, erro: error.message };
+    return data as CadastroBrasilNFeResultado;
+};
+
+/**
+ * Envia os dados fiscais da loja + certificado ao Brasil NFe. A senha do
+ * certificado e o CSC atravessam a Edge Function uma unica vez e nao sao
+ * gravados em lugar nenhum.
+ */
+export const cadastrarEmpresaBrasilNFe = (
+    storeId: string,
+    params: { senhaCertificado?: string; csc?: { producao?: CscAmbienteInput; homologacao?: CscAmbienteInput } }
+) => chamarCadastroBrasilNFe({ acao: 'cadastrar', storeId, ...params });
+
+export const gerarLinkAtivacaoBrasilNFe = (storeId: string) =>
+    chamarCadastroBrasilNFe({ acao: 'link_ativacao', storeId });
+
+export const verificarCertificadoBrasilNFe = (storeId: string) =>
+    chamarCadastroBrasilNFe({ acao: 'verificar_certificado', storeId });
 
 export const fetchLoyaltyRewardItems = async (storeId: string): Promise<LoyaltyRewardItem[]> => {
     const { data, error } = await supabase
@@ -976,11 +1025,20 @@ export const createOrder = async (order: any) => {
  * por loja -- ver claude-acai.md, cada cliente/copia do app configura o seu).
  * Sem provedor contratado, fica tudo pendente sem nenhuma chamada externa.
  */
+const FORMAS_PAGAMENTO_COM_NOTA: string[] = ['PIX', 'Cartão', 'Cartao'];
+
 const dispararEmissaoNotaFiscal = async (order: Order, storeId: string): Promise<void> => {
     const config = await fetchFiscalConfig(storeId);
     if (!config || !config.provedor_api) {
         // Sem config fiscal ou sem provedor escolhido ainda: nao e' erro,
         // e' o estado normal enquanto a Fase 2 nao foi ligada para esta loja.
+        return;
+    }
+
+    // Decisao do Marlon (contador a confirmar): so PIX e cartao emitem NFC-e;
+    // dinheiro fica sem nota. Filtra ANTES de gravar a nota como pendente, pra
+    // nao deixar registro 'pendente' de venda que nunca vai ser emitida.
+    if (!FORMAS_PAGAMENTO_COM_NOTA.includes(order.paymentMethod as string)) {
         return;
     }
 

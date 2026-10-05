@@ -5,8 +5,8 @@ class PrinterService {
   private static processedOrderIds = new Set<string>();
   
   // Cache for performance
-  private static cachedPrinterName: string | null = null;
-  private static lastPrinterCheck = 0;
+  /** Nome da impressora ja resolvido no Windows, POR impressora pedida (chave = nome em maiusculas). */
+  private static printerCache = new Map<string, { name: string; at: number }>();
   private static readonly PRINTER_CACHE_TTL = 300000; // 5 minutes cache
   
   private hasUnprintedItems(order: Order): boolean {
@@ -483,80 +483,121 @@ class PrinterService {
     }
   }
 
-  private static printQueue: { html: string; content: string; resolve: () => void; reject: (err: any) => void; settings?: any; isPrimary: boolean }[] = [];
-  private static processingQueue = false;
+  // --- Fila de impressão -------------------------------------------------
+  // Uma fila POR IMPRESSORA (chave = nome da impressora pedido): papéis para a
+  // mesma impressora saem em ordem, um por vez; impressoras diferentes
+  // (cliente, cozinha, motoboy) imprimem em paralelo. Antes era UMA fila para
+  // tudo, com 800 ms de pausa fixa depois de cada papel e um cache de UM nome
+  // só (que forçava reconsultar a lista de impressoras quase a cada papel).
+  private static queues = new Map<string, {
+    html: string; content: string; resolve: () => void; reject: (err: any) => void; settings?: any; isPrimary: boolean
+  }[]>();
+  private static processing = new Set<string>();
+  /** Pausa entre papéis da MESMA impressora (era 800 ms; a térmica do cliente não tem guilhotina). */
+  private static readonly PAUSA_ENTRE_PAPEIS_MS = 100;
+
+  private static chaveDaFila(settings?: any): string {
+    return (settings?.preferredPrinter || '').trim().toUpperCase() || '__PADRAO__';
+  }
 
   private async printSilently(html: string, content: string, settings?: any): Promise<void> {
     return new Promise((resolve, reject) => {
       const isPrimary = settings?.isPrimary || false;
-      PrinterService.printQueue.push({ html, content, resolve, reject, settings, isPrimary });
-      this.processQueue();
+      const chave = PrinterService.chaveDaFila(settings);
+      const fila = PrinterService.queues.get(chave) ?? [];
+      fila.push({ html, content, resolve, reject, settings, isPrimary });
+      PrinterService.queues.set(chave, fila);
+      this.processQueue(chave);
     });
   }
 
-  private async processQueue() {
-    if (PrinterService.processingQueue || PrinterService.printQueue.length === 0) return;
-    PrinterService.processingQueue = true;
+  private async processQueue(chave: string) {
+    if (PrinterService.processing.has(chave)) return;
+    const fila = PrinterService.queues.get(chave);
+    if (!fila || fila.length === 0) return;
+    PrinterService.processing.add(chave);
 
-    while (PrinterService.printQueue.length > 0) {
-      const job = PrinterService.printQueue.shift();
-      if (!job) continue;
+    try {
+      while (fila.length > 0) {
+        const job = fila.shift();
+        if (!job) continue;
 
-      let attempts = 0;
-      const maxAttempts = 2;
-      let success = false;
+        let attempts = 0;
+        const maxAttempts = 2;
+        let success = false;
 
-      while (attempts < maxAttempts && !success) {
-        try {
-          let selectedPrinter = PrinterService.cachedPrinterName;
-          const now = Date.now();
-          const cacheExpired = (now - PrinterService.lastPrinterCheck) > PrinterService.PRINTER_CACHE_TTL;
-          const forceRefresh = job.settings?.preferredPrinter && job.settings.preferredPrinter !== selectedPrinter;
+        while (attempts < maxAttempts && !success) {
+          try {
+            const cached = PrinterService.printerCache.get(chave);
+            const cacheValido = !!cached && (Date.now() - cached.at) <= PrinterService.PRINTER_CACHE_TTL;
+            let selectedPrinter: string | null = cacheValido ? cached!.name : null;
 
-          if (!selectedPrinter || cacheExpired || forceRefresh) {
+            if (!selectedPrinter) {
               const isOnline = await this.checkLocalServer();
               if (!isOnline) throw new Error("Servidor de impressão offline.");
 
               const printerRes = await this.fetchWithTimeout('http://127.0.0.1:5050/printers', { method: 'GET' }, 10000);
               const printerList = await printerRes.json();
-              
+
               const preferred = job.settings?.preferredPrinter;
               if (preferred && preferred.trim() !== '') {
                   const found = printerList.find((p: any) => p.Name.toUpperCase() === preferred.toUpperCase());
-                  if (found) selectedPrinter = found.Name;
+                  if (found) {
+                      selectedPrinter = found.Name;
+                  } else {
+                      // CRÍTICO (achado 02/10/2026, relato do Ikarus: "se eu
+                      // reinstalar por cima e esquecer de reselecionar a
+                      // impressora, para de imprimir e ninguém percebe"): o
+                      // nome salvo no banco não bate com NENHUMA impressora
+                      // que o Windows reconhece agora (reinstalação, driver
+                      // reinstalado, outro nome). Antes isso falhava em
+                      // silêncio (só console.error) -- agora dispara um
+                      // evento que o AdminPage escuta pra mostrar um banner
+                      // bem visível, persistente, até o operador ir em
+                      // Configurações e reselecionar.
+                      window.dispatchEvent(new CustomEvent('impressora-nao-encontrada', {
+                          detail: { nomeConfigurado: preferred, isPrimary: job.isPrimary }
+                      }));
+                  }
               }
-              
+
               if (!selectedPrinter && job.isPrimary) {
                   const defaultPrinter = printerList.find((p: any) => p.IsDefault);
                   selectedPrinter = defaultPrinter ? defaultPrinter.Name : printerList[0]?.Name || "";
               }
-              
+
               if (selectedPrinter) {
-                  PrinterService.cachedPrinterName = selectedPrinter;
-                  PrinterService.lastPrinterCheck = now;
+                  PrinterService.printerCache.set(chave, { name: selectedPrinter, at: Date.now() });
               }
+            }
+
+            if (!selectedPrinter) throw new Error("Nenhuma impressora encontrada.");
+
+            const rawContent = '\x1b\x40' + job.content + '\n\n\n';
+            await this.fetchWithTimeout('http://127.0.0.1:5050/print', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ content: rawContent, printer_name: selectedPrinter })
+            }, 30000);
+
+            job.resolve();
+            success = true;
+          } catch (err: any) {
+            // Esquece o nome em cache: a próxima tentativa (e o próximo papel)
+            // reconfere a lista de impressoras do Windows.
+            PrinterService.printerCache.delete(chave);
+            attempts++;
+            if (attempts >= maxAttempts) job.reject(err);
+            else await new Promise(r => setTimeout(r, 1000));
           }
-
-          if (!selectedPrinter) throw new Error("Nenhuma impressora encontrada.");
-
-          const rawContent = '\x1b\x40' + job.content + '\n\n\n';
-          await this.fetchWithTimeout('http://127.0.0.1:5050/print', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: rawContent, printer_name: selectedPrinter })
-          }, 30000);
-
-          job.resolve();
-          success = true;
-        } catch (err: any) {
-          attempts++;
-          if (attempts >= maxAttempts) job.reject(err);
-          else await new Promise(r => setTimeout(r, 1000));
         }
+        await new Promise(r => setTimeout(r, PrinterService.PAUSA_ENTRE_PAPEIS_MS));
       }
-      await new Promise(r => setTimeout(r, 800));
+    } finally {
+      PrinterService.processing.delete(chave);
+      // Algum papel pode ter entrado no instante em que o laço terminava.
+      if ((PrinterService.queues.get(chave)?.length ?? 0) > 0) this.processQueue(chave);
     }
-    PrinterService.processingQueue = false;
   }
 }
 

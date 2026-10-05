@@ -992,6 +992,16 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // 'confirmar'/'enviar': C fica bloqueado enquanto isProcessing for true.
     const isProcessingRef = useRef(false);
     isProcessingRef.current = isProcessing;
+    // Pedido do Ikarus 04/10/2026: "abre C de comanda e tem peso na balança
+    // automática, o certo é dar 1 Enter e já lançar esse peso na comanda
+    // aberta -- hoje só funciona no clique". Refs de Regra 10, lidas dentro
+    // do handler de teclado.
+    const scaleWeightRef = useRef(0);
+    scaleWeightRef.current = scaleWeight;
+    const isScaleStableRef = useRef(false);
+    isScaleStableRef.current = isScaleStable;
+    const pedidosDaMesaRef = useRef<Order[]>([]);
+    pedidosDaMesaRef.current = pedidosDaMesa;
     const abrirProximaComandaLivreRef = useRef<() => void>(() => {});
     abrirProximaComandaLivreRef.current = abrirProximaComandaLivre;
     const isRenomeandoComandaRef = useRef(false);
@@ -1158,7 +1168,22 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         const addonsEscolhidos = sel.marcados.size > 0
                             ? Array.from(sel.marcados).map(i => sel.opcoes[i]).filter((a): a is Addon => !!a)
                             : (escolhaAtual ? [escolhaAtual] : []);
-                        addToCartComSabor(sel.produto, ...addonsEscolhidos);
+                        if (sel.produto.saboresComQuantidade && addonsEscolhidos.length > 1) {
+                            // Picolés: o preço está no PRODUTO e cada sabor é
+                            // uma unidade -- vários sabores viram uma linha por
+                            // sabor (senão cobraria 1 picolé só pelos 3).
+                            const agora = Date.now();
+                            setCart(prev => [...prev, ...addonsEscolhidos.map((a, i) => ({
+                                ...sel.produto,
+                                cartId: `${sel.produto.id}-${a.id}-${agora}-${i}`,
+                                quantity: 1,
+                                notes: '',
+                                selectedAddons: [a],
+                                isCombo: false,
+                            }))]);
+                        } else {
+                            addToCartComSabor(sel.produto, ...addonsEscolhidos);
+                        }
                         setSeletorSabor(null);
                         bipar('ok');
                         return;
@@ -1440,7 +1465,29 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             if (balcaoV2Ref.current && isComandaModalOpenRef.current &&
                 e.key === 'Enter' && !teclasMesa) {
                 e.preventDefault();
-                if (cartRef.current.length > 0 && !isProcessing) handleFinalize();
+                // Pedido do Ikarus 04/10/2026: comanda NOVA (carrinho vazio E
+                // nenhum pedido anterior no banco pra este slot) com peso
+                // ESTÁVEL já esperando na balança automática -- o 1º Enter
+                // lança esse peso como item (igual já fazia o clique em
+                // "Lançar Pedido"), sem enviar nada ainda. Restrito a comanda
+                // nova (pedidosDaMesa vazio) pra não colidir com o fluxo de
+                // EXCLUIR uma comanda já enviada (carrinho esvaziado de
+                // propósito + Enter = excluir, não lançar peso por engano).
+                if (cartRef.current.length === 0 && pedidosDaMesaRef.current.length === 0 &&
+                    scaleWeightRef.current > 0 && isScaleStableRef.current) {
+                    handleLaunchScaleItemToOrder(scaleWeightRef.current);
+                    return;
+                }
+                // CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei os
+                // produtos, dei Enter, nada aconteceu"): a condição exigia
+                // `cartRef.current.length > 0` pra chamar handleFinalize --
+                // isso bloqueava justamente o caso de EXCLUIR a comanda
+                // (carrinho vazio + pedido já existia no banco), que
+                // handleFinalize já sabe tratar internamente. Agora deixa
+                // handleFinalize decidir: ele mesmo ignora carrinho vazio
+                // SEM pedido anterior (nada a fazer), e exclui quando tinha
+                // pedido antes.
+                if (!isProcessingRef.current) handleFinalize();
                 return;
             }
 
@@ -1816,9 +1863,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             if (pedidosDaMesa.length > 0) {
                 setIsProcessing(true);
                 try {
-                    for (const pedido of pedidosDaMesa) {
-                        await deleteOrder(pedido.id!);
-                    }
+                    // Em paralelo (achado 02/10/2026, relato do Ikarus: "X
+                    // pra deletar demorou uns 10 segundos") -- antes era um
+                    // `await` por sub-pedido em sequência, então uma comanda
+                    // com vários sub-pedidos (ex.: itens novos + itens
+                    // existentes gerando sub-pedidos separados) multiplicava
+                    // o tempo de rede por cada um.
+                    await Promise.all(pedidosDaMesa.map(pedido => deleteOrder(pedido.id!)));
                     if (balcaoV2Ref.current) {
                         clearTablePayments(storeId, parseInt(selectedTable, 10)).catch(() => {});
                     }
@@ -1971,8 +2022,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     });
                 }
 
-                // B. Os demais voltam para o pedido de onde vieram.
-                for (const pedido of pedidosDaMesa) {
+                // B. Os demais voltam para o pedido de onde vieram. Em
+                // paralelo (achado 02/10/2026, mesmo problema de lentidão do
+                // "excluir comanda vazia" -- sub-pedidos não dependem um do
+                // outro, não há motivo pra esperar um terminar antes do
+                // próximo começar).
+                await Promise.all(pedidosDaMesa.map(pedido => {
                     const idsDoPedido = new Set((pedido.items || []).map(i => i.cartId));
                     const meusItens = itensExistentes.filter(i => idsDoPedido.has(i.cartId));
 
@@ -1987,15 +2042,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     // nenhum item meu, sempre deleta, independente do que
                     // `pedido.items` já era.
                     if (meusItens.length === 0) {
-                        await deleteOrder(pedido.id!);
-                    } else {
-                        await updateOrder(pedido.id!, {
-                            ...pedido,
-                            items: meusItens,
-                            total: valorDe(meusItens) + (Number(pedido.deliveryFee) || 0),
-                        });
+                        return deleteOrder(pedido.id!);
                     }
-                }
+                    return updateOrder(pedido.id!, {
+                        ...pedido,
+                        items: meusItens,
+                        total: valorDe(meusItens) + (Number(pedido.deliveryFee) || 0),
+                    });
+                }));
 
                 showNotify('Comanda da mesa atualizada! ✅');
             } else {
@@ -2310,8 +2364,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             )}
 
             {/* Mini-colinha do passo inicial: aparece quando nao ha nada digitado
-                nem aviso na tela, para o operador lembrar por onde começar. */}
-            {settings?.mostrarDicasAtalho !== false && !teclasMesa && !avisoAtalho && settings?.isScaleEnabled &&
+                nem aviso na tela, para o operador lembrar por onde começar.
+                Removida do Balcão V2 (pedido do Ikarus, 02/10/2026): com a
+                barra de atalhos fixa no cabeçalho da comanda, essa dica
+                flutuante ficou redundante e atrapalhava a tela -- continua
+                valendo só pro V1 (sem comandas), que não tem a barra nova. */}
+            {settings?.mostrarDicasAtalho !== false && !teclasMesa && !avisoAtalho && settings?.isScaleEnabled && !settings?.balcaoV2 &&
              !isCustomItemModalOpen && !isTableModalOpen && !isScaleModalOpen && !isCategoryModalOpen && !isAddonModalOpen && (
                 <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[9990] pointer-events-none">
                     {/* Aumentada e trocada para laranja (28/09/2026, pedido do
@@ -2319,14 +2377,9 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         pequeno, com a tela cheia de outras cores. */}
                     <div className="bg-slate-900/90 border border-amber-500/40 rounded-lg px-5 py-2.5 shadow-lg backdrop-blur-sm">
                         <span className="text-sm text-slate-300">
-                            {settings?.balcaoV2 ? (
-                                <>Digite o <strong className="text-amber-400">nº da comanda</strong> ou o
-                                <strong className="text-amber-400"> código do produto</strong></>
-                            ) : (
-                                <>Digite o <strong className="text-amber-400">nº da mesa</strong> ou o
-                                <strong className="text-amber-400"> código do produto</strong> ·
-                                <kbd className="px-1.5 py-0.5 bg-slate-800 rounded ml-1 text-amber-300 font-bold">R</kbd> retirada</>
-                            )}
+                            Digite o <strong className="text-amber-400">nº da mesa</strong> ou o
+                            <strong className="text-amber-400"> código do produto</strong> ·
+                            <kbd className="px-1.5 py-0.5 bg-slate-800 rounded ml-1 text-amber-300 font-bold">R</kbd> retirada
                         </span>
                     </div>
                 </div>
@@ -2525,13 +2578,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         )}
                         <div className="relative flex-1">
                             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-blue-400" size={18} />
-                        <input 
+                        <input
                             ref={buscaProdutoRef}
-                            type="text" 
-                            placeholder="Buscar produto..." 
-                            value={searchTerm} 
-                            onChange={e => setSearchTerm(e.target.value)} 
-                            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 border border-blue-100 dark:border-blue-900/30 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-gray-400" 
+                            type="text"
+                            placeholder="Buscar produto ou código..."
+                            value={searchTerm}
+                            onChange={e => setSearchTerm(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-gray-900 text-gray-900 dark:text-white border border-blue-100 dark:border-blue-900/30 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-gray-400"
                         />
                         </div>
                     </div>
@@ -2687,6 +2740,29 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                     </span>
                                 ))}
                             </span>
+                            {/* Colinha dos produtos ADD (adicional genérico de preço
+                                fixo, lançado por código): lê do cardápio os produtos
+                                cujo nome começa com "ADD" e mostra o rótulo pelo PREÇO
+                                (ADD3, ADD10...), então vale pra qualquer loja e não
+                                precisa mexer aqui se o código mudar. Cor
+                                diferente (violeta) das teclas (âmbar) pra se destacar. */}
+                            {(() => {
+                                const adds = menuItems
+                                    .filter(p => p.codigo !== undefined && /^ADD\b/i.test(p.name.trim()))
+                                    .sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
+                                if (adds.length === 0) return null;
+                                return (
+                                    <span className="flex items-center gap-1.5 flex-wrap justify-center">
+                                        <span className="text-[10px] font-black uppercase text-violet-700 dark:text-violet-300">Adicionais:</span>
+                                        {adds.map(p => (
+                                            <span key={p.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-500/15 border border-violet-500/40 rounded-full" title={`${p.name} — R$ ${(Number(p.price) || 0).toFixed(2)}`}>
+                                                <span className="text-[10px] font-black uppercase text-gray-900 dark:text-white">{`ADD ${Number(p.price) || 0}`}</span>
+                                                <kbd className="px-1.5 py-0.5 bg-violet-500/30 rounded text-[10px] font-black text-gray-900 dark:text-white">{p.codigo}</kbd>
+                                            </span>
+                                        ))}
+                                    </span>
+                                );
+                            })()}
                         </h3>
                     )}
                     {/* Mute do bipe de "comanda enviada" -- pedido do Ikarus
@@ -2764,16 +2840,25 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">TOTAL</span>
                         <span className="text-2xl font-black text-primary tracking-tighter">R$ {Number(total).toFixed(2)}</span>
                     </div>
+                    {/* CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei os
+                        itens, o botão nem dava pra clicar, achei que ia sumir
+                        sozinho"): disabled bloqueava com carrinho vazio, mesmo
+                        quando a comanda JÁ tinha pedido no banco -- handleFinalize
+                        exclui a comanda nesse caso, mas o botão nunca chegava a
+                        chamar. Agora só desabilita se não há NADA a fazer
+                        (carrinho vazio E nunca teve pedido nenhum). */}
                     <button
                         onClick={() => handleFinalize()}
-                        disabled={cart.length === 0 || isProcessing}
+                        disabled={(cart.length === 0 && pedidosDaMesa.length === 0) || isProcessing}
                         className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
-                            cart.length === 0 || isProcessing
+                            (cart.length === 0 && pedidosDaMesa.length === 0) || isProcessing
                                 ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed shadow-none'
-                                : 'bg-green-600 hover:bg-green-700 text-white shadow-green-600/20'
+                                : cart.length === 0
+                                    ? 'bg-red-600 hover:bg-red-700 text-white shadow-red-600/20'
+                                    : 'bg-green-600 hover:bg-green-700 text-white shadow-green-600/20'
                         }`}
                     >
-                        {isProcessing ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <><span>Enviar Comanda</span><Plus size={18} strokeWidth={3} /></>}
+                        {isProcessing ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : cart.length === 0 ? <><span>Excluir Comanda</span><X size={18} strokeWidth={3} /></> : <><span>Enviar Comanda</span><Plus size={18} strokeWidth={3} /></>}
                     </button>
                 </div>
             </div>
@@ -2869,8 +2954,23 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                                     e.stopPropagation();
                                                     if (!confirm(`Descartar ${c.identificador}? Os itens lançados serão perdidos.`)) return;
                                                     if (c.ativa) {
+                                                        // CRÍTICO (achado 02/10/2026, relato do Ikarus:
+                                                        // "clico no X, confirmo, mas a comanda
+                                                        // continua lá"): antes só limpava o carrinho
+                                                        // (setCart([])) sem FECHAR a tela -- a comanda
+                                                        // continuava "ativa" na lista pra sempre,
+                                                        // porque cardsComandas sempre inclui o slot
+                                                        // ativo, mesmo vazio. Descartar a comanda
+                                                        // ativa precisa fechar de verdade, igual o X
+                                                        // do cabeçalho já faz, e também limpar
+                                                        // qualquer rascunho que tenha sobrado dela.
                                                         setCart([]);
                                                         setCustomerName(`Comanda ${numero}`);
+                                                        delete rascunhosComandaRef.current[parseInt(numero, 10)];
+                                                        persistirRascunhos();
+                                                        setVersaoRascunhos(v => v + 1);
+                                                        setIsComandaModalOpen(false);
+                                                        setSelectedTable('');
                                                     } else {
                                                         delete rascunhosComandaRef.current[parseInt(numero, 10)];
                                                         persistirRascunhos();
@@ -3448,8 +3548,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setIsAddonModalOpen(false)}>
                     <div className="bg-white dark:bg-gray-800 rounded-xl p-6 max-w-md w-full shadow-2xl max-h-[80vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-xl font-bold">Adicionais: {editingCartItem.name}</h3>
-                            <button onClick={() => setIsAddonModalOpen(false)}><X /></button>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Adicionais: {editingCartItem.name}</h3>
+                            <button onClick={() => setIsAddonModalOpen(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"><X /></button>
                         </div>
                         <div className="space-y-2">
                             {/* Marcação visual igual ao popup por comando (borda
@@ -3474,7 +3574,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                         className={`w-full flex justify-between items-center p-3 rounded-lg border-2 transition-colors ${
                                             isSelected
                                                 ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
-                                                : 'border-gray-200 dark:border-gray-700'
+                                                : 'border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100'
                                         }`}
                                     >
                                         <span className="font-medium flex items-center gap-1.5">

@@ -135,6 +135,44 @@ const AdminPage = () => {
     const [splitBillTable, setSplitBillTable] = useState<number | null>(null);
     const [menuSubTab, setMenuSubTab] = useState<'items' | 'addons'>('items');
     const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+    // Largura do menu ARRASTÁVEL em DESKTOP (Electron) -- pedido do Ikarus
+    // 02/10/2026: "ao invés de encolher, vamos estreitar... ou deixamos livre
+    // pra ajustes arrastar a coluna também pode ser uma boa". Persistida no
+    // localStorage pra lembrar entre sessões. Limites: 180px (ainda dá pra
+    // ler os rótulos) a 320px (não precisa ficar maior que isso).
+    const SIDEBAR_MIN = 180;
+    const SIDEBAR_MAX = 320;
+    const [sidebarWidth, setSidebarWidth] = useState(() => {
+        try {
+            const salva = parseInt(localStorage.getItem('sidebarWidth') || '', 10);
+            if (!isNaN(salva)) return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, salva));
+        } catch (_) {}
+        return 256; // mesmo valor de hoje (w-64 = 16rem = 256px)
+    });
+    const arrastandoSidebarRef = useRef(false);
+    useEffect(() => {
+        const aoMover = (e: MouseEvent) => {
+            if (!arrastandoSidebarRef.current) return;
+            const nova = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, e.clientX));
+            setSidebarWidth(nova);
+        };
+        const aoSoltar = () => {
+            if (!arrastandoSidebarRef.current) return;
+            arrastandoSidebarRef.current = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            setSidebarWidth(atual => {
+                try { localStorage.setItem('sidebarWidth', String(atual)); } catch (_) {}
+                return atual;
+            });
+        };
+        window.addEventListener('mousemove', aoMover);
+        window.addEventListener('mouseup', aoSoltar);
+        return () => {
+            window.removeEventListener('mousemove', aoMover);
+            window.removeEventListener('mouseup', aoSoltar);
+        };
+    }, []);
     const [showUtilityMenu, setShowUtilityMenu] = useState(false);
     const [orders, setOrders] = useState<Order[]>([]);
     const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
@@ -173,6 +211,19 @@ const AdminPage = () => {
     const [lastSelectedCategoryId, setLastSelectedCategoryId] = useState<number | undefined>(undefined);
     const [menuSearchTerm, setMenuSearchTerm] = useState('');
     const [showAvailabilityReminder, setShowAvailabilityReminder] = useState(false);
+    // Banner de impressora não encontrada -- pedido do Ikarus 02/10/2026:
+    // "se eu reinstalar por cima e esquecer de reselecionar a impressora,
+    // para de imprimir e ninguém percebe". printerService dispara o evento
+    // 'impressora-nao-encontrada' sempre que o nome salvo no banco não bate
+    // com nenhuma impressora que o Windows reconhece agora.
+    const [impressoraNaoEncontrada, setImpressoraNaoEncontrada] = useState<{ nomeConfigurado: string; isPrimary: boolean } | null>(null);
+    useEffect(() => {
+        const aoDetectar = (e: Event) => {
+            setImpressoraNaoEncontrada((e as CustomEvent).detail);
+        };
+        window.addEventListener('impressora-nao-encontrada', aoDetectar);
+        return () => window.removeEventListener('impressora-nao-encontrada', aoDetectar);
+    }, []);
     const [isEditOrderModalOpen, setIsEditOrderModalOpen] = useState(false);
     const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
 
@@ -1552,8 +1603,26 @@ const AdminPage = () => {
                 />
             )}
 
-            {/* Sidebar */}
-            <aside className={`fixed md:relative inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ${activeTab === 'kitchen' ? 'hidden' : 'flex'} md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} flex-col`}>
+            {/* Sidebar -- largura ARRASTÁVEL em desktop (pedido do Ikarus
+                02/10/2026: "deixamos livre pra ajustes, arrastar a coluna
+                também pode ser uma boa"). style inline só pega efeito em
+                telas >= md (ver o `md:!w-[...]` abaixo não é usado --
+                simplesmente o style sempre aplica, e no mobile o aside já
+                fica fixed fora da tela quando fechado, então a largura não
+                importa visualmente ali). */}
+            <aside
+                className={`fixed md:relative inset-y-0 left-0 z-50 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ${activeTab === 'kitchen' ? 'hidden' : 'flex'} md:translate-x-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} w-64 flex-col`}
+                style={{ width: `${sidebarWidth}px` }}
+            >
+                <div
+                    onMouseDown={() => {
+                        arrastandoSidebarRef.current = true;
+                        document.body.style.cursor = 'col-resize';
+                        document.body.style.userSelect = 'none';
+                    }}
+                    title="Arrastar para redimensionar o menu"
+                    className="hidden md:block absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-red-400/40 active:bg-red-500/60 transition-colors z-10"
+                />
                 <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
                     <h1 className="text-base font-black text-gray-900 dark:text-white leading-tight underline decoration-red-600 decoration-4">ADMIN</h1>
                     <button onClick={() => setIsSidebarOpen(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 md:hidden">
@@ -2336,11 +2405,36 @@ const AdminPage = () => {
                 }}
             />
             
-            <Notification 
-                show={notification.show} 
-                message={notification.message} 
-                type={notification.type} 
-                onClose={() => setNotification(p => ({ ...p, show: false }))} 
+            {/* Banner persistente (não some sozinho) -- pedido do Ikarus
+                02/10/2026: nome de impressora salvo não bate com nenhuma do
+                Windows (reinstalação, driver mudou). Fica na tela até o
+                operador ir reselecionar ou dispensar manualmente. */}
+            {impressoraNaoEncontrada && (
+                <div className="fixed top-0 left-0 right-0 z-[9999] bg-red-600 text-white px-4 py-3 flex items-center justify-center gap-3 shadow-lg text-sm font-bold flex-wrap">
+                    <span>
+                        ⚠️ Impressora "{impressoraNaoEncontrada.nomeConfigurado}" não encontrada neste computador
+                        {!impressoraNaoEncontrada.isPrimary && ' -- os pedidos NÃO estão sendo impressos nela'}.
+                    </span>
+                    <button
+                        onClick={() => { setActiveTab('settings'); setImpressoraNaoEncontrada(null); }}
+                        className="bg-white text-red-700 px-3 py-1 rounded-lg font-black uppercase text-xs hover:bg-red-50"
+                    >
+                        Ir para Configurações
+                    </button>
+                    <button
+                        onClick={() => setImpressoraNaoEncontrada(null)}
+                        className="text-white/80 hover:text-white underline text-xs"
+                    >
+                        Dispensar
+                    </button>
+                </div>
+            )}
+
+            <Notification
+                show={notification.show}
+                message={notification.message}
+                type={notification.type}
+                onClose={() => setNotification(p => ({ ...p, show: false }))}
             />
             {showPrintSplash && (
                 <PrintStatusSplash 

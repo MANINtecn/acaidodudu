@@ -142,7 +142,7 @@ export default function WaiterPage() {
         if (!currentStore) return;
         try {
             setLoadingMenu(true);
-            const data = await fetchMenuForCustomer(currentStore.id);
+            const data = await fetchMenuForCustomer(currentStore.id, { incluirSomenteBalcao: true });
             setCategories(data.categories);
             setMenuItems(data.menuItems);
             setAddons(data.addons || []);
@@ -225,7 +225,13 @@ export default function WaiterPage() {
         const relevantAddons = (itemWithAddonsToSelect.selectedAddons && itemWithAddonsToSelect.selectedAddons.length > 0) ? itemWithAddonsToSelect.selectedAddons : (itemWithAddonsToSelect.addons || []);
         const availableAddons = relevantAddons.filter(a => a.isAvailable !== false);
         const addonsToAdd = availableAddons.filter(a => selectedAddonIds.includes(a.id)) || [];
-        addItemToCartState(itemWithAddonsToSelect, addonsToAdd);
+        if (itemWithAddonsToSelect.saboresComQuantidade && addonsToAdd.length > 1) {
+            // Picolés: preço no produto, cada sabor = 1 unidade -> 1 linha por
+            // sabor (senão cobraria 1 picolé só pelos vários sabores marcados).
+            addonsToAdd.forEach(a => addItemToCartState(itemWithAddonsToSelect, [a]));
+        } else {
+            addItemToCartState(itemWithAddonsToSelect, addonsToAdd);
+        }
         setItemWithAddonsToSelect(null);
         setSelectedAddonIds([]);
     };

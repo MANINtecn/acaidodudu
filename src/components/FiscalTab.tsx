@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { FileText, Save, AlertCircle, Upload, CheckCircle2, RefreshCw, Zap } from 'lucide-react';
 import type { FiscalConfig, NotaFiscal } from '../types';
-import { fetchFiscalConfig, saveFiscalConfig, uploadCertificadoFiscal, fetchNotasFiscais, emitirNotaFiscalAgora } from '../services/supabaseService';
+import {
+    fetchFiscalConfig, saveFiscalConfig, uploadCertificadoFiscal, fetchNotasFiscais, emitirNotaFiscalAgora,
+    cadastrarEmpresaBrasilNFe, gerarLinkAtivacaoBrasilNFe, verificarCertificadoBrasilNFe,
+} from '../services/supabaseService';
 
 interface FiscalTabProps {
     storeId: string;
@@ -33,9 +36,9 @@ const PROVEDORES_API = [
  *    provedor configurado; sem provedor, mostra o aviso de bloqueio.
  * 4. Relatorio — lista as notas emitidas/pendentes/rejeitadas.
  *
- * O CSC (Codigo de Seguranca do Contribuinte) e' tratado como campo de senha
- * que so envia ao salvar SE foi digitado de novo — nunca mostra o valor
- * salvo de volta na tela.
+ * O CSC (Codigo de Seguranca do Contribuinte) e a senha do certificado sao
+ * campos de senha digitados so na hora de "Enviar cadastro ao Brasil NFe":
+ * atravessam a Edge Function uma vez e NAO sao gravados no banco.
  */
 export default function FiscalTab({ storeId }: FiscalTabProps) {
     const [config, setConfig] = useState<Partial<FiscalConfig>>({
@@ -49,8 +52,13 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
         uf: 'TO',
         serie_padrao: 1,
     });
-    const [cscToken, setCscToken] = useState(''); // nunca pre-preenchido
-    const [temCscSalvo, setTemCscSalvo] = useState(false);
+    // Segredos digitados na hora: nunca pre-preenchidos, nunca salvos no banco.
+    const [cscProducao, setCscProducao] = useState('');
+    const [cscHomologacao, setCscHomologacao] = useState('');
+    const [senhaCertificado, setSenhaCertificado] = useState('');
+    const [cadastrando, setCadastrando] = useState(false);
+    const [resultadoCadastro, setResultadoCadastro] = useState<{ ok: boolean; linhas: string[] } | null>(null);
+    const [linkAtivacao, setLinkAtivacao] = useState<string | null>(null);
     const [carregando, setCarregando] = useState(true);
     const [salvando, setSalvando] = useState(false);
     const [salvo, setSalvo] = useState(false);
@@ -69,8 +77,9 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                 const existente = await fetchFiscalConfig(storeId);
                 if (cancelado) return;
                 if (existente) {
-                    setConfig(existente);
-                    setTemCscSalvo(!!existente.csc_token);
+                    // csc_token e' legado: nunca mantem na memoria da tela.
+                    const { csc_token: _legado, ...semCsc } = existente;
+                    setConfig(semCsc);
                 }
             } catch (err) {
                 console.error('[Fiscal] erro ao carregar configuracao:', err);
@@ -103,28 +112,96 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
         setSalvo(false);
     };
 
-    const handleSalvar = async () => {
-        setSalvando(true);
+    /** Grava os dados fiscais (sem CSC, sem senha). Devolve false se falhar. */
+    const salvarDados = async (): Promise<boolean> => {
         try {
             const payload: Partial<FiscalConfig> = { ...config };
-            // So envia o CSC se o usuario digitou algo agora — campo vazio
-            // significa "nao mexer", nunca "apagar o que ja tinha".
-            if (cscToken.trim()) {
-                payload.csc_token = cscToken.trim();
-            } else {
-                delete payload.csc_token;
-            }
+            delete payload.csc_token; // o CSC nunca volta a ser gravado no banco
             const salvo = await saveFiscalConfig(storeId, payload);
-            setConfig(salvo);
-            setTemCscSalvo(!!salvo.csc_token);
-            setCscToken('');
-            setSalvo(true);
-            setTimeout(() => setSalvo(false), 2500);
+            const { csc_token: _legado, ...semCsc } = salvo;
+            setConfig(semCsc);
+            return true;
         } catch (err) {
             console.error('[Fiscal] erro ao salvar configuracao:', err);
+            return false;
+        }
+    };
+
+    const handleSalvar = async () => {
+        setSalvando(true);
+        const ok = await salvarDados();
+        setSalvando(false);
+        if (ok) {
+            setSalvo(true);
+            setTimeout(() => setSalvo(false), 2500);
+        } else {
             alert('Não foi possível salvar a configuração fiscal. Tente novamente.');
+        }
+    };
+
+    const handleCadastrarBrasilNFe = async () => {
+        setCadastrando(true);
+        setResultadoCadastro(null);
+        setLinkAtivacao(null);
+        try {
+            if (!(await salvarDados())) {
+                setResultadoCadastro({ ok: false, linhas: ['Não consegui salvar os dados fiscais antes de enviar. Tente de novo.'] });
+                return;
+            }
+            const r = await cadastrarEmpresaBrasilNFe(storeId, {
+                senhaCertificado: senhaCertificado || undefined,
+                csc: {
+                    producao: { id: config.csc_id, token: cscProducao },
+                    homologacao: { id: config.csc_id_homologacao, token: cscHomologacao },
+                },
+            });
+            if (r.ok) {
+                setResultadoCadastro({ ok: true, linhas: [...(r.etapas || []), ...(r.avisos || []).map(a => `⚠️ ${a}`)] });
+                // Segredos usados: some da tela.
+                setCscProducao('');
+                setCscHomologacao('');
+                setSenhaCertificado('');
+                const atual = await fetchFiscalConfig(storeId);
+                if (atual) {
+                    const { csc_token: _legado, ...semCsc } = atual;
+                    setConfig(semCsc);
+                }
+            } else {
+                setResultadoCadastro({ ok: false, linhas: [r.erro || 'Falha desconhecida ao cadastrar.', ...(r.etapas || [])] });
+            }
+        } catch (err: any) {
+            console.error('[Fiscal] erro ao cadastrar no Brasil NFe:', err);
+            setResultadoCadastro({ ok: false, linhas: [err?.message || 'Falha ao chamar o cadastro. Veja o console.'] });
         } finally {
-            setSalvando(false);
+            setCadastrando(false);
+        }
+    };
+
+    const handleGerarLink = async () => {
+        setCadastrando(true);
+        setLinkAtivacao(null);
+        const r = await gerarLinkAtivacaoBrasilNFe(storeId);
+        setCadastrando(false);
+        if (r.ok && r.url) setLinkAtivacao(r.url);
+        else setResultadoCadastro({ ok: false, linhas: [r.erro || 'Não foi possível gerar o link.'] });
+    };
+
+    const handleVerificarCertificado = async () => {
+        setCadastrando(true);
+        const r = await verificarCertificadoBrasilNFe(storeId);
+        setCadastrando(false);
+        if (r.ok) {
+            setResultadoCadastro({
+                ok: !r.expirado,
+                linhas: [r.expirado ? 'Certificado EXPIRADO.' : `Certificado válido até ${r.dtExpiracao || 'data não informada'}.`],
+            });
+            const atual = await fetchFiscalConfig(storeId);
+            if (atual) {
+                const { csc_token: _legado, ...semCsc } = atual;
+                setConfig(semCsc);
+            }
+        } else {
+            setResultadoCadastro({ ok: false, linhas: [r.erro || 'Não foi possível verificar o certificado.'] });
         }
     };
 
@@ -142,7 +219,7 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                 certificado_enviado_em: new Date().toISOString(),
             });
             setConfig(salvo);
-            alert('Certificado enviado. A senha dele deve ser passada separadamente para configurar na Edge Function (nunca aqui na tela).');
+            alert('Certificado carregado. Agora digite a senha dele e clique em "Enviar cadastro ao Brasil NFe".');
         } catch (err) {
             console.error('[Fiscal] erro ao enviar certificado:', err);
             alert('Não foi possível enviar o certificado. Tente novamente.');
@@ -233,6 +310,10 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                     {campoTexto('Inscrição Estadual', 'inscricao_estadual')}
                     {campoTexto('Razão Social', 'razao_social', undefined, 'sm:col-span-2')}
                     {campoTexto('Nome Fantasia', 'nome_fantasia', undefined, 'sm:col-span-2')}
+                    {campoTexto('Inscrição Municipal (opcional)', 'inscricao_municipal')}
+                    {campoTexto('CNAE (opcional)', 'cnae', 'Ex: 5611201')}
+                    {campoTexto('Telefone (opcional)', 'telefone', '(63) 99999-9999')}
+                    {campoTexto('E-mail (opcional)', 'email', 'contato@empresa.com.br')}
                 </div>
 
                 <div className="border-t border-gray-100 dark:border-gray-700 pt-4 mb-4">
@@ -240,6 +321,7 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         {campoTexto('Logradouro', 'logradouro', undefined, 'sm:col-span-2')}
                         {campoTexto('Número', 'numero')}
+                        {campoTexto('Complemento (opcional)', 'complemento')}
                         {campoTexto('Bairro', 'bairro')}
                         {campoTexto('Município', 'municipio')}
                         {campoTexto('CEP', 'cep')}
@@ -281,24 +363,39 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                 <div className="border-t border-gray-100 dark:border-gray-700 pt-4 mb-4">
                     <p className="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wide">SEFAZ-TO</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        {campoTexto('ID do CSC', 'csc_id', 'Ex: 000001')}
+                        {campoTexto('ID do CSC — Produção', 'csc_id', 'Ex: 000001')}
                         <div>
                             <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">
-                                CSC (Código de Segurança do Contribuinte)
+                                CSC — Produção
                             </label>
                             <input
                                 type="password"
-                                value={cscToken}
-                                onChange={e => setCscToken(e.target.value)}
-                                placeholder={temCscSalvo ? '•••••••• (já salvo — digite para trocar)' : 'Ainda não configurado'}
+                                autoComplete="off"
+                                value={cscProducao}
+                                onChange={e => setCscProducao(e.target.value)}
+                                placeholder="Digite só ao enviar o cadastro"
+                                className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                        </div>
+                        {campoTexto('ID do CSC — Homologação', 'csc_id_homologacao', 'Ex: 000001')}
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">
+                                CSC — Homologação
+                            </label>
+                            <input
+                                type="password"
+                                autoComplete="off"
+                                value={cscHomologacao}
+                                onChange={e => setCscHomologacao(e.target.value)}
+                                placeholder="Digite só ao enviar o cadastro"
                                 className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-purple-500"
                             />
                         </div>
                     </div>
                     <p className="text-[11px] text-gray-500 mt-2">
                         O CSC é gerado no portal da SEFAZ-TO com o acesso da própria empresa — é diferente do
-                        certificado digital. Se já existir um (o Multipedidos pode ter gerado), é possível reutilizar
-                        ou gerar um novo, os dois convivem.
+                        certificado digital. Ele NÃO fica salvo no sistema: é enviado ao Brasil NFe uma única vez,
+                        no botão "Enviar cadastro ao Brasil NFe" abaixo. Só o ID (que não é segredo) fica guardado.
                     </p>
                 </div>
 
@@ -384,10 +481,15 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                     <p className="text-xs font-bold text-gray-600 dark:text-gray-400 mb-3 uppercase tracking-wide">
                         Certificado Digital A1
                     </p>
-                    {config.certificado_nome_arquivo ? (
+                    {config.certificado_validade ? (
                         <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 rounded-lg px-3 py-2 mb-2">
                             <CheckCircle2 size={16} />
-                            <span>{config.certificado_nome_arquivo} — enviado</span>
+                            <span>Certificado no Brasil NFe — válido até {new Date(config.certificado_validade + 'T12:00:00').toLocaleDateString('pt-BR')}</span>
+                        </div>
+                    ) : config.certificado_nome_arquivo ? (
+                        <div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 mb-2">
+                            <AlertCircle size={16} />
+                            <span>{config.certificado_nome_arquivo} — carregado, ainda não enviado ao Brasil NFe</span>
                         </div>
                     ) : (
                         <p className="text-[11px] text-gray-500 mb-2">Nenhum certificado enviado ainda.</p>
@@ -404,8 +506,8 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                         />
                     </label>
                     <p className="text-[11px] text-gray-500 mt-2">
-                        O arquivo fica guardado de forma privada, sem acesso pelo aplicativo instalado na loja.
-                        A senha do certificado deve ser passada separadamente (nunca digitada aqui).
+                        O arquivo fica num espaço privado só até ser enviado ao Brasil NFe e é apagado logo depois.
+                        Nenhum dos dois (arquivo e senha) fica guardado no sistema.
                     </p>
                 </div>
 
@@ -421,6 +523,81 @@ export default function FiscalTab({ storeId }: FiscalTabProps) {
                     </button>
                 </div>
             </div>
+
+            {/* Bloco 2b: Cadastro no Brasil NFe — leva os dados acima + CSC + certificado */}
+            {config.provedor_api === 'brasil_nfe' && (
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold mb-1 flex items-center gap-2 text-gray-900 dark:text-gray-100">
+                        <Zap size={20} className="text-purple-600" /> Cadastro no Brasil NFe
+                    </h3>
+                    <p className="text-[11px] text-gray-500 mb-4">
+                        {config.brasilnfe_cadastrada_em
+                            ? `Empresa enviada ao Brasil NFe em ${new Date(config.brasilnfe_cadastrada_em).toLocaleString('pt-BR')}. Para atualizar dados, reenvie com o CSC.`
+                            : 'Envia os dados da empresa, o CSC e o certificado ao Brasil NFe de uma vez. Salve os dados acima antes.'}
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-600 dark:text-gray-400 mb-1">
+                                Senha do certificado A1
+                            </label>
+                            <input
+                                type="password"
+                                autoComplete="off"
+                                value={senhaCertificado}
+                                onChange={e => setSenhaCertificado(e.target.value)}
+                                placeholder="Digite só ao enviar o cadastro"
+                                className="w-full px-3 py-2 text-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={handleCadastrarBrasilNFe}
+                            disabled={cadastrando || !config.cnpj}
+                            className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-lg font-bold text-sm transition-all active:scale-95"
+                        >
+                            {cadastrando ? 'Enviando...' : 'Enviar cadastro ao Brasil NFe'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleGerarLink}
+                            disabled={cadastrando || !config.brasilnfe_cadastrada_em}
+                            className="px-4 py-2.5 bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 disabled:opacity-50 rounded-lg font-bold text-sm transition-all"
+                        >
+                            Gerar link de pagamento
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleVerificarCertificado}
+                            disabled={cadastrando || !config.brasilnfe_cadastrada_em}
+                            className="px-4 py-2.5 bg-gray-100 dark:bg-gray-900 hover:bg-gray-200 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 disabled:opacity-50 rounded-lg font-bold text-sm transition-all"
+                        >
+                            Verificar certificado
+                        </button>
+                    </div>
+
+                    {resultadoCadastro && (
+                        <div className={`mt-3 rounded-lg px-4 py-3 text-sm ${
+                            resultadoCadastro.ok
+                                ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400'
+                                : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400'
+                        }`}>
+                            {resultadoCadastro.linhas.map((linha, i) => (
+                                <p key={i} className={i === 0 ? 'font-bold' : ''}>{linha}</p>
+                            ))}
+                        </div>
+                    )}
+                    {linkAtivacao && (
+                        <div className="mt-3 rounded-lg px-4 py-3 text-sm bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 break-all">
+                            <p className="font-bold mb-1">Link de pagamento da assinatura:</p>
+                            <a href={linkAtivacao} target="_blank" rel="noreferrer" className="underline">{linkAtivacao}</a>
+                        </div>
+                    )}
+                </div>
+            )}
 
             {/* Bloco 3: Emissao — botao SEMPRE ativo, mesmo sem provedor (pedido
                 explicito do Ikarus, 28/09/2026: o front tem que estar pronto

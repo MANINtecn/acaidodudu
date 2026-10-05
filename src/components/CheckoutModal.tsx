@@ -265,7 +265,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                         <div className="grid grid-cols-3 gap-3">
                             <button
                                 onClick={() => setMethod('Dinheiro')}
-                                className={`relative p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'Dinheiro' ? 'bg-green-50 border-green-500 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 ring-1 ring-green-500' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                className={`relative p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'Dinheiro' ? 'bg-green-50 border-green-500 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 ring-1 ring-green-500' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
                                 <Banknote size={24} />
                                 <span className="text-xs font-bold">Dinheiro</span>
@@ -273,7 +273,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                             </button>
                             <button
                                 onClick={() => setMethod('PIX')}
-                                className={`relative p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'PIX' ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/20 dark:border-blue-500 dark:text-blue-400 ring-1 ring-blue-500' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                className={`relative p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'PIX' ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/20 dark:border-blue-500 dark:text-blue-400 ring-1 ring-blue-500' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
                                 <div className="w-6 h-6 font-bold flex items-center justify-center border-2 border-current rounded text-[10px]">PIX</div>
                                 <span className="text-xs font-bold">Pix</span>
@@ -281,7 +281,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                             </button>
                             <button
                                 onClick={() => setMethod('Cartão')}
-                                className={`relative p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'Cartão' ? 'bg-purple-50 border-purple-500 text-purple-700 dark:bg-purple-900/20 dark:border-purple-500 dark:text-purple-400 ring-1 ring-purple-500' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
+                                className={`relative p-3 rounded-lg border flex flex-col items-center gap-2 transition-all ${method === 'Cartão' ? 'bg-purple-50 border-purple-500 text-purple-700 dark:bg-purple-900/20 dark:border-purple-500 dark:text-purple-400 ring-1 ring-purple-500' : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
                             >
                                 <CreditCard size={24} />
                                 <span className="text-xs font-bold">Cartão</span>

@@ -84,6 +84,51 @@ async function emitirViaENotas(_config: any, _nota: any, _itens: any[]): Promise
 }
 
 /**
+ * Consulta pelo IdentificadorInterno (POST /ConsultarNotaFiscal) para saber se
+ * uma tentativa anterior ja foi autorizada. Retorna o resultado pronto quando
+ * ja esta autorizada (ou em processamento); `null` quando nao ha o que
+ * aproveitar e a emissao deve seguir. Falha da propria consulta tambem cai em
+ * `null` -- a numeracao e manual (serie+numero fixos), entao uma duplicata
+ * real seria barrada pela SEFAZ por numero repetido, nao autorizada duas vezes.
+ */
+async function consultarNotaJaEmitida(tokenEmpresa: string, identificador: string, tipoAmbiente: number): Promise<ResultadoEmissao | null> {
+  try {
+    const resp = await fetch('https://api.brasilnfe.com.br/services/fiscal/ConsultarNotaFiscal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Token': tokenEmpresa },
+      body: JSON.stringify({
+        IdentificadorInterno: identificador,
+        ModeloDocumento: 65,
+        TipoAmbiente: tipoAmbiente,
+        RetornarArquivos: true,
+      }),
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const nota = data?.Encontrada ? data?.Nota : null;
+    if (!nota) return null;
+
+    // Status 1 = autorizada (doc ConsultarNotaFiscal).
+    if (nota.Status === 1) {
+      return {
+        sucesso: true,
+        chaveAcesso: nota.Chave,
+        protocoloAutorizacao: nota.NumeroProtocolo,
+        xml: nota.Base64Xml ? atob(nota.Base64Xml) : undefined,
+        danfeUrl: nota.Base64File ? `data:application/pdf;base64,${nota.Base64File}` : undefined,
+      };
+    }
+    // Ainda em processamento: NAO reemitir, so tentar de novo depois.
+    if (/process/i.test(String(nota.DsStatus || ''))) {
+      return { sucesso: false, eContingencia: true, motivoRejeicao: 'Nota ainda em processamento no Brasil NFe' };
+    }
+    return null;
+  } catch (_err) {
+    return null;
+  }
+}
+
+/**
  * Adaptador Brasil NFe -- IMPLEMENTADO, 29/09/2026.
  * Doc: https://brasilnfe.com.br/api/nf-e-e-nfc-e (payload), /api/empresas
  * (cadastro de empresa + certificado + CSC).
@@ -105,11 +150,13 @@ async function emitirViaENotas(_config: any, _nota: any, _itens: any[]): Promise
  */
 async function emitirViaBrasilNFe(config: any, nota: any, itens: any[], paymentMethod?: string): Promise<ResultadoEmissao> {
   const userToken = Deno.env.get('BRASIL_NFE_USER_TOKEN');
-  const tokenEmpresa = Deno.env.get('BRASIL_NFE_TOKEN_EMPRESA');
+  // Token da empresa: vem da tabela `fiscal_credenciais` (gravado pela funcao
+  // cadastrar-empresa-brasilnfe); o secret e' so' fallback do fluxo manual.
+  const tokenEmpresa = config.brasilnfe_token_empresa || Deno.env.get('BRASIL_NFE_TOKEN_EMPRESA');
   if (!userToken || !tokenEmpresa) {
     return {
       sucesso: false, eContingencia: true,
-      motivoRejeicao: 'Brasil NFe nao configurado (BRASIL_NFE_USER_TOKEN ou BRASIL_NFE_TOKEN_EMPRESA ausente)',
+      motivoRejeicao: 'Brasil NFe nao configurado (empresa nao cadastrada ou BRASIL_NFE_USER_TOKEN ausente)',
     };
   }
 
@@ -173,7 +220,13 @@ async function emitirViaBrasilNFe(config: any, nota: any, itens: any[], paymentM
   const formaPagamentoMap: Record<string, string> = {
     'Dinheiro': '01', 'Cartão': '03', 'Cartao': '03', 'PIX': '17',
   };
-  const formaPagamento = formaPagamentoMap[paymentMethod || ''] || '01';
+  // Forma desconhecida NAO vira dinheiro em silencio: declarar a forma de
+  // pagamento errada na nota e pior que nao emitir. Nota avulsa (botao de
+  // teste do Admin, sem pedido) nao tem forma -- usa PIX so para validar.
+  const formaPagamento = formaPagamentoMap[paymentMethod || 'PIX'];
+  if (!formaPagamento) {
+    return { sucesso: false, motivoRejeicao: `Forma de pagamento sem codigo fiscal: '${paymentMethod}'` };
+  }
 
   const payload = {
     Serie: nota.serie,
@@ -205,12 +258,20 @@ async function emitirViaBrasilNFe(config: any, nota: any, itens: any[], paymentM
     },
     Produtos: produtos,
     Pagamentos: [
-      { IndicadorPagamento: 0, Descricao: paymentMethod || 'Dinheiro', FormaPagamento: formaPagamento, VlPago: nota.valor_total },
+      { IndicadorPagamento: 0, Descricao: paymentMethod || 'PIX', FormaPagamento: formaPagamento, VlPago: nota.valor_total },
     ],
     EnviarEmail: false,
+    // Id da nota no nosso banco: permite ConsultarNotaFiscal achar a nota se a
+    // resposta desta chamada se perder (timeout/queda), sem reemitir.
+    IdentificadorInterno: String(nota.id),
   };
 
   try {
+    // Antes de transmitir, ve se esta nota ja foi emitida numa tentativa
+    // anterior cuja resposta se perdeu -- evita duplicar na SEFAZ.
+    const jaEmitida = await consultarNotaJaEmitida(tokenEmpresa, String(nota.id), Number(tipoAmbiente));
+    if (jaEmitida) return jaEmitida;
+
     const resp = await fetch('https://api.brasilnfe.com.br/services/fiscal/EnviarNotaFiscal', {
       method: 'POST',
       headers: {
@@ -310,7 +371,13 @@ serve(async (req) => {
       .from('orders').select('items, payment_method').eq('id', nota.order_id).maybeSingle();
     const itens = order?.items || [];
 
-    const resultado = await emitirNotaFiscal(config.provedor_api, config, nota, itens, order?.payment_method);
+    // Token da empresa no Brasil NFe (tabela so acessivel por esta funcao).
+    // Se a tabela ainda nao existe, a consulta falha e cai no secret manual.
+    const { data: cred } = await supabase
+      .from('fiscal_credenciais').select('brasilnfe_token_empresa').eq('store_id', storeId).maybeSingle();
+    const configComToken = { ...config, brasilnfe_token_empresa: cred?.brasilnfe_token_empresa || null };
+
+    const resultado = await emitirNotaFiscal(config.provedor_api, configComToken, nota, itens, order?.payment_method);
 
     if (resultado.sucesso) {
       await supabase.from('notas_fiscais').update({

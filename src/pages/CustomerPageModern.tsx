@@ -24,6 +24,7 @@ import {
 import { normalizeString } from '../utils/searchUtils';
 import introJs from 'intro.js';
 import { MIN_ORDER_VALUE } from '../constants';
+import { SaboresComQuantidade, totalUnidadesPorSabor, totalValorPorSabor, montarLinhasPorSabor } from '../components/SaboresComQuantidade';
 
 const sanitizeHtmlEntities = (text?: string) => {
     if (!text) return '';
@@ -1416,13 +1417,26 @@ const ItemDetailModal: React.FC<{
     const opcionaisGratis = outrosAddons.filter(a => !a.price || a.price <= 0);
     const adicionaisPagos = outrosAddons.filter(a => a.price > 0);
 
-    const hasMandatorySelection = temFluxoDeCalda
-        ? (!primeiraEtapaTemEscolha || !caldaEscolhida)
-        : false;
+    // Picolés (item.saboresComQuantidade): contador por sabor; cada sabor com
+    // quantidade vira uma linha do carrinho. Nao se aplica ao fluxo de calda.
+    const [qtdPorSabor, setQtdPorSabor] = useState<Record<string, number>>({});
+    const modoQtdPorSabor = !!item.saboresComQuantidade && !temFluxoDeCalda && relevantAddons.length > 0;
+    const unidadesPorSabor = totalUnidadesPorSabor(qtdPorSabor);
+
+    const hasMandatorySelection = modoQtdPorSabor
+        ? unidadesPorSabor === 0
+        : temFluxoDeCalda
+            ? (!primeiraEtapaTemEscolha || !caldaEscolhida)
+            : false;
 
     const handleAddToCart = () => {
         if (hasMandatorySelection) {
             alert('Por favor, escolha pelo menos 1 sabor/opção para adicionar o item ao pedido.');
+            return;
+        }
+        if (modoQtdPorSabor) {
+            montarLinhasPorSabor(item, relevantAddons, qtdPorSabor, notes).forEach(linha => onAddToCart(linha as CartItem));
+            onClose();
             return;
         }
         const cartItem: CartItem = {
@@ -1593,6 +1607,14 @@ const ItemDetailModal: React.FC<{
                                 </div>
                             </div>
                         )
+                    ) : modoQtdPorSabor ? (
+                        <SaboresComQuantidade
+                            addons={relevantAddons}
+                            precoBase={item.price}
+                            quantidades={qtdPorSabor}
+                            onChange={(id, q) => setQtdPorSabor(prev => ({ ...prev, [id]: q }))}
+                            sanitize={sanitizeHtmlEntities}
+                        />
                     ) : (
                         <>
                             {/* ETAPA 1: Opcionais gratis -- separados dos pagos (pedido do
@@ -1683,10 +1705,11 @@ const ItemDetailModal: React.FC<{
                         opcional e nem adicional"). */}
                     {hasMandatorySelection && (
                         <div className="mb-3 p-2 bg-amber-500/20 border border-amber-500/50 rounded-xl text-center text-xs font-bold text-amber-300 animate-pulse flex items-center justify-center gap-2">
-                            {!primeiraEtapaTemEscolha ? 'Escolha uma opção para continuar' : 'Escolha a calda para continuar'}
+                            {modoQtdPorSabor ? 'Escolha a quantidade de pelo menos 1 sabor' : (!primeiraEtapaTemEscolha ? 'Escolha uma opção para continuar' : 'Escolha a calda para continuar')}
                         </div>
                     )}
                     <div className="flex items-center gap-4 mb-3">
+                        {!modoQtdPorSabor && (
                         <div className="flex items-center bg-[#1a0c33] rounded-xl p-1 border border-purple-500/30">
                             <button 
                                 onClick={() => setQuantity(Math.max(1, quantity - 1))} 
@@ -1702,10 +1725,13 @@ const ItemDetailModal: React.FC<{
                                 <LucidePlus size={18} />
                             </button>
                         </div>
+                        )}
                         <div className="flex-1 text-right">
-                            <p className="text-[9px] font-black text-purple-300 uppercase tracking-widest leading-none mb-1">Total do Item</p>
+                            <p className="text-[9px] font-black text-purple-300 uppercase tracking-widest leading-none mb-1">{modoQtdPorSabor ? `Total (${unidadesPorSabor} un.)` : 'Total do Item'}</p>
                             <p className="text-xl font-black text-amber-400 tracking-tighter leading-none drop-shadow">
-                                R$ {((item.price + selectedAddons.reduce((s, a) => s + a.price, 0) + (isCombo ? comboPrice : 0)) * quantity).toFixed(2)}
+                                R$ {(modoQtdPorSabor
+                                    ? totalValorPorSabor(item.price, relevantAddons, qtdPorSabor)
+                                    : (item.price + selectedAddons.reduce((s, a) => s + a.price, 0) + (isCombo ? comboPrice : 0)) * quantity).toFixed(2)}
                             </p>
                         </div>
                     </div>
@@ -1719,7 +1745,7 @@ const ItemDetailModal: React.FC<{
                         }`}
                     >
                         <span>{hasMandatorySelection
-                            ? (temFluxoDeCalda ? (!primeiraEtapaTemEscolha ? 'Escolha uma Opção' : 'Escolha a Calda') : 'Escolha 1 Sabor / Opção')
+                            ? (modoQtdPorSabor ? 'Escolha os Sabores' : temFluxoDeCalda ? (!primeiraEtapaTemEscolha ? 'Escolha uma Opção' : 'Escolha a Calda') : 'Escolha 1 Sabor / Opção')
                             : 'Adicionar ao Pedido'}</span>
                         <LucideArrowRight size={18} />
                     </button>

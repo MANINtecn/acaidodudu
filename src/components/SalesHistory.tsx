@@ -194,6 +194,34 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
     const totalBalcaoERetiradaValue = totalBalcaoValue + totalRetiradaValue;
     const totalBalcaoERetiradaCount = balcaoOrders.length + retiradaOrders.length;
 
+    /**
+     * Totais por FORMA DE PAGAMENTO no período -- pedido do Ikarus,
+     * 05/10/2026 (Marlon fecha o mês aqui e quer ver Dinheiro/PIX/Cartão, como
+     * já vê no caixa). Mesma regra de valor do caixa (`o.total` por forma),
+     * separando Balcão/Mesa + Retirada de Entrega, sobre os MESMOS pedidos dos
+     * cards acima -- então a coluna Total bate com o total do período.
+     * Diferença para o caixa: o caixa só conta pedidos 'Entregue'; este
+     * histórico conta tudo que não foi cancelado (ver aviso na tela).
+     */
+    type TotaisForma = Record<string, { valor: number; qtd: number }>;
+    const somarPorForma = (lista: Order[]): TotaisForma =>
+        lista.reduce((acc, o) => {
+            const forma = o.paymentMethod || 'Outros';
+            if (!acc[forma]) acc[forma] = { valor: 0, qtd: 0 };
+            acc[forma].valor += o.total;
+            acc[forma].qtd += 1;
+            return acc;
+        }, {} as TotaisForma);
+    const pagBalcaoRetirada = somarPorForma([...balcaoOrders, ...retiradaOrders]);
+    const pagEntrega = somarPorForma(entregaOrders);
+    const pagTotal = somarPorForma(orders);
+    const FORMAS_FIXAS = ['Dinheiro', 'PIX', 'Cartão'];
+    const formasNaTabela = [...FORMAS_FIXAS, ...Object.keys(pagTotal).filter(f => !FORMAS_FIXAS.includes(f))];
+    const pedidosNaoEntregues = orders.filter(o => o.status !== 'Entregue');
+    const valorNaoEntregues = pedidosNaoEntregues.reduce((acc, o) => acc + o.total, 0);
+    const corDaForma = (forma: string) =>
+        forma === 'PIX' ? 'bg-teal-400' : forma === 'Cartão' ? 'bg-blue-400' : forma === 'Dinheiro' ? 'bg-green-400' : 'bg-gray-400';
+
     // --- Status History Calculations ---
     const calculateAverageTime = (startStatus: string, endStatus: string, filterType?: 'Entrega' | 'Salão') => {
         let totalTime = 0;
@@ -449,6 +477,70 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    {/* Por FORMA DE PAGAMENTO -- Dinheiro / PIX / Cartão no período,
+                        separado em Balcão/Mesa + Retirada x Entrega (05/10/2026,
+                        pedido do Ikarus para o fechamento do mês do Marlon). */}
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                        <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-1 flex items-center gap-2">
+                            <DollarSign size={20} className="text-green-500" />
+                            Por forma de pagamento
+                        </h3>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-4">
+                            Período selecionado, mesmos pedidos dos cards acima (não cancelados).
+                        </p>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="text-left text-[11px] uppercase text-gray-500 dark:text-gray-400 border-b border-gray-100 dark:border-gray-700">
+                                        <th className="py-2 pr-4">Forma</th>
+                                        <th className="py-2 pr-4 text-right">Balcão / Mesa + Retirada</th>
+                                        <th className="py-2 pr-4 text-right">Entrega</th>
+                                        <th className="py-2 text-right">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {formasNaTabela.map(forma => (
+                                        <tr key={forma} className="border-b border-gray-50 dark:border-gray-800">
+                                            <td className="py-2 pr-4">
+                                                <span className="flex items-center gap-2 font-bold text-gray-700 dark:text-gray-200">
+                                                    <span className={`w-2 h-2 rounded-full ${corDaForma(forma)}`} />
+                                                    {forma}
+                                                </span>
+                                            </td>
+                                            {[pagBalcaoRetirada, pagEntrega, pagTotal].map((grupo, i) => (
+                                                <td key={i} className={`py-2 ${i < 2 ? 'pr-4' : ''} text-right ${i === 2 ? 'font-black text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-300'}`}>
+                                                    R$ {(grupo[forma]?.valor || 0).toFixed(2)}
+                                                    <span className="block text-[10px] text-gray-400 font-medium">{grupo[forma]?.qtd || 0} pedidos</span>
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                    <tr className="border-t-2 border-gray-200 dark:border-gray-600">
+                                        <td className="py-2 pr-4 font-black text-gray-900 dark:text-gray-100">Total</td>
+                                        <td className="py-2 pr-4 text-right font-black text-gray-900 dark:text-gray-100">
+                                            R$ {totalBalcaoERetiradaValue.toFixed(2)}
+                                            <span className="block text-[10px] text-gray-400 font-medium">{totalBalcaoERetiradaCount} pedidos</span>
+                                        </td>
+                                        <td className="py-2 pr-4 text-right font-black text-gray-900 dark:text-gray-100">
+                                            R$ {totalEntregaValue.toFixed(2)}
+                                            <span className="block text-[10px] text-gray-400 font-medium">{entregaOrders.length} pedidos</span>
+                                        </td>
+                                        <td className="py-2 text-right font-black text-gray-900 dark:text-gray-100">
+                                            R$ {totalSales.toFixed(2)}
+                                            <span className="block text-[10px] text-gray-400 font-medium">{totalOrders} pedidos</span>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        {pedidosNaoEntregues.length > 0 && (
+                            <p className="mt-3 text-[11px] font-bold text-amber-600 dark:text-amber-400">
+                                ⚠️ {pedidosNaoEntregues.length} pedido(s) deste período (R$ {valorNaoEntregues.toFixed(2)}) ainda não estão como "Entregue".
+                                O fechamento do caixa só conta os entregues, então o total do caixa pode ser menor que o daqui.
+                            </p>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

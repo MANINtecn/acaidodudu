@@ -12,6 +12,7 @@ import Store from "electron-store";
 import electronUpdater from "electron-updater";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
+import { createPrintWorker } from "./print-worker.js";
 const { autoUpdater } = electronUpdater;
 
 let store;
@@ -131,7 +132,22 @@ ipcMain.handle("salvar-log-balanca", (event, texto) => {
 
 // Native Silent Print Server (Option 2)
 
+// PowerShell residente de impressao (compila o C# uma vez e recebe os papeis
+// por stdin) -- evita ~0,7 s de PowerShell novo + recompilacao a CADA papel.
+// Se nao subir ou cair, o /print usa o metodo antigo (printer_raw.ps1).
+let printWorker = null;
+
 function startNativePrintServer() {
+  const workerScript = app.isPackaged
+    ? path.join(process.resourcesPath, "printer_worker.ps1")
+    : path.join(__dirname, "printer_worker.ps1");
+  if (process.platform === "win32" && fs.existsSync(workerScript)) {
+    printWorker = createPrintWorker({ scriptPath: workerScript });
+    printWorker.start();
+  } else {
+    console.warn("[PrintServer] printer_worker.ps1 ausente: usando so o metodo antigo");
+  }
+
   const server = http.createServer((req, res) => {
     // Enable CORS
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -159,6 +175,33 @@ function startNativePrintServer() {
           const content = data.content;
           const printer_name = data.printer_name || "HPRT MPT-II";
 
+          // 1) Caminho rapido: PowerShell residente.
+          if (printWorker) {
+            try {
+              const r = await printWorker.print(printer_name, Buffer.from(content, "latin1"), 25000);
+              if (r.ok) {
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ status: "success", output: "Success" }));
+              } else {
+                console.error(`[PrintServer] Worker recusou: ${r.message} ${r.details || ""}`);
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ status: "error", message: r.message, details: r.details || "", output: "" }));
+              }
+              return;
+            } catch (e) {
+              if (e.code !== "WORKER_INDISPONIVEL") {
+                // TIMEOUT / WORKER_CAIU: o papel pode ter saido. NAO tenta de
+                // novo por aqui (duplicaria o papel) -- devolve erro.
+                console.error(`[PrintServer] Worker falhou (${e.code}): ${e.message}`);
+                res.writeHead(500, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ status: "error", message: e.message, details: e.code, output: "" }));
+                return;
+              }
+              console.warn("[PrintServer] Worker indisponivel, usando metodo antigo");
+            }
+          }
+
+          // 2) Plano B (metodo original): um PowerShell por impressao.
           const tempFilePath = path.join(
             os.tmpdir(),
             `print_${Date.now()}_${Math.floor(Math.random() * 1000)}.raw`,
@@ -1143,6 +1186,7 @@ app.whenReady().then(() => {
 
 app.on("before-quit", () => {
   isQuitting = true;
+  try { printWorker?.stop(); } catch (e) { /* ignora */ }
 });
 
 app.on("window-all-closed", () => {

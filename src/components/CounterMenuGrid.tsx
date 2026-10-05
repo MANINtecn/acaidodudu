@@ -17,7 +17,18 @@ const CounterMenuGrid: React.FC<CounterMenuGridProps> = ({ items, onAdd }) => {
                     onClick={() => onAdd(item)} 
                     className="group flex flex-col justify-between p-4 bg-white dark:bg-gray-700/30 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-gray-100 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 rounded-2xl transition-all text-left min-h-[100px] shadow-sm hover:shadow-md h-full"
                 >
-                    <span className="font-black text-gray-800 dark:text-gray-100 text-sm leading-tight uppercase tracking-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{item.name}</span>
+                    <div className="flex items-start justify-between gap-1 w-full">
+                        <span className="font-black text-gray-800 dark:text-gray-100 text-sm leading-tight uppercase tracking-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{item.name}</span>
+                        {/* Código do produto -- pedido do Ikarus 02/10/2026:
+                            "vamos mostrar o código do produto pra ajudar ele a
+                            gravar" (o atendente lança por código de cabeça, no
+                            dia a dia; ver o código no card ajuda a aprender). */}
+                        {item.codigo != null && (
+                            <span className="shrink-0 font-mono font-black text-[10px] text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">
+                                {item.codigo}
+                            </span>
+                        )}
+                    </div>
                     <div className="flex justify-between items-end mt-2 w-full">
                         <span className="font-black text-blue-600 dark:text-blue-400 text-base">R$ {item.price.toFixed(2)}</span>
                         <div className="p-1.5 bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 rounded-lg opacity-0 group-hover:opacity-100 transition-all transform scale-75 group-hover:scale-100">

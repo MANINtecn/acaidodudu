@@ -75,6 +75,17 @@ export interface MenuItem {
   selectedAddons: Addon[];
   store_id: string;
   isAvailable: boolean;
+  /**
+   * Produto de uso exclusivo do salão/balcão (ex.: ADD3, ADD5 -- adicional
+   * genérico de preço fixo, lançado por código sem escolher sabor). NÃO aparece
+   * no cardápio do site; balcão, garçom e admin continuam vendo.
+   */
+  somenteBalcao?: boolean;
+  /**
+   * Picolés: os sabores ganham contador por sabor (3 de nata, 2 de coco...) no
+   * site, e cada sabor com quantidade vira uma linha do carrinho.
+   */
+  saboresComQuantidade?: boolean;
   allowedAddons?: string[];
   addons?: Addon[];
   printed?: boolean;
@@ -177,7 +188,18 @@ export interface FiscalConfig {
   ambiente: 'homologacao' | 'producao';
   provedor_api?: string;
   csc_id?: string;
+  /** LEGADO: o CSC nao e mais guardado no banco (vai direto ao Brasil NFe). */
   csc_token?: string;
+  /** ID do CSC de homologacao (nao e' segredo; o token do CSC nunca fica no banco). */
+  csc_id_homologacao?: string;
+  /** Campos do cadastro da empresa no Brasil NFe. */
+  inscricao_municipal?: string;
+  cnae?: string;
+  telefone?: string;
+  email?: string;
+  complemento?: string;
+  /** Preenchido pela Edge Function quando a empresa foi enviada ao Brasil NFe. */
+  brasilnfe_cadastrada_em?: string;
   /**
    * Serie e numero inicial da NFC-e — Fase 2, 28/09/2026. `numero_inicial`
    * so deve ser configurado depois de confirmar com o Multipedidos se
