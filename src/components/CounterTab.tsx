@@ -2776,8 +2776,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                     { tecla: 'F8', acao: 'DIVIDIR CONTA' },
                                     { tecla: 'X', acao: 'FECHA' },
                                 ].map(({ tecla, acao }) => (
-                                    <span key={tecla} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 rounded-full">
-                                        <kbd className="px-1.5 py-0.5 bg-amber-500/25 rounded text-[10px] font-black uppercase text-gray-900 dark:text-white">{tecla}</kbd>
+                                    <span key={tecla} className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-500/20 border border-orange-500/60 rounded-full">
+                                        <kbd className="px-1.5 py-0.5 bg-orange-500/50 rounded text-[10px] font-black uppercase text-gray-900 dark:text-white">{tecla}</kbd>
                                         <span className="text-[10px] font-black uppercase text-gray-900 dark:text-white">{acao}</span>
                                     </span>
                                 ))}
@@ -3724,8 +3724,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                 { tecla: 'C', acao: 'PAUSA · NOVA COMANDA' },
                                 { tecla: 'ESC', acao: seletorSabor.etapa === 'calda' ? 'VOLTA' : 'CANCELA' },
                             ].map(({ tecla, acao }) => (
-                                <span key={tecla} className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-500/15 border border-amber-500/30 rounded-full">
-                                    <kbd className="px-1.5 py-0.5 bg-amber-500/25 rounded text-[10px] font-black uppercase text-gray-900 dark:text-white">{tecla}</kbd>
+                                <span key={tecla} className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-500/20 border border-orange-500/60 rounded-full">
+                                    <kbd className="px-1.5 py-0.5 bg-orange-500/50 rounded text-[10px] font-black uppercase text-gray-900 dark:text-white">{tecla}</kbd>
                                     <span className="text-[10px] font-black uppercase text-gray-900 dark:text-white">{acao}</span>
                                 </span>
                             ))}

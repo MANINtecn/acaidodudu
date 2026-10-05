@@ -23,6 +23,7 @@ import { SIRENES, testarSirene, VOLUME_MAXIMO, type TipoSirene } from '../servic
 import { uploadLogoToStorage, uploadHeroImageToStorage, zerarNumeracaoPedidos } from '../services/supabaseService';
 import { printOrder, generateReceiptText } from '../services/printerService';
 import { requestSerialPort } from '../services/scaleService';
+import { checkoutRapidoAtivo, definirCheckoutRapido } from '../utils/checkoutPrefs';
 import { UpdateManager } from './UpdateManager';
 
 interface SettingsTabProps {
@@ -38,6 +39,8 @@ interface SettingsTabProps {
 
 export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, menuItems = [], onSave, installPrompt, onInstall }) => {
     const [formData, setFormData] = useState(settings);
+    // Checkout rápido (V2): preferência POR COMPUTADOR (localStorage), aplicada na hora.
+    const [checkoutRapido, setCheckoutRapido] = useState(checkoutRapidoAtivo());
     const [loading, setLoading] = useState(false);
     const [zerandoNumeracao, setZerandoNumeracao] = useState(false);
     const [numeracaoZerada, setNumeracaoZerada] = useState(false);
@@ -750,6 +753,29 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                             </p>
                         </div>
                     </div>
+                </div>
+
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-bold mb-3 text-gray-900 dark:text-gray-100">Checkout (fechar pagamento)</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {[
+                            { rapido: false, titulo: 'Checkout V1 · Com valor recebido', desc: 'No Dinheiro, digita o valor recebido e o sistema mostra o troco.' },
+                            { rapido: true, titulo: 'Checkout V2 · Rápido', desc: 'Sem valor recebido nem troco: escolhe D / C / P e Enter finaliza.' },
+                        ].map(op => (
+                            <button
+                                key={op.titulo}
+                                type="button"
+                                onClick={() => { definirCheckoutRapido(op.rapido); setCheckoutRapido(op.rapido); }}
+                                className={`text-left p-3 rounded-lg border-2 transition-all ${checkoutRapido === op.rapido
+                                    ? 'border-purple-500 bg-purple-50 dark:bg-purple-900/20'
+                                    : 'border-gray-200 dark:border-gray-700 hover:border-purple-300'}`}
+                            >
+                                <span className={`block text-sm font-bold ${checkoutRapido === op.rapido ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'}`}>{op.titulo}</span>
+                                <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{op.desc}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-2">Vale só neste computador e muda na hora, sem precisar salvar nem reiniciar.</p>
                 </div>
 
                 <EstacaoImpressao

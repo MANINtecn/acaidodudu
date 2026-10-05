@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Order, PaymentMethod } from '../types';
 import { X, DollarSign, CreditCard, Banknote, Calculator, Printer } from 'lucide-react';
+import { checkoutRapidoAtivo } from '../utils/checkoutPrefs';
 
 interface CheckoutModalProps {
     isOpen: boolean;
@@ -32,6 +33,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
     const [discount, setDiscount] = useState<string>('');
     const [tax, setTax] = useState<string>('');
     const [isProcessing, setIsProcessing] = useState(false);
+    // CHECKOUT V2 (rápido): sem "Valor Recebido"/troco. Escolha por máquina em Configurações.
+    // Lido a cada render com o modal aberto, então a troca vale na hora.
+    const modoRapido = isOpen && checkoutRapidoAtivo();
     /** Garante que o foco inicial aconteca UMA vez por abertura do modal. */
     const jaFocou = useRef(false);
     /** Container do modal. Ref ESTAVEL — ver o comentario do useEffect abaixo. */
@@ -93,9 +97,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
     // método. Corrigido: sempre que o método for algo SEM campo de valor
     // (Cartão/PIX), devolve o foco pro container.
     useEffect(() => {
-        if (!isOpen || method === 'Dinheiro') return;
+        // V2 nao tem campo de valor: o foco fica SEMPRE no container (D/C/P/Enter).
+        if (!isOpen || (method === 'Dinheiro' && !modoRapido)) return;
         requestAnimationFrame(() => containerRef.current?.focus());
-    }, [isOpen, method]);
+    }, [isOpen, method, modoRapido]);
 
     if (!isOpen) return null;
 
@@ -104,11 +109,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
     const taxValue = parseFloat(tax) || 0;
     const finalTotal = Math.max(0, orderTotal - discountValue + taxValue);
     const tendered = parseFloat(amountTendered) || 0;
-    const change = method === 'Dinheiro' ? Math.max(0, tendered - finalTotal) : 0;
+    const change = method === 'Dinheiro' && !modoRapido ? Math.max(0, tendered - finalTotal) : 0;
     const remaining = Math.max(0, finalTotal - tendered);
 
     const handleConfirm = async () => {
-        if (method === 'Dinheiro' && tendered < finalTotal) {
+        if (!modoRapido && method === 'Dinheiro' && tendered < finalTotal) {
             alert('Valor recebido é menor que o total!');
             return;
         }
@@ -117,7 +122,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
         try {
             await onConfirm({
                 method,
-                amountTendered: method === 'Dinheiro' ? tendered : finalTotal,
+                amountTendered: method === 'Dinheiro' && !modoRapido ? tendered : finalTotal,
                 change,
                 discount: discountValue,
                 tax: taxValue,
@@ -185,7 +190,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
         // mesmo total que já está exibido na tela. Mesmo critério de D/C/P:
         // '=' nunca é dígito de verdade no campo numérico, então vale mesmo
         // com ele focado.
-        if (e.key === '=') { e.preventDefault(); setAmountTendered(finalTotal.toFixed(2)); return; }
+        if (e.key === '=') { e.preventDefault(); if (!modoRapido) setAmountTendered(finalTotal.toFixed(2)); return; }
 
         if (digitando) return;
 
@@ -216,7 +221,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                                 { tecla: 'D', acao: 'DINHEIRO' },
                                 { tecla: 'C', acao: 'CARTÃO' },
                                 { tecla: 'P', acao: 'PIX' },
-                                { tecla: '=', acao: 'VALOR EXATO' },
+                                ...(modoRapido ? [] : [{ tecla: '=', acao: 'VALOR EXATO' }]),
                                 { tecla: 'ENTER', acao: 'FINALIZA' },
                                 // F8 pagamento fracionado -- pedido do Ikarus
                                 // 02/10/2026. Só aparece quando o pedido tem
@@ -290,8 +295,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                         </div>
                     </div>
 
+                    {/* Checkout V2 (rápido): sem valor recebido/troco -- só confirma. */}
+                    {modoRapido && (
+                        <p className="text-center text-sm font-bold text-gray-700 dark:text-gray-200">
+                            Aperte <kbd className="px-1.5 py-0.5 bg-orange-500/50 rounded text-[11px] font-black text-gray-900 dark:text-white">ENTER</kbd> para finalizar em <span className="uppercase">{method === 'Cartão' ? 'cartão' : method}</span>
+                        </p>
+                    )}
+
                     {/* Money Inputs */}
-                    {method === 'Dinheiro' && (
+                    {method === 'Dinheiro' && !modoRapido && (
                         <div className="space-y-4 bg-gray-50 dark:bg-gray-700/30 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Valor Recebido</label>
@@ -405,7 +417,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                     </button>
                     <button
                         onClick={handleConfirm}
-                        disabled={isProcessing || (method === 'Dinheiro' && tendered < finalTotal)}
+                        disabled={isProcessing || (!modoRapido && method === 'Dinheiro' && tendered < finalTotal)}
                         className="flex-2 w-full py-3 px-4 bg-green-600 dark:bg-green-700 text-white rounded-lg font-bold hover:bg-green-700 dark:hover:bg-green-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-green-600/20"
                     >
                         {isProcessing ? (
