@@ -620,6 +620,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
      * selectedAddons próprios usa só esses; senão, qualquer addon da mesma
      * categoria. É o que decide se o código digitado abre o popup de sabor. */
     const opcoesDeSaborDoProduto = (produto: MenuItem): Addon[] => {
+        // Lista PRÓPRIA do produto, mesmo VAZIA ("sem adicionais"): vale só ela -- igual ao
+        // site. Antes, produto com lista vazia caía nos addons da CATEGORIA e abria popup
+        // de sabor sem querer (ex.: o Milk Shake do salão e o picolé de açaí novos).
+        // `allowedAddons` só é null/undefined quando o produto nunca teve lista própria.
+        if (Array.isArray(produto.allowedAddons)) {
+            const ids = new Set(produto.allowedAddons.map((e: any) => String(e && typeof e === 'object' ? e.id : e)));
+            return addons.filter(a => ids.has(String(a.id)));
+        }
         if (produto.selectedAddons?.length) {
             return addons.filter(a => produto.selectedAddons.some(sa => sa.id === a.id));
         }
@@ -2424,13 +2432,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             {settings?.isScaleEnabled && (
                 <div className="w-full bg-slate-950 border-2 border-emerald-500/40 rounded-2xl p-3.5 md:p-4 shadow-[0_0_25px_rgba(16,185,129,0.15)] flex flex-col lg:flex-row items-center justify-between gap-3 animate-fade-in shrink-0">
                     <div className="flex items-center gap-3 w-full lg:w-auto">
-                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold transition-all ${scaleWeight > 0 ? 'bg-emerald-500 text-slate-950 shadow-lg shadow-emerald-500/30 scale-105' : 'bg-slate-900 text-emerald-400 border border-emerald-500/30'}`}>
+                        <div className={`w-11 h-11 rounded-xl flex items-center justify-center font-bold transition-all ${scaleWeight > 0 ? 'bg-orange-500 text-slate-950 shadow-lg shadow-orange-500/40 scale-105' : 'bg-slate-900 text-emerald-400 border border-emerald-500/30'}`}>
                             <Scale size={24} className={scaleWeight > 0 ? "animate-pulse" : ""} />
                         </div>
                         <div>
                             <div className="flex items-center gap-2 flex-wrap">
                                 <span className="text-xs font-black uppercase tracking-wider text-emerald-400">Balança em Tempo Real</span>
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${scaleWeight > 0 ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'}`}>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${scaleWeight > 0 ? 'bg-orange-950/80 text-orange-300 border-orange-500/50' : 'bg-slate-900 text-slate-400 border-slate-800'}`}>
                                     {liveScaleStatusText}
                                 </span>
                                 {settings?.balcaoV2 && scaleWeight > PESO_ZERO_KG && isScaleStable && (
@@ -2448,14 +2456,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     <div className="flex items-center justify-around w-full lg:w-auto gap-4 md:gap-8 bg-slate-900/90 px-5 py-2 rounded-xl border border-slate-800 font-mono shadow-inner">
                         <div className="text-center">
                             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">PESO ATUAL</span>
-                            <span className={`text-xl md:text-2xl font-extrabold ${scaleWeight > 0 ? 'text-emerald-400 drop-shadow-[0_0_8px_rgba(52,211,153,0.6)]' : 'text-slate-500'}`}>
+                            <span className={`text-xl md:text-2xl font-extrabold ${scaleWeight > 0 ? 'text-orange-400 drop-shadow-[0_0_8px_rgba(251,146,60,0.7)]' : 'text-slate-500'}`}>
                                 {(scaleWeight || 0).toFixed(3)} <span className="text-xs font-normal">kg</span>
                             </span>
                         </div>
                         <div className="h-7 w-px bg-slate-800"></div>
                         <div className="text-center">
                             <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest block">VALOR TOTAL</span>
-                            <span className={`text-xl md:text-2xl font-extrabold ${scaleWeight > 0 ? 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]' : 'text-slate-500'}`}>
+                            <span className={`text-xl md:text-2xl font-extrabold ${scaleWeight > 0 ? 'text-orange-300 drop-shadow-[0_0_8px_rgba(251,146,60,0.7)]' : 'text-slate-500'}`}>
                                 R$ {((scaleWeight || 0) * (scalePricePerKg || 60)).toFixed(2)}
                             </span>
                         </div>
@@ -2508,7 +2516,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             title={!isScaleStable && scaleWeight > 0 ? 'Aguarde o peso estabilizar' : undefined}
                             className={`flex-1 lg:flex-initial px-5 py-2.5 rounded-xl font-black text-xs md:text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg ${
                                 scaleWeight > 0 && isScaleStable
-                                    ? 'bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 hover:brightness-110 text-white shadow-emerald-500/20 active:scale-95 cursor-pointer ring-2 ring-emerald-400/40 animate-pulse'
+                                    ? 'bg-gradient-to-r from-orange-500 via-orange-500 to-amber-600 hover:brightness-110 text-white shadow-orange-500/40 active:scale-95 cursor-pointer ring-2 ring-orange-300/60 animate-pulse'
                                     : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
                             }`}
                         >
