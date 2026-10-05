@@ -60,33 +60,31 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
     const nomeDaMesa = nomeDaComanda(orders);
 
     return (
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow p-3 flex flex-col h-full text-xs">
+        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow p-3 flex flex-col h-full min-w-0 text-xs">
             {/* Header: Table Info */}
-            <div className="flex justify-between items-start mb-2">
-                <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                        <span className="text-base font-bold text-blue-600 dark:text-blue-400 uppercase tracking-tighter">{rotulo} {tableNumber}</span>
-                        {nomeDaMesa && (
-                            <span className="text-base font-bold text-gray-700 dark:text-gray-200 uppercase tracking-tighter truncate max-w-[10rem]" title={nomeDaMesa}>
-                                · {nomeDaMesa}
-                            </span>
-                        )}
-                        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 rounded text-[9px] font-bold uppercase">
-                            {orders.length} {orders.length === 1 ? 'Pedido' : 'Pedidos'}
-                        </span>
-                    </div>
-                </div>
-                
-                <div className="flex items-start gap-2">
-                    <span className={`px-2 py-1 rounded text-[10px] font-bold uppercase ${getStatusColor(mainStatus)}`}>
+            {/* Duas linhas (05/10/2026, print do Ikarus): antes titulo, nome, "1 pedido",
+                status e setinha disputavam UMA linha num card estreito e tudo quebrava.
+                Linha 1: COMANDA N + status + setinha. Linha 2: nome (corta com ...) + qtd. */}
+            <div className="mb-2 min-w-0">
+                <div className="flex items-center gap-1.5">
+                    <span className="flex-1 min-w-0 truncate whitespace-nowrap text-base font-bold text-blue-600 dark:text-blue-400 uppercase tracking-tighter">{rotulo} {tableNumber}</span>
+                    <span className={`shrink-0 whitespace-nowrap px-2 py-0.5 rounded text-[10px] font-bold uppercase ${getStatusColor(mainStatus)}`}>
                         {mainStatus}
                     </span>
-                    <button 
+                    <button
                         onClick={() => setIsExpanded(!isExpanded)}
-                        className="p-1 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
+                        className="shrink-0 p-0.5 text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded transition-colors"
                     >
                         {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                     </button>
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="flex-1 min-w-0 truncate whitespace-nowrap text-sm font-bold text-gray-700 dark:text-gray-200 uppercase tracking-tight" title={nomeDaMesa || ''}>
+                        {nomeDaMesa || ' '}
+                    </span>
+                    <span className="shrink-0 whitespace-nowrap px-1.5 py-0.5 bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400 rounded text-[9px] font-bold uppercase">
+                        {orders.length} {orders.length === 1 ? 'Pedido' : 'Pedidos'}
+                    </span>
                 </div>
             </div>
 
@@ -121,8 +119,8 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
                         <div className="space-y-1">
                             {(order.items || []).map((item, idx) => (
                                 <div key={idx} className="text-xs text-gray-700 dark:text-gray-300 leading-tight flex justify-between">
-                                    <span className="font-bold">{item.quantity}x {item.name}</span>
-                                    <span className="text-gray-500 dark:text-gray-500 whitespace-nowrap ml-2">R$ {(item.price * item.quantity).toFixed(2)}</span>
+                                    <span className="font-bold min-w-0 break-words">{item.quantity}x {item.name}</span>
+                                    <span className="shrink-0 text-gray-500 dark:text-gray-500 whitespace-nowrap ml-2">R$ {(item.price * item.quantity).toFixed(2)}</span>
                                 </div>
                             ))}
                         </div>
@@ -144,9 +142,9 @@ const TableGroupCard: React.FC<TableGroupCardProps> = ({ tableNumber, orders, on
 
             {/* Footer / Actions */}
             <div className="mt-auto pt-3 border-t border-gray-100 dark:border-gray-700">
-                <div className="flex justify-between items-center mb-3">
-                    <span className="text-[10px] font-black uppercase text-gray-400">Total da {rotulo === 'COMANDA' ? 'Comanda' : 'Mesa'}</span>
-                    <span className="text-base font-bold text-gray-900 dark:text-gray-100">R$ {totalAmount.toFixed(2)}</span>
+                <div className="flex justify-between items-center gap-2 mb-3">
+                    <span className="min-w-0 truncate text-[10px] font-black uppercase text-gray-400">Total</span>
+                    <span className="shrink-0 whitespace-nowrap text-base font-bold text-gray-900 dark:text-gray-100">R$ {totalAmount.toFixed(2)}</span>
                 </div>
 
                 {/* Acao principal em LARGURA TOTAL e destacada.

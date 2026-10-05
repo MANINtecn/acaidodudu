@@ -113,6 +113,18 @@ ipcMain.handle("get-app-version", () => {
   return app.getVersion();
 });
 
+// FOCO ROUBADO POR alert()/confirm() (05/10/2026): no Windows, depois que uma
+// caixa nativa fecha, a janela continua "ativa" mas o teclado nao volta para
+// a pagina -- campos param de aceitar clique/digitacao ate minimizar e
+// restaurar. O renderer (index.tsx) chama isto logo depois de cada caixa;
+// blur+focus faz o mesmo que o minimizar/restaurar, sem piscar a janela.
+ipcMain.on("refocar-janela", () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.blur();
+  mainWindow.focus();
+  mainWindow.webContents.focus();
+});
+
 // Salva o log da balanca num .txt na Area de Trabalho. Existe porque copiar o
 // log da tela e frageil (o operador perdeu um log ao tentar copiar) e porque
 // diagnostico de hardware precisa sobreviver a um fechamento do app.
@@ -503,6 +515,12 @@ function createWindow() {
 
   // Mostramos se não estiver oculto
   // mainWindow.once('ready-to-show', ...) acima já cuida disso
+
+  // Voltou para o app (Alt+Tab, clique na barra de tarefas, fim de impressao):
+  // garante o teclado DENTRO da pagina, nao so na janela.
+  mainWindow.on('focus', () => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.focus();
+  });
 
   // INTERCEPT CLOSE: Hide to tray instead of quitting
   mainWindow.on('close', (event) => {

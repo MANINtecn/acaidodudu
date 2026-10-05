@@ -3219,6 +3219,21 @@ const CustomerPage: React.FC = () => {
                     isSaving={isSavingNewCustomer}
                 />
 
+                {/* Botao "Queridinho da Semana" (barra fixa): na landing ele so
+                    fazia setSelectedItem() e o modal do produto nunca aparecia,
+                    porque este return sai da funcao antes de chegar no modal do
+                    modo cardapio (mesma armadilha dos modais de fidelidade acima).
+                    Achado em 05/10/2026: "clico e nada acontece". */}
+                {selectedItem && (
+                    <ItemDetailModal
+                        item={selectedItem}
+                        comboPrice={settings?.comboPrice ?? 13.00}
+                        onAddToCart={handleAddToCart}
+                        onClose={() => setSelectedItem(null)}
+                        categoryName={menu.categories.find(c => c.id === selectedItem.categoryId)?.name || ''}
+                    />
+                )}
+
                 {/* "Minha Conta" (barra fixa): mesmo campo de telefone da
                     landing, dentro de um modal, para abrir o acesso de
                     fidelidade de qualquer tela -- pedido do Ikarus, 01/10. */}

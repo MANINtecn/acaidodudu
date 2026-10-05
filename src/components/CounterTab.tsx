@@ -2516,7 +2516,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             title={!isScaleStable && scaleWeight > 0 ? 'Aguarde o peso estabilizar' : undefined}
                             className={`flex-1 lg:flex-initial px-5 py-2.5 rounded-xl font-black text-xs md:text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg ${
                                 scaleWeight > 0 && isScaleStable
-                                    ? 'bg-gradient-to-r from-orange-500 via-orange-500 to-amber-600 hover:brightness-110 text-white shadow-orange-500/40 active:scale-95 cursor-pointer ring-2 ring-orange-300/60 animate-pulse'
+                                    ? 'bg-gradient-to-r from-orange-500 via-orange-500 to-amber-600 hover:brightness-110 text-black shadow-orange-500/40 active:scale-95 cursor-pointer ring-2 ring-orange-300/60 animate-pulse'
                                     : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
                             }`}
                         >
@@ -2717,7 +2717,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             // campo vinha com o rotulo dentro, obrigando o
                             // operador a apagar antes de digitar. Achado em
                             // 30/09/2026, print do Ikarus.
-                            value={nomeSemPrefixoDeMesa(customerName)}
+                            // ...mas preservando o ESPACO no fim enquanto digita: a funcao
+                            // faz trim(), e o espaco sumia a cada tecla -- nao dava para
+                            // digitar nome e sobrenome (Ikarus, 05/10/2026).
+                            value={nomeSemPrefixoDeMesa(customerName) + (nomeSemPrefixoDeMesa(customerName) ? (customerName.match(/\s+$/)?.[0] ?? '') : '')}
                             onChange={e => setCustomerName(e.target.value)}
                             onKeyDown={e => {
                                 // ENTER fecha o campo E JÁ ENVIA a comanda --

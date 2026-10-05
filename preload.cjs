@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld("electron", {
   // confirmado de verdade (nao so o timeout). Sem isso, o main.js reinicia
   // o app sozinho apos alguns segundos (ver 'ambiente-pronto' no main.js).
   confirmarFocoOk: () => ipcRenderer.send("ambiente-pronto"),
+  // Devolve o teclado para a pagina depois de alert()/confirm() (ver main.js).
+  refocarJanela: () => ipcRenderer.send("refocar-janela"),
   onAmbienteFalhouDefinitivo: (callback) => ipcRenderer.on("ambiente-falhou-definitivo", (event, ...args) => callback(...args)),
 
   // Listeners

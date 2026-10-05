@@ -23,6 +23,21 @@ carregarConfigEstacao();
 // espera o download — e se a internet cair depois, o som continua tocando.
 import('./services/sireneService').then(m => m.precarregarSirene()).catch(() => {});
 
+// FOCO ROUBADO (05/10/2026): no Electron/Windows, toda caixa nativa
+// (alert/confirm/prompt) deixa a pagina sem teclado ao fechar -- o "tem que
+// minimizar e voltar". Sao ~130 caixas no app; em vez de trocar uma a uma,
+// cada uma passa a pedir ao main.js para devolver o foco logo apos fechar.
+// No site (sem window.electron) nada muda.
+if (typeof window !== 'undefined' && (window as any).electron?.refocarJanela) {
+  const refocar = () => { try { (window as any).electron.refocarJanela(); } catch { /* sem IPC */ } };
+  const alertOriginal = window.alert.bind(window);
+  const confirmOriginal = window.confirm.bind(window);
+  const promptOriginal = window.prompt.bind(window);
+  window.alert = (msg?: any) => { try { alertOriginal(msg); } finally { refocar(); } };
+  window.confirm = (msg?: string) => { try { return confirmOriginal(msg); } finally { refocar(); } };
+  window.prompt = (msg?: string, padrao?: string) => { try { return promptOriginal(msg, padrao); } finally { refocar(); } };
+}
+
 // --- DOM Exception Mismatch Safeguard (Prevents removeChild / insertBefore crashes from extensions/Google Translate) ---
 if (typeof window !== 'undefined') {
   const originalRemoveChild = Node.prototype.removeChild;

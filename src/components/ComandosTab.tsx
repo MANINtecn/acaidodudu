@@ -16,7 +16,7 @@ const ATALHOS: { tecla: string; oque: string }[] = [
     { tecla: 'F5', oque: 'Pedidos (comandas)' },
     { tecla: 'F6', oque: 'Esta tela' },
     { tecla: 'F7', oque: 'Fechar a comanda aberta' },
-    { tecla: '100-941', oque: 'Codigo do produto' },
+    { tecla: 'CODIGO + ENTER', oque: 'Codigo do produto' },
     { tecla: '1-30', oque: 'Numero da mesa' },
     { tecla: 'R', oque: 'Retirada (sem mesa)' },
     { tecla: 'B', oque: 'Abre a Balanca (pesagem manual)' },
@@ -192,16 +192,6 @@ export const ComandosTab = ({ menuItems, categories }: ComandosTabProps) => {
                 </button>
             </div>
 
-            {/* Atalhos */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-                {ATALHOS.map(a => (
-                    <div key={a.tecla} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-red-600 rounded-lg px-3 py-2">
-                        <span className="block font-mono font-bold text-red-600 dark:text-red-400 text-sm">{a.tecla}</span>
-                        <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{a.oque}</span>
-                    </div>
-                ))}
-            </div>
-
             {/* Busca */}
             <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -242,6 +232,16 @@ export const ComandosTab = ({ menuItems, categories }: ComandosTabProps) => {
                         ))}
                     </div>
                 )}
+            </div>
+
+            {/* Atalhos (embaixo, depois dos produtos com codigo) */}
+            <div className="shrink-0 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                {ATALHOS.map(a => (
+                    <div key={a.tecla} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 border-l-4 border-l-red-600 rounded-lg px-3 py-2">
+                        <span className="block font-mono font-bold text-red-600 dark:text-red-400 text-sm">{a.tecla}</span>
+                        <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">{a.oque}</span>
+                    </div>
+                ))}
             </div>
         </div>
     );
