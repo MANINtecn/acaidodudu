@@ -339,7 +339,7 @@ const AdminPage = () => {
                         // (mesmo handleFinalize de sempre) antes de abrir o
                         // checkout. Só tenta enviar se ainda não existe
                         // pedido no banco pra esse número.
-                        if (!montarComandaVirtualDaMesa(numero) && enviarComandaAtivaRef.current) {
+                        if (enviarComandaAtivaRef.current) {
                             const ok = await enviarComandaAtivaRef.current();
                             if (!ok) return; // erro já avisado pelo próprio handleFinalize
                         }
@@ -384,7 +384,7 @@ const AdminPage = () => {
                     (async () => {
                         // Mesmo critério do F7: envia sozinho se a comanda
                         // ainda só está no carrinho.
-                        if (!montarComandaVirtualDaMesa(numero) && enviarComandaAtivaRef.current) {
+                        if (enviarComandaAtivaRef.current) {
                             const ok = await enviarComandaAtivaRef.current();
                             if (!ok) return;
                         }
@@ -1500,12 +1500,19 @@ const AdminPage = () => {
         // comanda era enviada em seguida. Achado em 30/09/2026, relato do
         // Ikarus: "lancei a Comanda 3, voltei e a Comanda 2 tinha sumido".
         const ehBalcaoV2 = !!settingsRef.current?.balcaoV2;
+        // Auditoria 05/10/2026: antes qualquer erro aqui virava so um alert e a funcao RESOLVIA
+        // normalmente -- o CounterTab achava que tinha salvo. Agora, se a GRAVACAO falhar o erro
+        // sobe (o CounterTab mantem a comanda na tela e avisa); falha so no pos-processamento
+        // (impressao, recarregar a lista) nao e falha de gravacao e nao pode fazer reenviar.
+        let salvou = false;
         try {
             if (order.id) {
                 await updateOrder(order.id, order);
+                salvou = true;
                 console.log('Order updated successfully');
             } else {
                 const result = await createOrder(order);
+                salvou = true;
                 console.log('Order created successfully:', result);
 
                 if (result && !ehBalcaoV2) {
@@ -1542,7 +1549,7 @@ const AdminPage = () => {
             await loadData(true);
         } catch (error) {
             console.error('Error creating/updating order:', error);
-            alert('Erro ao salvar pedido. Verifique o console para mais detalhes.');
+            if (!salvou) throw error;
         }
     }, [currentStore?.id, handlePrintOrder, loadData]);
 

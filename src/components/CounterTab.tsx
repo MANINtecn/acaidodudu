@@ -9,6 +9,8 @@ import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
 import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, ensureScaleAutoConnect, getScaleRawLog, clearScaleRawLog, getScaleSnapshot, type ScaleStatus } from '../services/scaleService';
 import { decidirEnterComPeso, PESO_ZERO_KG } from '../utils/pesoBalanca';
+import { criarEnvioUnico } from '../utils/envioUnico';
+import { reconciliarRascunho, rascunhoEstaValido, comandaTemPendencia } from '../utils/rascunhoComanda';
 
 /**
  * Total de mesas do sistema. ERA const local dentro de lancarPesoNaMesa — por
@@ -404,7 +406,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // perdia o item adicionado silenciosamente: ao reabrir, handleSelectTable
     // buscava o pedido do banco de novo e sobrescrevia o carrinho local,
     // sem rastro da edição pendente.
-    const rascunhosComandaRef = useRef<Record<number, { cart: CartItem[]; customerName: string; pedidosDaMesa: Order[]; currentOrderId: string | null }>>({});
+    const rascunhosComandaRef = useRef<Record<number, { cart: CartItem[]; customerName: string; pedidosDaMesa: Order[]; currentOrderId: string | null; salvoEm?: number }>>({});
 
     // CRÍTICO (achado pela auditoria de 01/10/2026, véspera da demo: mesmo
     // padrão de race condition já corrigido em loadData/refreshOrdersOnly do
@@ -424,7 +426,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         try {
             const bruto = localStorage.getItem(chaveRascunhosV2);
             if (bruto) {
-                rascunhosComandaRef.current = JSON.parse(bruto);
+                // Auditoria 05/10/2026: rascunho de outro turno (ou salvo por versao antiga, sem
+                // data) pode trazer itens JA enviados/apagados e duplicar a comanda ao reabrir.
+                // So vale rascunho recente.
+                const lido = JSON.parse(bruto) as typeof rascunhosComandaRef.current;
+                const validos: typeof rascunhosComandaRef.current = {};
+                Object.entries(lido || {}).forEach(([k, r]) => { if (rascunhoEstaValido(r)) validos[Number(k)] = r; });
+                rascunhosComandaRef.current = validos;
+                if (Object.keys(validos).length !== Object.keys(lido || {}).length) persistirRascunhos();
                 setVersaoRascunhos(v => v + 1);
             }
         } catch (_) {
@@ -458,14 +467,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         const numero = parseInt(selectedTable, 10);
         if (!numero || cart.length === 0) return;
         if (pedidosDaMesa.length > 0) {
-            const cartIdsSalvos = new Set(pedidosDaMesa.flatMap(o => (o.items || []).map(i => i.cartId)));
-            const cartIdsAtuais = new Set(cart.map(i => i.cartId));
-            const mudou = cart.length !== cartIdsSalvos.size ||
-                cart.some(i => !cartIdsSalvos.has(i.cartId)) ||
-                Array.from(cartIdsSalvos).some(id => !cartIdsAtuais.has(id));
-            if (!mudou) return; // nada editado desde o último envio -- não duplica rascunho
+            // Compara tambem quantidade/adicionais/obs (antes so os cartId: "+1" num item ja enviado
+            // nao contava como edicao e se perdia ao trocar de comanda).
+            if (!comandaTemPendencia(cart, pedidosDaMesa)) return; // nada editado desde o último envio -- não duplica rascunho
         }
-        rascunhosComandaRef.current[numero] = { cart, customerName, pedidosDaMesa, currentOrderId };
+        rascunhosComandaRef.current[numero] = { cart, customerName, pedidosDaMesa, currentOrderId, salvoEm: Date.now() };
         persistirRascunhos();
         setVersaoRascunhos(v => v + 1);
     };
@@ -1018,6 +1024,16 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     const ultimoAvisoEstabilizarRef = useRef<number | undefined>(undefined);
     const pedidosDaMesaRef = useRef<Order[]>([]);
     pedidosDaMesaRef.current = pedidosDaMesa;
+    // Comanda aberta AGORA (atualizada no corpo do render, Regra 10): o envio e assincrono e o
+    // operador pode ter trocado de comanda ate ele terminar -- so limpa a tela se ainda e a mesma.
+    const selectedTableRef = useRef('');
+    selectedTableRef.current = selectedTable;
+    // Trava SINCRONA do envio (auditoria 05/10/2026, pedidos #8-#11): Enter/F7/F8 repetidos
+    // criavam varios pedidos iguais. Ver utils/envioUnico.ts.
+    const envioUnicoRef = useRef(criarEnvioUnico<boolean>());
+    // Itens que ja viraram sub-pedido nesta comanda mas cujo restante do envio falhou: no reenvio
+    // NAO viram sub-pedido de novo.
+    const cartIdsJaEnviadosRef = useRef<Set<string>>(new Set());
     const abrirProximaComandaLivreRef = useRef<() => void>(() => {});
     abrirProximaComandaLivreRef.current = abrirProximaComandaLivre;
     const isRenomeandoComandaRef = useRef(false);
@@ -1846,11 +1862,16 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             const rascunho = rascunhosComandaRef.current[parseInt(tableNum, 10)];
             delete rascunhosComandaRef.current[parseInt(tableNum, 10)];
             persistirRascunhos();
-            if (rascunho) {
-                setPedidosDaMesa(rascunho.pedidosDaMesa);
-                setCart(rascunho.cart);
-                setCurrentOrderId(rascunho.currentOrderId);
-                setCustomerName(rascunho.customerName);
+            cartIdsJaEnviadosRef.current = new Set(); // comanda nova na tela: recomeca o controle de reenvio
+            if (rascunho && rascunhoEstaValido(rascunho)) {
+                // O rascunho tem a edicao mais recente do operador, mas o BANCO manda no que ja foi
+                // enviado (ver utils/rascunhoComanda.ts) -- sem isto itens ja enviados voltavam do
+                // rascunho e o proximo Enter criava um pedido novo duplicando a comanda.
+                const r = reconciliarRascunho(rascunho, abertos);
+                setPedidosDaMesa(r.pedidosDaMesa);
+                setCart(r.cart);
+                setCurrentOrderId(r.currentOrderId);
+                setCustomerName(abertos.length > 0 ? (rascunho.customerName || abertos[0].customerName) : rascunho.customerName);
             } else if (abertos.length > 0) {
                 setPedidosDaMesa(abertos);
                 setCart(abertos.flatMap(o => o.items || []));
@@ -1892,7 +1913,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         }
     }, [initialTable]);
 
-    const handleFinalize = async (): Promise<boolean> => {
+    // Qualquer chamada (Enter, F7, F8, clique) passa pela trava: enquanto um envio esta em curso, as
+    // outras recebem o resultado dele em vez de gravar outro pedido.
+    const handleFinalize = (): Promise<boolean> => envioUnicoRef.current(finalizarComanda);
+
+    const finalizarComanda = async (): Promise<boolean> => {
+        const numeroEnvio = parseInt(selectedTable, 10);
         // CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei todos os
         // itens da comanda, achei que ela sumiria sozinha, mas continuou
         // pendurada em Pedidos -- tive que ir lá cancelar manualmente"):
@@ -1905,6 +1931,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         if (cart.length === 0) {
             if (pedidosDaMesa.length > 0) {
                 setIsProcessing(true);
+                isProcessingRef.current = true;
                 try {
                     // Em paralelo (achado 02/10/2026, relato do Ikarus: "X
                     // pra deletar demorou uns 10 segundos") -- antes era um
@@ -1933,11 +1960,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     return false;
                 } finally {
                     setIsProcessing(false);
+                    isProcessingRef.current = false;
                 }
             }
             return false;
         }
         setIsProcessing(true);
+        isProcessingRef.current = true; // vale JA (o ref so atualizava no proximo render)
         try {
             const isAvulso = orderType === 'Balcão' && !selectedTable;
             let finalAddress = '';
@@ -2043,7 +2072,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 const idsOriginais = new Set(
                     pedidosDaMesa.flatMap(o => (o.items || []).map(i => i.cartId))
                 );
-                const itensNovos = cart.filter(i => !idsOriginais.has(i.cartId));
+                const itensNovos = cart.filter(i => !idsOriginais.has(i.cartId) && !cartIdsJaEnviadosRef.current.has(i.cartId));
                 const itensExistentes = cart.filter(i => idsOriginais.has(i.cartId));
 
                 // Usa calcularValorCarrinho (mesma função do total exibido na
@@ -2063,6 +2092,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         printed: false,
                         status: 'Novo',
                     });
+                    // Se o resto do envio (passo B) falhar, o reenvio nao recria este sub-pedido.
+                    itensNovos.forEach(i => cartIdsJaEnviadosRef.current.add(i.cartId));
                 }
 
                 // B. Os demais voltam para o pedido de onde vieram. Em
@@ -2125,6 +2156,20 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 persistirRascunhos();
                 setVersaoRascunhos(v => v + 1);
                 setIsComandaModalOpen(false);
+                // CAUSA RAIZ da duplicacao (auditoria 05/10/2026, pedidos #13->#20): o envio NAO
+                // limpava o carrinho local. Ao trocar de comanda, salvarRascunhoAtual() guardava
+                // esse carrinho (itens JA enviados) como rascunho e, ao reabrir, ele ressuscitava
+                // por cima do banco -> o proximo Enter criava um pedido novo com tudo de novo.
+                // Agora a comanda enviada sai da tela: reabrir carrega do banco (handleSelectTable).
+                // So limpa se o operador ainda esta nesta comanda (nao apaga outra que abriu no meio).
+                cartIdsJaEnviadosRef.current = new Set();
+                if (parseInt(selectedTableRef.current, 10) === numeroEnvio) {
+                    setCart([]);
+                    setCurrentOrderId(null);
+                    setPedidosDaMesa([]);
+                    setCustomerName('');
+                    setSelectedTable('');
+                }
             }
             if (!(pedidosDaMesa.length > 0 && orderType === 'Balcão' && selectedTable)) {
                 showNotify(isAvulso ? 'Venda Avulsa registrada! 💰' : 'Pedido salvo com sucesso! ✅');
@@ -2140,6 +2185,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             return false;
         } finally {
             setIsProcessing(false);
+            isProcessingRef.current = false;
         }
     };
 
@@ -2151,7 +2197,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // atuais).
     useEffect(() => {
         if (enviarComandaAtivaRef) {
-            enviarComandaAtivaRef.current = handleFinalize;
+            // So envia se a comanda tem algo novo/alterado (F7/F8 chamam isto antes do checkout:
+            // sem pendencia, nao ha o que gravar e o checkout abre na hora).
+            enviarComandaAtivaRef.current = () =>
+                comandaTemPendencia(cart, pedidosDaMesa) ? handleFinalize() : Promise.resolve(true);
         }
     });
 
