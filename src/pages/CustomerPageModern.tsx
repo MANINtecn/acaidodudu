@@ -12,7 +12,7 @@ import {
 import { 
     rateOrder, fetchPublicSettings, fetchActivePromotions, createOrder, triggerWebhook,
     fetchMenuForCustomer, fetchCustomerByPhone, fetchLastOrderByPhone, fetchCustomerLoyaltyHistory,
-    redeemLoyaltyReward, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones, canonicalPhone
+    concluirResgateDoPedido, verificarResgatePendente, resgateEfetivo, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones, canonicalPhone
 } from '../services/supabaseService';
 import {
     ShoppingCart as LucideShoppingCart, X as LucideX,
@@ -959,6 +959,16 @@ const SideCart: React.FC<{
                     origin: 'WEB'
                 };
 
+                // Resgate por PONTOS: confere o saldo ANTES de criar o pedido.
+                // So conta se o item resgatado ainda esta no pedido.
+                const resgateDoPedido = resgateEfetivo(pendingReward, finalItems);
+                try {
+                    await verificarResgatePendente(resgateDoPedido, finalPhone, storeId);
+                } catch (erroResgate: any) {
+                    setSubmitMessage({ type: 'error', text: erroResgate?.message || 'Não foi possível validar o resgate de pontos.' });
+                    return;
+                }
+
                 const createdOrder = await createOrder(orderData);
 
                 if (createdOrder) {
@@ -966,7 +976,7 @@ const SideCart: React.FC<{
                     if (orderDiscount > 0 || (pendingReward && pendingReward.type === 'item')) {
                         console.log("Triggering Loyalty Redemption. Discount:", orderDiscount, "PendingReward:", pendingReward);
                         try {
-                             await redeemLoyaltyReward(finalPhone, storeId);
+                             await concluirResgateDoPedido({ pendingReward: resgateDoPedido, descontoAplicado: orderDiscount, phone: finalPhone, storeId, orderId: createdOrder.id as string });
                         } catch (redemptionError) {
                             console.error("Critical Loyalty Error:", redemptionError);
                             // Optional: Alert user, but order is already created. 
@@ -1939,9 +1949,7 @@ const CustomerRecognitionBar: React.FC<{ onPhoneSubmit: (phone: string) => void;
     return (
         <div id="tour-fidelity" className="w-full relative overflow-hidden shrink-0 shadow-[0_4px_20px_rgba(0,0,0,0.4)] border-b border-[#ffd700]/30"
              style={{
-                 backgroundImage: "url('/chatgpt_bolao_bg.png')",
-                 backgroundSize: "cover",
-                 backgroundPosition: "center"
+                 backgroundImage: "linear-gradient(135deg, #1a0c33 0%, #3b1670 50%, #1a0c33 100%)"
              }}>
             {/* Base Overlay suave para garantir legibilidade sem esconder a imagem */}
             <div className="absolute inset-0 bg-black/30"></div>
@@ -2199,7 +2207,7 @@ const CustomerPage: React.FC = () => {
     };
 
     // State for pending reward (integrated into Loyalty Modal)
-    type PendingReward = { type: 'item', item: MenuItem } | { type: 'discount', value: number } | null;
+    type PendingReward = { type: 'item', item: MenuItem, rewardItemId?: string, pointsCost?: number } | { type: 'discount', value: number } | null;
     const [pendingReward, setPendingReward] = useState<PendingReward>(null);
 
     const [settings, setSettings] = useState<Partial<Settings> | null>(null);
@@ -2314,8 +2322,10 @@ const CustomerPage: React.FC = () => {
      * Ikarus, 21/09/2026: "a partir dali, que ele resgata e vai para o
      * carrinho" -- tudo dentro da aba de fidelidade, nunca no carrinho.
      */
-    const handleRedeemPointsReward = (item: MenuItem) => {
-        setPendingReward({ type: 'item', item });
+    const handleRedeemPointsReward = (item: MenuItem, info?: { rewardItemId: string; pointsCost: number }) => {
+        // Guarda o custo e o id do resgate: os pontos so saem ao FECHAR o pedido
+        // (concluirResgateDoPedido) -- nao no clique do modal de fidelidade.
+        setPendingReward({ type: 'item', item, rewardItemId: info?.rewardItemId, pointsCost: info?.pointsCost });
     };
 
 
@@ -2759,12 +2769,22 @@ const CustomerPage: React.FC = () => {
                 origin: 'WEB'
             };
 
+            // Resgate por PONTOS: confere o saldo ANTES de criar o pedido.
+            // So conta se o item resgatado ainda esta no pedido.
+            const resgateDoPedido = resgateEfetivo(pendingReward, finalItems);
+            try {
+                await verificarResgatePendente(resgateDoPedido, finalPhone, currentStore.id);
+            } catch (erroResgate: any) {
+                alert(erroResgate?.message || 'Não foi possível validar o resgate de pontos.');
+                return;
+            }
+
             const createdOrder = await createOrder(orderData);
 
             if (createdOrder) {
                 if (effectiveDiscount > 0 || (pendingReward && pendingReward.type === 'item')) {
                     try {
-                         await redeemLoyaltyReward(finalPhone, currentStore.id);
+                         await concluirResgateDoPedido({ pendingReward: resgateDoPedido, descontoAplicado: effectiveDiscount, phone: finalPhone, storeId: currentStore.id, orderId: createdOrder.id as string });
                     } catch (e) {
                          console.error(e);
                     }

@@ -227,6 +227,16 @@ export default function FidelidadeTab({ storeId, settings, menuItems, onSettings
                                                 disabled={!slot.menuItemId}
                                                 className="w-24 px-3 py-2 text-sm bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-40"
                                             />
+                                            {itemSelecionado && Number(slot.pointsCost) > 0 && (
+                                                // Ajuda a conferir o custo: 1 ponto = ~R$ 15 em compras (calcularPontosGanhos).
+                                                // Avisa quando o produto vale MAIS do que o cliente precisou gastar.
+                                                <span
+                                                    className={`text-[10px] font-bold whitespace-nowrap ${Number(slot.pointsCost) * 15 < itemSelecionado.price ? 'text-red-500' : 'text-gray-500 dark:text-gray-400'}`}
+                                                    title="Cada ponto equivale a cerca de R$ 15 gastos em pedidos pelo site/app"
+                                                >
+                                                    ≈ R$ {Number(slot.pointsCost) * 15} em compras · produto R$ {Number(itemSelecionado.price).toFixed(2)}
+                                                </span>
+                                            )}
                                             {itemSelecionado && (
                                                 <button
                                                     type="button"

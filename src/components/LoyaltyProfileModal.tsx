@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { X as LucideX, History as LucideHistory, Utensils as LucideUtensils, MapPin, Gift as LucideGift } from 'lucide-react';
+import { X as LucideX, History as LucideHistory, Utensils as LucideUtensils, Gift as LucideGift } from 'lucide-react';
 import {
-    fetchCustomerLoyaltyHistory, submitBolaoGuess, fetchBolaoGuessByPhone, fetchPublicSettings,
-    fetchLoyaltyRewardItems, fetchCustomerPointsBalance, resgatarPontos,
+    fetchCustomerLoyaltyHistory, fetchPublicSettings,
+    fetchLoyaltyRewardItems, fetchCustomerPointsBalance,
 } from '../services/supabaseService';
 import type { LoyaltyRewardItem } from '../types';
 
@@ -82,7 +82,10 @@ interface Order {
     origin?: string;
 }
 
-export type PendingReward = { type: 'item', item: MenuItem } | { type: 'discount', value: number } | null;
+export type PendingReward =
+    | { type: 'item', item: MenuItem, rewardItemId?: string, pointsCost?: number }
+    | { type: 'discount', value: number }
+    | null;
 
 interface LoyaltyProfileModalProps {
     isOpen: boolean;
@@ -105,7 +108,7 @@ interface LoyaltyProfileModalProps {
      * pedido do Ikarus, 21/09/2026: "resgata e vai para o carrinho", sempre
      * dentro da aba de fidelidade, nunca direto no carrinho.
      */
-    onRedeemPointsReward?: (item: MenuItem) => void;
+    onRedeemPointsReward?: (item: MenuItem, info?: { rewardItemId: string; pointsCost: number }) => void;
 }
 
 // lastOrder/onRepeatOrder/isLoadingRepeat continuam no contrato de props
@@ -124,12 +127,6 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
     const [editChangeFor, setEditChangeFor] = useState('');
     const [isSavingAddress, setIsSavingAddress] = useState(false);
     const [itemsToRepeat, setItemsToRepeat] = useState<CartItem[]>([]);
-    const [bolaoGuess, setBolaoGuess] = useState({ brazil: '', opponent: '' });
-    const [hasGuessed, setHasGuessed] = useState(false);
-    const [isSubmittingGuess, setIsSubmittingGuess] = useState(false);
-    const [bolaoStatus, setBolaoStatus] = useState<'loading' | 'open' | 'closed' | 'not_started'>('loading');
-    const [bolaoStartTime, setBolaoStartTime] = useState<number | null>(null);
-    const [countdown, setCountdown] = useState<string>('');
 
     // ── Modelo de fidelidade por PONTOS (21/09/2026) ──
     // 'selo' e' o padrao ate confirmarmos qual modelo a loja usa, para nunca
@@ -140,82 +137,6 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
     const [isLoadingPoints, setIsLoadingPoints] = useState(true);
     const [redeemingItemId, setRedeemingItemId] = useState<string | null>(null);
 
-    useEffect(() => {
-        if (isOpen && customer && storeId) {
-            fetchPublicSettings(storeId).then(settings => {
-                const now = new Date().getTime();
-                // Padrão: Sábado (13/06/2026) às 13:00 até 18:00
-                const defaultStart = new Date('2026-06-13T13:00:00-03:00').getTime();
-                const defaultEnd = new Date('2026-06-13T18:00:00-03:00').getTime();
-
-                const start = (settings as any).bolaoStartTime ? new Date((settings as any).bolaoStartTime).getTime() : defaultStart;
-                const end = (settings as any).bolaoEndTime ? new Date((settings as any).bolaoEndTime).getTime() : defaultEnd;
-
-                if (start) setBolaoStartTime(start);
-
-                if (start && now < start) {
-                    setBolaoStatus('not_started');
-                } else if (end && now > end) {
-                    setBolaoStatus('closed');
-                } else {
-                    setBolaoStatus('open');
-                }
-            }).catch(console.error);
-
-            fetchBolaoGuessByPhone(customer.phone, storeId).then(guess => {
-                if (guess) {
-                    setBolaoGuess({ brazil: guess.brazil_score.toString(), opponent: guess.opponent_score.toString() });
-                    setHasGuessed(true);
-                } else {
-                    setBolaoGuess({ brazil: '', opponent: '' });
-                    setHasGuessed(false);
-                }
-            }).catch(console.error);
-        }
-    }, [isOpen, customer, storeId]);
-
-    const handleBolaoSubmit = async () => {
-        if (!customer || !storeId) return;
-        setIsSubmittingGuess(true);
-        try {
-            await submitBolaoGuess(storeId, customer.phone, parseInt(bolaoGuess.brazil), parseInt(bolaoGuess.opponent));
-            setHasGuessed(true);
-        } catch (error) {
-            console.error("Error submitting bolão guess:", error);
-            alert("Erro ao salvar palpite. Já existe um palpite para este número?");
-        } finally {
-            setIsSubmittingGuess(false);
-        }
-    };
-
-    useEffect(() => {
-        if (bolaoStatus !== 'not_started' || !bolaoStartTime) return;
-
-        const updateCountdown = () => {
-            const now = new Date().getTime();
-            const distance = bolaoStartTime - now;
-
-            if (distance <= 0) {
-                setBolaoStatus('open');
-                setCountdown('');
-                return;
-            }
-
-            const days = Math.floor(distance / (1000 * 60 * 60 * 24));
-            const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
-            const seconds = Math.floor((distance % (1000 * 60)) / 1000);
-
-            let timeStr = '';
-            if (days > 0) timeStr += `${days}d `;
-            timeStr += `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-            setCountdown(timeStr);
-        };
-
-        updateCountdown();
-        const interval = setInterval(updateCountdown, 1000);
-        return () => clearInterval(interval);
-    }, [bolaoStatus, bolaoStartTime]);
 
     // Nao mostramos mais o ultimo pedido (pedido do Icaro, 21/09/2026) — este
     // efeito so cuida do item RESGATADO por fidelidade, que ainda precisa
@@ -271,13 +192,22 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
         return () => { cancelado = true; };
     }, [isOpen, customer, storeId]);
 
+    // Resgate de pontos: aqui so ESCOLHE o produto e manda para o carrinho (preco 0).
+    // Os pontos NAO saem no clique: saem quando o pedido for fechado
+    // (supabaseService.concluirResgateDoPedido), ligados ao pedido. Antes o debito era
+    // imediato, e se o cliente desistisse, recarregasse a pagina ou cancelasse o pedido
+    // ele perdia os pontos sem receber o produto (auditoria de 05/10/2026).
+    const resgatePendente = pendingReward && pendingReward.type === 'item' && !!pendingReward.pointsCost
+        ? pendingReward
+        : null;
+    const pontosReservados = resgatePendente ? Number(resgatePendente.pointsCost) || 0 : 0;
+
     const handleResgatarPontos = async (reward: LoyaltyRewardItem) => {
         if (!customer || redeemingItemId) return;
+        if (resgatePendente) return; // 1 resgate por pedido
         if (pointsBalance < reward.points_cost) return; // botao ja fica desabilitado, dupla checagem
         setRedeemingItemId(reward.id);
         try {
-            await resgatarPontos(customer.phone, storeId, reward.id, reward.points_cost);
-            setPointsBalance(prev => prev - reward.points_cost);
             onRedeemPointsReward?.({
                 id: reward.menu_item_id,
                 name: reward.menu_item_name,
@@ -289,10 +219,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                 selectedAddons: [],
                 store_id: storeId,
                 isAvailable: true,
-            });
-        } catch (err: any) {
-            console.error('[Fidelidade] erro ao resgatar pontos:', err);
-            alert(err?.message || 'Não foi possível resgatar. Tente novamente.');
+            }, { rewardItemId: reward.id, pointsCost: reward.points_cost });
         } finally {
             setRedeemingItemId(null);
         }
@@ -362,78 +289,6 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                     <div className="text-center mb-6">
                         <h2 className="text-lg font-display text-white mb-4">Olá, {customer.name.split(' ')[0]}!</h2>
                         
-                        <div className="bg-gradient-to-br from-green-700 to-yellow-600 rounded-2xl p-5 shadow-2xl border border-yellow-400/30 relative overflow-hidden">
-                            <div className="absolute top-0 right-0 w-32 h-32 bg-yellow-400/20 rounded-full filter blur-[30px]"></div>
-                            
-                            <h2 className="text-2xl font-black text-white uppercase tracking-widest mb-1 relative z-10 drop-shadow-md">Bolão da Copa</h2>
-                            <p className="text-[9px] text-yellow-200/80 uppercase tracking-widest font-black mb-3 relative z-10 flex items-center justify-center gap-1">
-                                <MapPin size={10} /> MetLife Stadium, Nova Jersey (EUA)
-                            </p>
-                            <p className="text-[11px] text-white/90 mb-4 relative z-10 font-medium leading-tight">
-                                O primeiro que acertar o placar ganha uma <strong className="text-yellow-400">Batata Grande Cheddar e Bacon</strong>! Válido para consumo no local.
-                            </p>
-                            
-                            <div className="flex items-center justify-center gap-4 relative z-10">
-                                <div className="flex flex-col items-center">
-                                    <span className="text-[10px] font-black text-white mb-1.5 uppercase tracking-wider">Brasil 🇧🇷</span>
-                                    <input 
-                                        type="number" 
-                                        min="0" 
-                                        max="15" 
-                                        value={bolaoGuess.brazil}
-                                        onChange={(e) => setBolaoGuess({ ...bolaoGuess, brazil: e.target.value })}
-                                        disabled={hasGuessed || bolaoStatus !== 'open'}
-                                        className="w-16 h-16 bg-black/40 backdrop-blur-md border border-white/30 rounded-xl text-center text-3xl font-black text-yellow-400 outline-none focus:border-yellow-400 focus:ring-2 focus:ring-yellow-400/50 transition-all placeholder-white/20 disabled:opacity-50" 
-                                        placeholder="0" 
-                                    />
-                                </div>
-                                <span className="text-2xl font-black text-white/50 pt-5">X</span>
-                                <div className="flex flex-col items-center">
-                                    <span className="text-[10px] font-black text-white mb-1.5 uppercase tracking-wider">Marrocos 🇲🇦</span>
-                                    <input 
-                                        type="number" 
-                                        min="0" 
-                                        max="15" 
-                                        value={bolaoGuess.opponent}
-                                        onChange={(e) => setBolaoGuess({ ...bolaoGuess, opponent: e.target.value })}
-                                        disabled={hasGuessed || bolaoStatus !== 'open'}
-                                        className="w-16 h-16 bg-black/40 backdrop-blur-md border border-white/30 rounded-xl text-center text-3xl font-black text-white outline-none focus:border-white focus:ring-2 focus:ring-white/50 transition-all placeholder-white/20 disabled:opacity-50" 
-                                        placeholder="0" 
-                                    />
-                                </div>
-                            </div>
-                            
-                            {bolaoStatus === 'not_started' && !hasGuessed && (
-                                <div className="mt-3 relative z-10 flex flex-col items-center bg-black/40 backdrop-blur-md py-2 px-3 rounded-xl border border-yellow-400/20">
-                                    <p className="text-[9px] text-yellow-300 font-bold uppercase tracking-widest text-center mb-0.5">
-                                        Palpites liberados em:
-                                    </p>
-                                    <span className="text-xl font-black text-white font-mono tracking-widest drop-shadow-md">
-                                        {countdown}
-                                    </span>
-                                </div>
-                            )}
-
-                            {bolaoStatus === 'closed' && !hasGuessed && (
-                                <p className="text-[10px] text-red-400 mt-3 relative z-10 font-bold tracking-wider text-center bg-red-400/10 py-1 rounded-md">
-                                    Bolão Encerrado. O jogo já vai começar!
-                                </p>
-                            )}
-
-                            {hasGuessed && (
-                                <p className="text-[10px] text-green-400 mt-3 relative z-10 font-bold uppercase tracking-wider text-center bg-green-400/10 py-1 rounded-md">
-                                    Palpite válido! Boa sorte!
-                                </p>
-                            )}
-
-                            <button 
-                                onClick={handleBolaoSubmit}
-                                disabled={hasGuessed || bolaoGuess.brazil === '' || bolaoGuess.opponent === '' || isSubmittingGuess || bolaoStatus !== 'open'}
-                                className="mt-3 w-full py-3 bg-yellow-400 hover:bg-yellow-300 disabled:bg-gray-500 disabled:text-white text-black rounded-xl text-xs font-black transition-all uppercase tracking-widest shadow-[0_0_15px_rgba(250,204,21,0.4)] disabled:shadow-none hover:scale-[1.02] active:scale-95 flex items-center justify-center"
-                            >
-                                {bolaoStatus === 'loading' ? 'Carregando...' : bolaoStatus === 'not_started' ? 'Aguarde o Início' : bolaoStatus === 'closed' ? (hasGuessed ? 'Palpite Registrado!' : 'Encerrado') : isSubmittingGuess ? 'Salvando...' : (hasGuessed ? 'Palpite Registrado!' : 'Enviar Meu Palpite')}
-                            </button>
-                        </div>
 
                         
 
@@ -617,6 +472,11 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                                             <p className="text-[10px] text-gray-400 uppercase tracking-widest font-bold mb-1">Seu saldo</p>
                                             <p className="text-4xl font-black text-yellow-400">{pointsBalance}</p>
                                             <p className="text-[10px] text-gray-500 uppercase tracking-wide">pontos</p>
+                                            {pontosReservados > 0 && (
+                                                <p className="mt-2 text-[11px] font-bold text-orange-300">
+                                                    {pontosReservados} pontos reservados no carrinho · saem ao finalizar o pedido
+                                                </p>
+                                            )}
                                         </>
                                     )}
                                 </div>
@@ -628,7 +488,8 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                                         </p>
                                     )}
                                     {rewardItems.map(reward => {
-                                        const podeResgatar = pointsBalance >= reward.points_cost;
+                                        const podeResgatar = !resgatePendente && pointsBalance >= reward.points_cost;
+                                        const noCarrinho = !!resgatePendente && resgatePendente.rewardItemId === reward.id;
                                         const resgatando = redeemingItemId === reward.id;
                                         return (
                                             <div
@@ -648,7 +509,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                                                     disabled={!podeResgatar || resgatando}
                                                     className="shrink-0 px-3 py-2 bg-yellow-500 hover:bg-yellow-400 disabled:bg-gray-700 disabled:text-gray-500 text-black text-xs font-black rounded-lg transition-all active:scale-95 uppercase tracking-wide"
                                                 >
-                                                    {resgatando ? '...' : 'Resgatar'}
+                                                    {resgatando ? '...' : noCarrinho ? 'No carrinho' : 'Resgatar'}
                                                 </button>
                                             </div>
                                         );

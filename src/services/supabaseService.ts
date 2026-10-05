@@ -476,6 +476,12 @@ export const updateOrderStatus = async (orderId: string, status: Order['status']
                         .catch(e => console.error('Error reverting loyalty points on cancel:', e));
                 }
             }).catch(e => console.error('Error fetching settings for loyalty revert:', e));
+
+            // Pedido que entregava um produto RESGATADO com pontos: cancelou, os
+            // pontos do resgate voltam (auditoria de 05/10/2026). Independe do modelo
+            // atual: so age se existir um lancamento de resgate ligado a este pedido.
+            estornarResgateDoPedido(orderId, order.phone, order.store_id)
+                .catch(e => console.error('Error returning redeemed loyalty points on cancel:', e));
         }
     }
 
@@ -783,38 +789,116 @@ export const fetchLoyaltyRewardItems = async (storeId: string): Promise<LoyaltyR
 
 /**
  * Substitui a lista de produtos resgataveis da loja (no maximo 4, checado
- * na tela — aqui so grava o que vier). Apaga os antigos e insere os novos:
- * mais simples que fazer diff, e a lista e pequena (ate 4 linhas).
+ * na tela). DIFERENCIAL, nao "apaga tudo e recria" (auditoria de 05/10/2026):
+ *  - o produto que continua na lista so tem custo/nome/preco atualizados, entao o
+ *    `id` dele nao muda -- o ledger e o resgate pendente de um cliente apontam
+ *    para esse id (FK); apagar e recriar quebrava o resgate de quem estava com o
+ *    item no carrinho;
+ *  - se der erro no meio, os itens antigos continuam la (antes o DELETE ja tinha
+ *    rodado e a loja ficava sem nenhum produto resgatavel).
  */
 export const saveLoyaltyRewardItems = async (
     storeId: string,
     items: { menu_item_id: number; points_cost: number; menu_item_name: string; menu_item_price: number }[]
 ): Promise<void> => {
-    const { error: delError } = await supabase
+    const { data: existentes, error: readError } = await supabase
         .from('loyalty_reward_items')
-        .delete()
+        .select('id, menu_item_id')
         .eq('store_id', storeId);
-    if (delError) throw delError;
+    if (readError) throw readError;
 
-    if (items.length === 0) return;
+    const porProduto = new Map<number, string>();
+    (existentes || []).forEach((e: any) => porProduto.set(Number(e.menu_item_id), e.id));
 
-    const { error: insError } = await supabase
-        .from('loyalty_reward_items')
-        .insert(items.map(i => ({ ...i, store_id: storeId, is_active: true })));
-    if (insError) throw insError;
+    // 1. Atualiza quem continua e insere quem e novo.
+    const novos: any[] = [];
+    for (const item of items) {
+        const idExistente = porProduto.get(item.menu_item_id);
+        if (idExistente) {
+            const { error } = await supabase
+                .from('loyalty_reward_items')
+                .update({
+                    points_cost: item.points_cost,
+                    menu_item_name: item.menu_item_name,
+                    menu_item_price: item.menu_item_price,
+                    is_active: true,
+                })
+                .eq('id', idExistente);
+            if (error) throw error;
+        } else {
+            novos.push({ ...item, store_id: storeId, is_active: true });
+        }
+    }
+    if (novos.length > 0) {
+        const { error } = await supabase.from('loyalty_reward_items').insert(novos);
+        if (error) throw error;
+    }
+
+    // 2. So depois de tudo gravado, remove os que sairam da lista.
+    const manter = new Set(items.map(i => i.menu_item_id));
+    const remover = (existentes || []).filter((e: any) => !manter.has(Number(e.menu_item_id))).map((e: any) => e.id);
+    if (remover.length > 0) {
+        const { error } = await supabase.from('loyalty_reward_items').delete().in('id', remover);
+        if (error) throw error;
+    }
 };
 
-/** Saldo de pontos do cliente nesta loja. 0 se nunca teve registro. */
-export const fetchCustomerPointsBalance = async (phone: string, storeId: string): Promise<number> => {
-    const sanitizedPhone = phone.replace(/\D/g, '');
+// ─── Fidelidade por PONTOS ─────────────────────────────────────────────
+// O EXTRATO (`loyalty_points_ledger`) e a fonte da verdade: o saldo e a soma dele.
+// `customer_loyalty_points` virou so um espelho (cache) mantido em segundo plano.
+// Antes o saldo era lido-e-regravado (atual + pontos): duas operacoes ao mesmo
+// tempo perdiam uma delas para sempre. Somar o extrato nao tem esse problema.
+//
+// CHAVE DO TELEFONE: sempre `canonicalPhone` (DDD + 8 digitos, sem o 9), a MESMA
+// que a tabela `customers` usa. Antes o credito gravava o telefone cru do pedido
+// (11 digitos) e a tela lia com o telefone do cadastro (10 digitos): o cliente via
+// 0 pontos. Por compatibilidade, a leitura tambem enxerga a variante com o 9.
+
+const chavesDeTelefone = (phone: string): { canon: string; variantes: string[] } => {
+    const canon = canonicalPhone(phone);
+    const comNove = `${canon.slice(0, 2)}9${canon.slice(2)}`;
+    return { canon, variantes: [canon, comNove] };
+};
+
+/** Soma bruta do extrato do cliente (pode ser negativa se algo deu errado). */
+const somarExtrato = async (phone: string, storeId: string): Promise<number> => {
+    const { variantes } = chavesDeTelefone(phone);
     const { data, error } = await supabase
-        .from('customer_loyalty_points')
-        .select('points_balance')
+        .from('loyalty_points_ledger')
+        .select('points')
         .eq('store_id', storeId)
-        .eq('phone', sanitizedPhone)
-        .maybeSingle();
+        .in('phone', variantes);
     if (error) throw error;
-    return data?.points_balance ?? 0;
+    return (data || []).reduce((soma: number, l: any) => soma + (Number(l.points) || 0), 0);
+};
+
+/** Mantem o espelho `customer_loyalty_points` igual ao extrato. Nunca derruba a operacao. */
+const sincronizarSaldo = async (phone: string, storeId: string): Promise<void> => {
+    try {
+        const { canon, variantes } = chavesDeTelefone(phone);
+        const saldo = Math.max(0, await somarExtrato(phone, storeId));
+        const { error } = await supabase
+            .from('customer_loyalty_points')
+            .upsert({
+                store_id: storeId,
+                phone: canon,
+                points_balance: saldo,
+                updated_at: new Date().toISOString(),
+            }, { onConflict: 'store_id,phone' });
+        if (error) console.error('[Fidelidade] erro ao atualizar o espelho do saldo:', error);
+
+        const outras = variantes.filter(v => v !== canon);
+        if (outras.length > 0) {
+            await supabase.from('customer_loyalty_points').delete().eq('store_id', storeId).in('phone', outras);
+        }
+    } catch (e) {
+        console.error('[Fidelidade] erro ao sincronizar o saldo:', e);
+    }
+};
+
+/** Saldo de pontos do cliente nesta loja (soma do extrato, nunca negativo). 0 se nunca teve registro. */
+export const fetchCustomerPointsBalance = async (phone: string, storeId: string): Promise<number> => {
+    return Math.max(0, await somarExtrato(phone, storeId));
 };
 
 /**
@@ -832,16 +916,13 @@ export const creditarPontosDoPedido = async (
     const pontos = calcularPontosGanhos(valorPago);
     if (pontos <= 0) return;
 
-    const sanitizedPhone = phone.replace(/\D/g, '');
+    const { canon } = chavesDeTelefone(phone);
 
-    // 1. Tenta registrar o lancamento. Se o pedido ja tiver um "ganho"
-    //    (UNIQUE INDEX), o insert falha e paramos aqui sem tocar no saldo —
-    //    e assim que a idempotencia funciona.
     const { error: ledgerError } = await supabase
         .from('loyalty_points_ledger')
         .insert({
             store_id: storeId,
-            phone: sanitizedPhone,
+            phone: canon,
             tipo: 'ganho',
             points: pontos,
             order_id: orderId,
@@ -852,81 +933,67 @@ export const creditarPontosDoPedido = async (
         throw ledgerError;
     }
 
-    // 2. Soma no saldo. upsert com valor absoluto exigiria ler antes —
-    //    mais simples e seguro: le o saldo atual e grava a soma, protegido
-    //    pelo passo 1 (so chega aqui uma vez por pedido).
-    const atual = await fetchCustomerPointsBalance(sanitizedPhone, storeId);
-    const { error: upsertError } = await supabase
-        .from('customer_loyalty_points')
-        .upsert({
-            store_id: storeId,
-            phone: sanitizedPhone,
-            points_balance: atual + pontos,
-            updated_at: new Date().toISOString(),
-        }, { onConflict: 'store_id,phone' });
-    if (upsertError) throw upsertError;
+    await sincronizarSaldo(phone, storeId);
 };
 
 /**
  * Estorna os pontos de um pedido CANCELADO -- regra fechada com o Ikarus,
- * 21/09/2026: "pedido for cancelado a gente retira o ponto". So faz sentido
- * para pedidos que de fato geraram "ganho" antes (mesma condicao de
- * creditarPontosDoPedido: modelo 'pontos' + origin WEB/APP), chamado de
+ * 21/09/2026: "pedido for cancelado a gente retira o ponto". Chamado de
  * updateOrderStatus ao mudar o status para 'Cancelado'.
  *
- * Idempotente pelo mesmo padrao do credito: um segundo INDEX unico em
- * loyalty_points_ledger (tipo='estorno' + order_id) recusa um segundo
- * estorno do mesmo pedido -- ver estender_loyalty_estorno_unico.sql.
- *
- * O saldo nunca fica negativo (Math.max(0, ...)): se o cliente ja gastou os
- * pontos daquele pedido em outro resgate antes do cancelamento, o estorno
- * so zera o que ainda sobra, nao empresta saldo futuro.
+ * Estorna o que o pedido REALMENTE ganhou (le o lancamento de "ganho" dele):
+ * se o pedido nunca creditou, nao ha o que estornar (antes recalculava pelo
+ * valor e podia tirar pontos de outros pedidos). Idempotente pelo UNIQUE INDEX
+ * (tipo='estorno' + order_id). O saldo nunca fica negativo: se o cliente ja
+ * gastou parte desses pontos, so se estorna o que ainda sobra, sem emprestar
+ * saldo futuro.
  */
 export const estornarPontosDoPedido = async (
     orderId: string,
     phone: string,
     storeId: string,
-    valorPago: number
+    _valorPago?: number
 ): Promise<void> => {
-    const pontos = calcularPontosGanhos(valorPago);
-    if (pontos <= 0) return;
+    const { data: ganho, error: ganhoError } = await supabase
+        .from('loyalty_points_ledger')
+        .select('points')
+        .eq('order_id', orderId)
+        .eq('tipo', 'ganho')
+        .maybeSingle();
+    if (ganhoError) throw ganhoError;
+    if (!ganho || !(Number(ganho.points) > 0)) return;
 
-    const sanitizedPhone = phone.replace(/\D/g, '');
+    const saldoAtual = Math.max(0, await somarExtrato(phone, storeId));
+    const pontosEstorno = Math.min(Number(ganho.points), saldoAtual);
+    if (pontosEstorno <= 0) return;
 
-    // 1. Tenta registrar o estorno. Se este pedido ja tiver um "estorno"
-    //    (UNIQUE INDEX), o insert falha e paramos sem tocar no saldo de novo.
+    const { canon } = chavesDeTelefone(phone);
     const { error: ledgerError } = await supabase
         .from('loyalty_points_ledger')
         .insert({
             store_id: storeId,
-            phone: sanitizedPhone,
+            phone: canon,
             tipo: 'estorno',
-            points: -pontos,
+            points: -pontosEstorno,
             order_id: orderId,
         });
-
     if (ledgerError) {
         if (ledgerError.code === '23505') return; // ja estornado antes, ok
         throw ledgerError;
     }
 
-    // 2. Retira do saldo, sem deixar negativo.
-    const atual = await fetchCustomerPointsBalance(sanitizedPhone, storeId);
-    const { error: upsertError } = await supabase
-        .from('customer_loyalty_points')
-        .upsert({
-            store_id: storeId,
-            phone: sanitizedPhone,
-            points_balance: Math.max(0, atual - pontos),
-            updated_at: new Date().toISOString(),
-        }, { onConflict: 'store_id,phone' });
-    if (upsertError) throw upsertError;
+    await sincronizarSaldo(phone, storeId);
 };
 
 /**
- * Resgata um produto por pontos: debita o saldo e registra o ledger.
- * Lanca erro se o saldo for insuficiente (checagem no banco, nao so na
- * tela — evita corrida entre duas abas do mesmo cliente).
+ * Resgata um produto por pontos: registra o debito no extrato e confere o saldo.
+ * Lanca erro se o saldo for insuficiente (checagem no banco, nao so na tela).
+ * `orderId` = pedido que entrega o produto (liga o debito ao pedido, para o
+ * cancelamento poder devolver os pontos -- ver estornarResgateDoPedido).
+ *
+ * Ordem: insere o lancamento e DEPOIS confere a soma; se duas pessoas/abas
+ * resgatarem ao mesmo tempo e o saldo estourar, o lancamento desta chamada e
+ * desfeito e ela falha, em vez de deixar o saldo negativo.
  */
 export const resgatarPontos = async (
     phone: string,
@@ -935,34 +1002,128 @@ export const resgatarPontos = async (
     pointsCost: number,
     orderId?: string
 ): Promise<void> => {
-    const sanitizedPhone = phone.replace(/\D/g, '');
-    const atual = await fetchCustomerPointsBalance(sanitizedPhone, storeId);
-
+    const atual = Math.max(0, await somarExtrato(phone, storeId));
     if (atual < pointsCost) {
         throw new Error(`Saldo insuficiente: tem ${atual} pontos, precisa de ${pointsCost}.`);
     }
 
-    const { error: upsertError } = await supabase
-        .from('customer_loyalty_points')
-        .upsert({
+    const { canon } = chavesDeTelefone(phone);
+    const { data: linha, error: ledgerError } = await supabase
+        .from('loyalty_points_ledger')
+        .insert({
             store_id: storeId,
-            phone: sanitizedPhone,
-            points_balance: atual - pointsCost,
-            updated_at: new Date().toISOString(),
-        }, { onConflict: 'store_id,phone' });
-    if (upsertError) throw upsertError;
+            phone: canon,
+            tipo: 'resgate',
+            points: -pointsCost,
+            reward_item_id: rewardItemId,
+            order_id: orderId ?? null,
+        })
+        .select('id')
+        .single();
+    if (ledgerError) throw ledgerError;
 
+    const depois = await somarExtrato(phone, storeId);
+    if (depois < 0) {
+        await supabase.from('loyalty_points_ledger').delete().eq('id', (linha as any).id);
+        throw new Error('Saldo insuficiente: outro resgate foi feito ao mesmo tempo.');
+    }
+
+    await sincronizarSaldo(phone, storeId);
+};
+
+/**
+ * Devolve os pontos de um resgate quando o PEDIDO que o entregava e cancelado.
+ * Lancamento proprio ('estorno_resgate', positivo), idempotente por pedido.
+ * Precisa do tipo novo no CHECK do ledger (ver add_loyalty_auditoria_20261005.sql);
+ * sem ele o insert falha e o erro e so registrado.
+ */
+export const estornarResgateDoPedido = async (
+    orderId: string,
+    phone: string,
+    storeId: string
+): Promise<void> => {
+    const { data, error } = await supabase
+        .from('loyalty_points_ledger')
+        .select('tipo, points')
+        .eq('order_id', orderId)
+        .in('tipo', ['resgate', 'estorno_resgate']);
+    if (error) throw error;
+
+    const resgate = (data || []).find((l: any) => l.tipo === 'resgate');
+    const jaDevolvido = (data || []).some((l: any) => l.tipo === 'estorno_resgate');
+    if (!resgate || jaDevolvido) return;
+
+    const pontos = Math.abs(Number(resgate.points));
+    if (!(pontos > 0)) return;
+
+    const { canon } = chavesDeTelefone(phone);
     const { error: ledgerError } = await supabase
         .from('loyalty_points_ledger')
         .insert({
             store_id: storeId,
-            phone: sanitizedPhone,
-            tipo: 'resgate',
-            points: -pointsCost,
-            reward_item_id: rewardItemId,
+            phone: canon,
+            tipo: 'estorno_resgate',
+            points: pontos,
             order_id: orderId,
         });
-    if (ledgerError) throw ledgerError;
+    if (ledgerError) {
+        if (ledgerError.code === '23505') return;
+        throw ledgerError;
+    }
+
+    await sincronizarSaldo(phone, storeId);
+};
+
+/**
+ * O resgate pendente so vale se o produto resgatado AINDA esta no pedido a preco 0
+ * (o cliente pode ter tirado o item do carrinho depois de resgatar). Desconto
+ * sempre vale. Evita debitar pontos/selos por um item que nao foi entregue.
+ */
+export const resgateEfetivo = (pendingReward: any, items: any[]): any => {
+    if (!pendingReward) return null;
+    if (pendingReward.type !== 'item') return pendingReward;
+    const noPedido = (items || []).some((i: any) => i && i.id === pendingReward.item?.id && Number(i.price) === 0);
+    return noPedido ? pendingReward : null;
+};
+
+/**
+ * Resgate de PONTOS em andamento (item no carrinho a preco 0): confere o saldo ANTES
+ * de criar o pedido. Os pontos so saem de verdade ao fechar o pedido
+ * (concluirResgateDoPedido) -- antes eram debitados no clique e se o cliente
+ * desistisse/recarregasse a pagina, perdia os pontos sem receber o produto.
+ */
+export const verificarResgatePendente = async (
+    pendingReward: any,
+    phone: string,
+    storeId: string
+): Promise<void> => {
+    if (!pendingReward || pendingReward.type !== 'item' || !pendingReward.pointsCost) return;
+    const saldo = await fetchCustomerPointsBalance(phone, storeId);
+    if (saldo < pendingReward.pointsCost) {
+        throw new Error(`Seus pontos mudaram e agora o saldo (${saldo}) nao cobre este resgate (${pendingReward.pointsCost} pontos). Remova o item resgatado do carrinho ou use outro.`);
+    }
+};
+
+/**
+ * Depois que o pedido foi criado: modelo de PONTOS debita os pontos ligando ao pedido;
+ * modelo de SELO mantem o comportamento antigo (consome 10 selos). So um dos dois roda --
+ * antes o resgate por pontos tambem chamava o resgate de selos por engano.
+ */
+export const concluirResgateDoPedido = async (params: {
+    pendingReward: any;
+    descontoAplicado: number;
+    phone: string;
+    storeId: string;
+    orderId: string;
+}): Promise<void> => {
+    const { pendingReward, descontoAplicado, phone, storeId, orderId } = params;
+    if (pendingReward?.type === 'item' && pendingReward.pointsCost) {
+        await resgatarPontos(phone, storeId, pendingReward.rewardItemId, pendingReward.pointsCost, orderId);
+        return;
+    }
+    if (descontoAplicado > 0 || (pendingReward && pendingReward.type === 'item')) {
+        await redeemLoyaltyReward(phone, storeId);
+    }
 };
 
 export const createOrder = async (order: any) => {
