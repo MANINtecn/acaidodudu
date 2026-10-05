@@ -2700,7 +2700,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                busca de produto separada -- o lançamento é só código+Enter
                (herdado do V1) ou B para pegar o peso da balança. */
             <div className="flex-[6] min-h-0 flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-green-100 dark:border-green-900/30 md:overflow-hidden">
-                <div className="p-4 bg-green-50/50 dark:bg-green-900/10 border-b border-green-100 dark:border-green-900/20 flex justify-between items-center gap-3">
+                <div className="px-3 py-1.5 bg-green-50/50 dark:bg-green-900/10 border-b border-green-100 dark:border-green-900/20 flex justify-between items-center gap-2">
                     {isRenomeandoComanda ? (
                         <input
                             ref={campoRenomeComandaRef}
@@ -2744,27 +2744,21 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             className="flex-1 px-3 py-1.5 rounded-lg text-sm font-bold text-green-900 dark:text-green-100 bg-white dark:bg-gray-900 border-2 border-green-400 outline-none"
                         />
                     ) : (
-                        <h3 className="font-black text-green-700 dark:text-green-400 uppercase tracking-widest text-xs flex flex-col items-center gap-2 flex-wrap flex-1 min-w-0">
-                            {/* Selo da comanda -- pedido do Ikarus 01/10/2026: antes
-                                era só texto verde com uma bolinha pulsante do lado,
-                                fácil de passar batido numa loja cheia. Agora é um
-                                selo de verdade: centralizado, com borda e um anel
-                                de pulso de verdade (animate-ping), não só a
-                                bolinha sólida. */}
-                            <span className="relative inline-flex items-center gap-1.5 px-4 py-1.5 bg-green-600 text-white rounded-full border-2 border-green-400 shadow-lg shadow-green-600/30">
-                                <span className="absolute inset-0 rounded-full border-2 border-green-400 animate-ping opacity-75"></span>
-                                <span className="w-2 h-2 bg-white rounded-full shrink-0"></span>
-                                <span className="text-sm tracking-wide">
+                        <h3 className="font-black text-green-700 dark:text-green-400 uppercase tracking-widest text-xs flex flex-col items-center gap-1 flex-1 min-w-0">
+                            {/* Selo da comanda (compacto, 05/10/2026: o cabecalho ocupava
+                                espaco demais e o carrinho mostrava poucas linhas). */}
+                            <span className="relative inline-flex items-center gap-1.5 px-3 py-0.5 bg-green-600 text-white rounded-full border border-green-400 shadow shadow-green-600/30">
+                                <span className="absolute inset-0 rounded-full border border-green-400 animate-ping opacity-60"></span>
+                                <span className="w-1.5 h-1.5 bg-white rounded-full shrink-0"></span>
+                                <span className="text-xs tracking-wide">
                                     {selectedTable ? `Comanda ${selectedTable}` : 'Comanda nova'}
                                     {nomeSemPrefixoDeMesa(customerName) ? ` - ${nomeSemPrefixoDeMesa(customerName)}` : ''}
                                 </span>
                             </span>
-                            {/* Legenda de atalhos do cabeçalho da comanda -- pedido
-                                do Ikarus 01/10/2026: "o povo é enjoado", tecla
-                                numa caixinha e a descrição solta do lado confundia
-                                qual ação era de qual tecla. Agora cada par
-                                tecla+ação mora dentro da MESMA pílula/borda. */}
-                            <span className="flex items-center gap-1.5 flex-wrap justify-center">
+                            {/* Legenda de atalhos (laranja) + colinha dos produtos ADD (violeta) no MESMO
+                                fluxo, em pilulas pequenas. A colinha le do cardapio os produtos cujo nome
+                                comeca com "ADD" e rotula pelo PRECO (ADD 3, ADD 10...). */}
+                            <span className="flex items-center gap-1 flex-wrap justify-center">
                                 {[
                                     { tecla: 'N', acao: 'RENOMEIA' },
                                     { tecla: 'CÓDIGO + ENTER', acao: 'LANÇA' },
@@ -2776,35 +2770,21 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                     { tecla: 'F8', acao: 'DIVIDIR CONTA' },
                                     { tecla: 'X', acao: 'FECHA' },
                                 ].map(({ tecla, acao }) => (
-                                    <span key={tecla} className="inline-flex items-center gap-1 px-2 py-0.5 bg-orange-500/20 border border-orange-500/60 rounded-full">
-                                        <kbd className="px-1.5 py-0.5 bg-orange-500/50 rounded text-[10px] font-black uppercase text-gray-900 dark:text-white">{tecla}</kbd>
-                                        <span className="text-[10px] font-black uppercase text-gray-900 dark:text-white">{acao}</span>
+                                    <span key={tecla} className="inline-flex items-center gap-0.5 px-1.5 py-px bg-orange-500/20 border border-orange-500/60 rounded-full">
+                                        <kbd className="px-1 bg-orange-500/50 rounded text-[9px] font-black uppercase text-gray-900 dark:text-white">{tecla}</kbd>
+                                        <span className="text-[9px] font-black uppercase text-gray-900 dark:text-white">{acao}</span>
                                     </span>
                                 ))}
-                            </span>
-                            {/* Colinha dos produtos ADD (adicional genérico de preço
-                                fixo, lançado por código): lê do cardápio os produtos
-                                cujo nome começa com "ADD" e mostra o rótulo pelo PREÇO
-                                (ADD3, ADD10...), então vale pra qualquer loja e não
-                                precisa mexer aqui se o código mudar. Cor
-                                diferente (violeta) das teclas (âmbar) pra se destacar. */}
-                            {(() => {
-                                const adds = menuItems
+                                {menuItems
                                     .filter(p => p.codigo !== undefined && /^ADD\b/i.test(p.name.trim()))
-                                    .sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0));
-                                if (adds.length === 0) return null;
-                                return (
-                                    <span className="flex items-center gap-1.5 flex-wrap justify-center">
-                                        <span className="text-[10px] font-black uppercase text-violet-700 dark:text-violet-300">Adicionais:</span>
-                                        {adds.map(p => (
-                                            <span key={p.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-violet-500/15 border border-violet-500/40 rounded-full" title={`${p.name} — R$ ${(Number(p.price) || 0).toFixed(2)}`}>
-                                                <span className="text-[10px] font-black uppercase text-gray-900 dark:text-white">{`ADD ${Number(p.price) || 0}`}</span>
-                                                <kbd className="px-1.5 py-0.5 bg-violet-500/30 rounded text-[10px] font-black text-gray-900 dark:text-white">{p.codigo}</kbd>
-                                            </span>
-                                        ))}
-                                    </span>
-                                );
-                            })()}
+                                    .sort((a, b) => (Number(a.price) || 0) - (Number(b.price) || 0))
+                                    .map(p => (
+                                        <span key={p.id} className="inline-flex items-center gap-0.5 px-1.5 py-px bg-violet-500/15 border border-violet-500/40 rounded-full" title={`${p.name} — R$ ${(Number(p.price) || 0).toFixed(2)}`}>
+                                            <span className="text-[9px] font-black uppercase text-gray-900 dark:text-white">{`ADD ${Number(p.price) || 0}`}</span>
+                                            <kbd className="px-1 bg-violet-500/30 rounded text-[9px] font-black text-gray-900 dark:text-white">{p.codigo}</kbd>
+                                        </span>
+                                    ))}
+                            </span>
                         </h3>
                     )}
                     {/* Mute do bipe de "comanda enviada" -- pedido do Ikarus
@@ -2826,49 +2806,44 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         <X size={18} />
                     </button>
                 </div>
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
-                    {cart.map(item => (
-                        <div key={item.cartId} className="bg-gray-50/50 dark:bg-gray-700/20 rounded-2xl p-3 border border-gray-100 dark:border-gray-700">
-                            <div className="flex justify-between items-start mb-2">
-                                <span className="font-bold text-gray-800 dark:text-gray-100 text-xs uppercase tracking-tight leading-tight flex-1">{item.name}</span>
-                                <span className="font-black text-gray-900 dark:text-white text-xs ml-2 whitespace-nowrap">R$ {(((Number(item.price) || 0) + item.selectedAddons.reduce((s, a) => s + (Number(a.price) || 0), 0)) * item.quantity).toFixed(2)}</span>
+                <div className="flex-1 overflow-y-auto px-2 py-1.5 space-y-1 scrollbar-hide">
+                    {/* UMA linha por item (05/10/2026): nome | sabor | - qtd + | valor | lixeira.
+                        Antes cada item ocupava 2 linhas e o carrinho mostrava ~5 itens. Os
+                        adicionais vao na mesma linha, em cinza e truncados (o nome completo
+                        aparece ao passar o mouse). */}
+                    {cart.map(item => {
+                        const detalhe = item.selectedAddons.length > 0 ? item.selectedAddons.map(a => a.name).join(', ') : '';
+                        const valorLinha = (((Number(item.price) || 0) + item.selectedAddons.reduce((s, a) => s + (Number(a.price) || 0), 0)) * item.quantity);
+                        return (
+                        <div key={item.cartId} className="flex items-center gap-1.5 bg-gray-50/50 dark:bg-gray-700/20 rounded-lg pl-2 pr-1 py-0.5 border border-gray-100 dark:border-gray-700">
+                            <span className="flex-1 min-w-0 truncate font-bold text-gray-800 dark:text-gray-100 text-xs uppercase tracking-tight" title={detalhe ? `${item.name} — ${detalhe}` : item.name}>
+                                {item.name}
+                                {detalhe && <span className="font-medium normal-case tracking-normal text-[10px] text-gray-500 dark:text-gray-400"> · {detalhe}</span>}
+                            </span>
+                            {/* Produto sem preco proprio (preco no sabor): chama atencao ate escolher o
+                                sabor. So aparece quando o produto TEM opcoes de sabor cadastradas. */}
+                            {opcoesDeSaborDoProduto(item).length > 0 && (
+                                <button
+                                    onClick={() => openAddonModal(item)}
+                                    className={`shrink-0 px-1.5 py-0.5 text-[9px] font-black rounded uppercase tracking-wide transition-all border ${
+                                        item.selectedAddons.length === 0
+                                            ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 animate-pulse'
+                                            : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-green-200/50 dark:border-green-700/50 hover:bg-green-100'
+                                    }`}
+                                >
+                                    {item.selectedAddons.length === 0 ? '⚠ Sabor' : `Adds (${item.selectedAddons.length})`}
+                                </button>
+                            )}
+                            <div className="shrink-0 flex items-center bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-px">
+                                <button onClick={() => updateQuantity(item.cartId, -1)} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-gray-500 transition-colors"><Minus size={12} /></button>
+                                <span className="px-1.5 text-xs font-black min-w-[18px] text-center">{item.quantity}</span>
+                                <button onClick={() => updateQuantity(item.cartId, 1)} className="p-1 hover:bg-green-50 dark:hover:bg-green-900/30 rounded text-green-600 transition-colors"><Plus size={12} /></button>
                             </div>
-                            <div className="flex items-center gap-2">
-                                <div className="flex items-center bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-600 shadow-sm p-0.5">
-                                    <button onClick={() => updateQuantity(item.cartId, -1)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-gray-500 transition-colors"><Minus size={14} /></button>
-                                    <span className="px-2 text-xs font-black min-w-[20px] text-center">{item.quantity}</span>
-                                    <button onClick={() => updateQuantity(item.cartId, 1)} className="p-1.5 hover:bg-green-50 dark:hover:bg-green-900/30 rounded-lg text-green-600 transition-colors"><Plus size={14} /></button>
-                                </div>
-                                {/* Pedido do Ikarus em 01/10/2026: produto como "Potes de
-                                    Sorvete 1,8L" não tem preço próprio -- o preço inteiro
-                                    está no adicional (sabor). Sem destaque, o item ficava
-                                    "R$ 0.00" sem indicar que falta escolher o sabor, e o
-                                    cliente reclamava da demora. Pisca (animate-pulse) e
-                                    fica vermelho quando ainda não tem nenhum adicional
-                                    escolhido, pra chamar atenção.
-                                    CORRIGIDO em 02/10/2026: o botão aparecia pra QUALQUER
-                                    item sem addon selecionado -- inclusive "Açaí/Sorvete
-                                    por Quilo" (produto pesado na balança, sem sabor
-                                    configurável nenhum), induzindo o operador a clicar
-                                    achando que faltava escolher algo. Só mostra quando o
-                                    produto de fato TEM opções de sabor cadastradas
-                                    (opcoesDeSaborDoProduto > 0). */}
-                                {opcoesDeSaborDoProduto(item).length > 0 && (
-                                    <button
-                                        onClick={() => openAddonModal(item)}
-                                        className={`flex-1 px-2.5 py-1.5 text-[10px] font-black rounded-lg uppercase tracking-wider transition-all border ${
-                                            item.selectedAddons.length === 0
-                                                ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 animate-pulse'
-                                                : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-green-200/50 dark:border-green-700/50 hover:bg-green-100'
-                                        }`}
-                                    >
-                                        {item.selectedAddons.length === 0 ? '⚠ Escolher sabor' : `Adds (${item.selectedAddons.length})`}
-                                    </button>
-                                )}
-                                <button onClick={() => removeItem(item.cartId)} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all"><Trash2 size={16} /></button>
-                            </div>
+                            <span className="shrink-0 w-[72px] text-right font-black text-gray-900 dark:text-white text-xs whitespace-nowrap">R$ {valorLinha.toFixed(2)}</span>
+                            <button onClick={() => removeItem(item.cartId)} className="shrink-0 p-1 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors" title="Remover item"><Trash2 size={13} /></button>
                         </div>
-                    ))}
+                        );
+                    })}
                     {cart.length === 0 && (
                         <div className="flex flex-col items-center justify-center h-full text-gray-300 dark:text-gray-600 opacity-50 space-y-2">
                             <ShoppingBag size={48} strokeWidth={1} />
@@ -2877,10 +2852,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         </div>
                     )}
                 </div>
-                <div className="p-4 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-700 space-y-3">
+                <div className="px-3 py-2 bg-gray-50 dark:bg-gray-900 border-t border-gray-100 dark:border-gray-700 space-y-2">
                     <div className="flex justify-between items-end">
                         <span className="text-[9px] font-black text-gray-400 uppercase tracking-[0.2em]">TOTAL</span>
-                        <span className="text-2xl font-black text-primary tracking-tighter">R$ {Number(total).toFixed(2)}</span>
+                        <span className="text-xl font-black text-primary tracking-tighter">R$ {Number(total).toFixed(2)}</span>
                     </div>
                     {/* CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei os
                         itens, o botão nem dava pra clicar, achei que ia sumir
@@ -2892,7 +2867,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     <button
                         onClick={() => handleFinalize()}
                         disabled={(cart.length === 0 && pedidosDaMesa.length === 0) || isProcessing}
-                        className={`w-full py-3.5 rounded-2xl font-black text-sm uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
+                        className={`w-full py-2.5 rounded-xl font-black text-sm uppercase tracking-widest transition-all shadow-xl flex items-center justify-center gap-2 active:scale-[0.98] ${
                             (cart.length === 0 && pedidosDaMesa.length === 0) || isProcessing
                                 ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed shadow-none'
                                 : cart.length === 0
