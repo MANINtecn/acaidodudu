@@ -7,7 +7,8 @@ import { mesmaMesa, nomeDaComanda, nomeSemPrefixoDeMesa } from '../utils/mesaUti
 import { calcularValorCarrinho } from '../utils/orderUtils';
 import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
-import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, connectScale, getScaleRawLog, clearScaleRawLog, getScaleSnapshot, type ScaleStatus } from '../services/scaleService';
+import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, ensureScaleAutoConnect, getScaleRawLog, clearScaleRawLog, getScaleSnapshot, type ScaleStatus } from '../services/scaleService';
+import { decidirEnterComPeso, PESO_ZERO_KG } from '../utils/pesoBalanca';
 
 /**
  * Total de mesas do sistema. ERA const local dentro de lancarPesoNaMesa — por
@@ -232,15 +233,21 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             setScaleWeight(snap.weightKg);
             setIsScaleStable(snap.isStable);
 
+            // Balança voltou a zero (prato retirado) -> o próximo peso é NOVO.
+            if (snap.weightKg <= PESO_ZERO_KG) {
+                pesoLancadoRef.current = false;
+                setPesoLancado(false);
+            }
+
             switch (snap.status) {
                 case 'disconnected':
-                    setLiveScaleStatusText('🔌 CLIQUE EM CONECTAR USB');
+                    setLiveScaleStatusText(snap.errorMessage ? `🔌 ${snap.errorMessage}` : '🔌 PROCURANDO A BALANÇA...');
                     break;
                 case 'connecting':
                     setLiveScaleStatusText('⏳ CONECTANDO...');
                     break;
                 case 'waiting':
-                    setLiveScaleStatusText('🟡 AGUARDANDO DADOS DA BALANÇA');
+                    setLiveScaleStatusText(snap.errorMessage ? `🟡 ${snap.errorMessage}` : '🟡 AGUARDANDO DADOS DA BALANÇA');
                     break;
                 case 'unstable':
                     setLiveScaleStatusText('⚖️ ESTABILIZANDO...');
@@ -254,26 +261,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             }
         });
 
-        // Reconexao AUTOMATICA e continua. Na loja o operador nao pode ficar
-        // clicando em "Conectar USB": o PDV abre de manha e a balanca tem que
-        // aparecer sozinha. Tentamos a cada 5s enquanto nao estiver lendo, e
-        // seguimos vigiando depois (se o cabo cair, reconecta sozinho).
-        let ativo = true;
-        const tentarConectar = () => {
-            if (!ativo) return;
-            const st = getScaleSnapshot().status;
-            if (st === 'stable' || st === 'unstable' || st === 'waiting' || st === 'connecting') return;
-            connectScale(settings?.scaleBaudRate || 9600, false);
-        };
-
-        tentarConectar();
-        // 20s (nao 5s): a porta ocupada nao se libera em segundos, e tentar
-        // rapido demais so enche o log e cria concorrencia de open().
-        const idReconexao = setInterval(tentarConectar, 20000);
+        // Reconexao AUTOMATICA e continua: agora vive no scaleService
+        // (ensureScaleAutoConnect) -- independe desta aba, tenta de novo em 3 s,
+        // reage na hora ao plugar a USB e reabre a porta se a balanca ficar muda.
+        // Idempotente: o Admin tambem liga no boot. NAO desligamos ao sair da
+        // aba, so no Admin quando a balanca e desabilitada.
+        ensureScaleAutoConnect(settings?.scaleBaudRate || 9600);
 
         return () => {
-            ativo = false;
-            clearInterval(idReconexao);
             unsubscribe();
         };
     }, [settings?.isScaleEnabled, settings?.scaleProtocol, settings?.scaleBaudRate]);
@@ -823,7 +818,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         const currentPricePerKg = scalePricePerKg || 60;
         const itemName = scaleItemName || 'Açaí/Sorvete por Quilo';
         handleScaleItemAdd(weightKg, itemName, currentPricePerKg);
-        
+        // Clique e Enter passam por aqui: os dois marcam o peso como lançado.
+        pesoLancadoRef.current = true;
+        setPesoLancado(true);
+
         setNotification({
             show: true,
             message: `Item de Balança (${weightKg.toFixed(3)}kg - R$ ${(weightKg * currentPricePerKg).toFixed(2)}) adicionado ao pedido!`,
@@ -906,6 +904,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         const valorPeso = temPeso ? scaleWeight * precoKg : 0;
         if (temPeso) {
             handleScaleItemAdd(scaleWeight, scaleItemName || 'Açaí/Sorvete por Quilo', precoKg);
+            pesoLancadoRef.current = true;
+            setPesoLancado(true);
         }
 
         const valor = valorPeso + valorCarrinho;
@@ -1000,6 +1000,14 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     scaleWeightRef.current = scaleWeight;
     const isScaleStableRef = useRef(false);
     isScaleStableRef.current = isScaleStable;
+    // Peso JÁ LANÇADO (05/10/2026): enquanto o prato continua na balança, o Enter
+    // seguinte envia a comanda em vez de lançar o mesmo peso de novo. Só volta a
+    // valer "peso novo" quando a balança passa por zero (prato retirado) --
+    // ver utils/pesoBalanca.ts. Ref para o handler de teclado (Regra 10) + state
+    // para o aviso na tela.
+    const pesoLancadoRef = useRef(false);
+    const [pesoLancado, setPesoLancado] = useState(false);
+    const ultimoAvisoEstabilizarRef = useRef<number | undefined>(undefined);
     const pedidosDaMesaRef = useRef<Order[]>([]);
     pedidosDaMesaRef.current = pedidosDaMesa;
     const abrirProximaComandaLivreRef = useRef<() => void>(() => {});
@@ -1372,6 +1380,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 const valorPesoR = temPesoR ? scaleWeight * precoKgR : 0;
                 if (temPesoR) {
                     handleScaleItemAdd(scaleWeight, scaleItemName || 'Açaí/Sorvete por Quilo', precoKgR);
+                    pesoLancadoRef.current = true;
+                    setPesoLancado(true);
                 }
 
                 const descR = temPesoR && valorCarrinhoR > 0
@@ -1465,19 +1475,44 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             if (balcaoV2Ref.current && isComandaModalOpenRef.current &&
                 e.key === 'Enter' && !teclasMesa) {
                 e.preventDefault();
-                // Pedido do Ikarus 04/10/2026: comanda NOVA (carrinho vazio E
-                // nenhum pedido anterior no banco pra este slot) com peso
-                // ESTÁVEL já esperando na balança automática -- o 1º Enter
-                // lança esse peso como item (igual já fazia o clique em
-                // "Lançar Pedido"), sem enviar nada ainda. Restrito a comanda
-                // nova (pedidosDaMesa vazio) pra não colidir com o fluxo de
-                // EXCLUIR uma comanda já enviada (carrinho esvaziado de
-                // propósito + Enter = excluir, não lançar peso por engano).
-                if (cartRef.current.length === 0 && pedidosDaMesaRef.current.length === 0 &&
-                    scaleWeightRef.current > 0 && isScaleStableRef.current) {
+                // Enter com BALANÇA AUTOMÁTICA (pedido do Ikarus 04/10 e 05/10/2026):
+                // Enter = lança o peso NOVO que está na balança, em QUALQUER
+                // comanda (nova, com produtos, com pesos anteriores, 2ª rodada);
+                // não havendo peso novo, Enter = envia. "Peso novo" = estável,
+                // > 0 e ainda não lançado; depois de lançar só vale outro quando
+                // a balança passar por zero (prato retirado). A decisão é uma
+                // função pura (utils/pesoBalanca.ts, com teste) e só olha refs
+                // (Regra 10). Excluir comanda (carrinho esvaziado de propósito +
+                // pedido anterior) continua tendo prioridade.
+                const decisaoPeso = decidirEnterComPeso({
+                    peso: scaleWeightRef.current,
+                    estavel: isScaleStableRef.current,
+                    pesoJaLancado: pesoLancadoRef.current,
+                    carrinhoVazio: cartRef.current.length === 0,
+                    temPedidoAnterior: pedidosDaMesaRef.current.length > 0,
+                    msDesdeAvisoEstabilizar: ultimoAvisoEstabilizarRef.current === undefined
+                        ? undefined
+                        : Date.now() - ultimoAvisoEstabilizarRef.current,
+                });
+                if (decisaoPeso === 'lancar-peso') {
                     handleLaunchScaleItemToOrder(scaleWeightRef.current);
+                    pesoLancadoRef.current = true;
+                    setPesoLancado(true);
+                    ultimoAvisoEstabilizarRef.current = undefined;
+                    bipar('ok');
                     return;
                 }
+                if (decisaoPeso === 'aguardar-estabilizar') {
+                    ultimoAvisoEstabilizarRef.current = Date.now();
+                    bipar('erro');
+                    setAvisoAtalho({
+                        tipo: 'erro',
+                        titulo: 'Aguarde o peso estabilizar',
+                        detalhe: 'A balança ainda está oscilando. Espere o peso ficar verde e aperte Enter (Enter de novo envia sem o peso).'
+                    });
+                    return;
+                }
+                ultimoAvisoEstabilizarRef.current = undefined;
                 // CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei os
                 // produtos, dei Enter, nada aconteceu"): a condição exigia
                 // `cartRef.current.length > 0` pra chamar handleFinalize --
@@ -2398,6 +2433,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                 <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${scaleWeight > 0 ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40' : 'bg-slate-900 text-slate-400 border-slate-800'}`}>
                                     {liveScaleStatusText}
                                 </span>
+                                {settings?.balcaoV2 && scaleWeight > PESO_ZERO_KG && isScaleStable && (
+                                    <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${pesoLancado
+                                        ? 'bg-slate-800 text-slate-300 border-slate-600'
+                                        : 'bg-amber-400 text-slate-950 border-amber-200 animate-pulse'}`}>
+                                        {pesoLancado ? '✔ PESO LANÇADO · RETIRE O PRATO PARA PESAR OUTRO' : 'ENTER LANÇA ESTE PESO'}
+                                    </span>
+                                )}
                             </div>
                             <p className="text-[11px] text-slate-400 font-medium">Peso lido continuamente. Insira o prato/tigela para calcular o total.</p>
                         </div>

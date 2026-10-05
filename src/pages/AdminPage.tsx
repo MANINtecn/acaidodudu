@@ -77,6 +77,7 @@ import {
 import OrderCard from '../components/OrderCard';
 import TableGroupCard from '../components/TableGroupCard';
 import { printOrder } from '../services/printerService';
+import { ensureScaleAutoConnect, stopScaleAutoConnect } from '../services/scaleService';
 import type { Category, MenuItem, Order, Settings as SettingsType, Promotion, Addon, OrderStatus } from '../types';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../contexts/StoreContext';
@@ -184,6 +185,16 @@ const AdminPage = () => {
     useEffect(() => {
         settingsRef.current = settings;
     }, [settings]);
+
+    // Balança: a reconexão automática começa NO BOOT do Admin (antes só rodava com
+    // a aba Balcão aberta) e acompanha a configuração. Ver scaleService.ts.
+    useEffect(() => {
+        if (settings?.isScaleEnabled) {
+            ensureScaleAutoConnect(settings.scaleBaudRate || 9600);
+        } else if (settings) {
+            stopScaleAutoConnect();
+        }
+    }, [settings?.isScaleEnabled, settings?.scaleBaudRate]);
 
 
 

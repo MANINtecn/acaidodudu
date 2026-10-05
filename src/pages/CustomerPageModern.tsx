@@ -25,6 +25,7 @@ import { normalizeString } from '../utils/searchUtils';
 import introJs from 'intro.js';
 import { MIN_ORDER_VALUE } from '../constants';
 import { SaboresComQuantidade, totalUnidadesPorSabor, totalValorPorSabor, montarLinhasPorSabor } from '../components/SaboresComQuantidade';
+import { PrecoDoItem } from '../components/PrecoDoItem';
 
 const sanitizeHtmlEntities = (text?: string) => {
     if (!text) return '';
@@ -496,7 +497,7 @@ const MenuItemCard: React.FC<{ item: MenuItem; onAddItem: (item: MenuItem) => vo
             <div className="p-4 flex flex-col flex-grow">
                 <div className="flex justify-between items-start mb-2">
                     <h3 className="font-bold text-lg text-text-light group-hover:text-primary transition-colors leading-tight">{item.name}</h3>
-                    <span className="font-black text-base text-primary whitespace-nowrap ml-2">R$ {item.price.toFixed(2)}</span>
+                    <PrecoDoItem item={item} className="font-black text-base text-primary whitespace-nowrap ml-2" />
                 </div>
                 <p className="text-xs text-text-dark line-clamp-2 mb-4 flex-grow">{item.description}</p>
                 <button
@@ -1473,7 +1474,7 @@ const ItemDetailModal: React.FC<{
                         <div className="flex justify-between items-start gap-4">
                             <h2 className="text-xl font-black text-white leading-tight uppercase tracking-tight drop-shadow">{sanitizeHtmlEntities(item.name)}</h2>
                             <div className="text-right">
-                                <span className="block text-xl font-black text-amber-400 whitespace-nowrap drop-shadow">R$ {item.price.toFixed(2)}</span>
+                                <PrecoDoItem item={item} className="block text-xl font-black text-amber-400 whitespace-nowrap drop-shadow" />
                                 {item.eligibleForCombo && <span className="text-[10px] text-purple-300 font-bold uppercase tracking-tight">+ R$ {comboPrice.toFixed(2)} no combo</span>}
                             </div>
                         </div>
@@ -3321,7 +3322,7 @@ const CustomerPage: React.FC = () => {
                                                 <p className="text-xs text-purple-200/80 line-clamp-2 leading-tight">{sanitizeHtmlEntities(item.description)}</p>
                                             </div>
                                             <div className="flex justify-between items-center mt-2">
-                                                <span className="font-black text-amber-400 text-sm md:text-base drop-shadow-sm">R$ {item.price.toFixed(2)}</span>
+                                                <PrecoDoItem item={item} className="font-black text-amber-400 text-sm md:text-base drop-shadow-sm" />
                                                 <div className="bg-gradient-to-r from-orange-500 to-purple-600 text-white p-2 rounded-xl shadow-md shadow-orange-500/20 group-hover:scale-110 transition-transform">
                                                     <LucidePlus size={16} />
                                                 </div>

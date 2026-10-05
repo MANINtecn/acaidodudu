@@ -136,14 +136,21 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-            <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-2xl p-6 relative my-8">
+        // O fundo rola (overflow-y-auto) e o painel NÃO é centralizado na vertical:
+        // com `flex items-center` um modal mais alto que a janela tinha o TOPO cortado
+        // e inalcançável (os campos de dados fiscais deixaram o modal mais alto que a
+        // tela -- print do Ikarus, 05/10/2026). Agora começa no topo e rola inteiro.
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 overflow-y-auto">
+            <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-2xl lg:max-w-5xl p-6 relative mx-auto my-6">
                 <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
                     <X size={24} />
                 </button>
                 <h2 className="text-xl font-bold mb-4 text-gray-900 dark:text-white">{initialData ? 'Editar Item' : 'Novo Item'}</h2>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
+                    {/* Desktop: 2 colunas (dados do produto | adicionais + dados fiscais) -- o modal cresce na HORIZONTAL em vez de ficar alto demais. Celular/janela estreita: uma coluna. */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-8 gap-y-4">
+                    <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Nome</label>
@@ -230,9 +237,55 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
                         </div>
                     </div>
 
+                    <div className="flex items-center">
+                        <input
+                            type="checkbox"
+                            id="isAvailable"
+                            name="isAvailable"
+                            checked={formData.isAvailable}
+                            onChange={(e) => setFormData(prev => ({ ...prev, isAvailable: e.target.checked }))}
+                            className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="isAvailable" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                            Disponível para venda
+                        </label>
+                    </div>
+
+                    <div className="flex items-start">
+                        <input
+                            type="checkbox"
+                            id="somenteBalcao"
+                            name="somenteBalcao"
+                            checked={!!formData.somenteBalcao}
+                            onChange={(e) => setFormData(prev => ({ ...prev, somenteBalcao: e.target.checked }))}
+                            className="mt-0.5 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="somenteBalcao" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                            Só balcão/salão
+                            <span className="block text-xs text-gray-500">Não aparece no cardápio do site (ex.: ADD3, ADD5).</span>
+                        </label>
+                    </div>
+
+                    <div className="flex items-start">
+                        <input
+                            type="checkbox"
+                            id="saboresComQuantidade"
+                            name="saboresComQuantidade"
+                            checked={!!formData.saboresComQuantidade}
+                            onChange={(e) => setFormData(prev => ({ ...prev, saboresComQuantidade: e.target.checked }))}
+                            className="mt-0.5 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
+                        />
+                        <label htmlFor="saboresComQuantidade" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
+                            Sabores com quantidade
+                            <span className="block text-xs text-gray-500">No site, o cliente escolhe a quantidade de cada sabor (ex.: picolés).</span>
+                        </label>
+                    </div>
+                    </div>
+                    <div className="space-y-4">
+
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Adicionais Permitidos</label>
-                        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 max-h-40 overflow-y-auto p-2 border rounded-lg dark:border-gray-600">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 lg:max-h-80 overflow-y-auto p-2 border rounded-lg dark:border-gray-600">
                             {addons.map(addon => (
                                 <label key={addon.id} className="flex items-center space-x-2 cursor-pointer">
                                     <input
@@ -327,49 +380,7 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
                             </div>
                         </div>
                     </div>
-
-                    <div className="flex items-center">
-                        <input
-                            type="checkbox"
-                            id="isAvailable"
-                            name="isAvailable"
-                            checked={formData.isAvailable}
-                            onChange={(e) => setFormData(prev => ({ ...prev, isAvailable: e.target.checked }))}
-                            className="h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor="isAvailable" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
-                            Disponível para venda
-                        </label>
                     </div>
-
-                    <div className="flex items-start">
-                        <input
-                            type="checkbox"
-                            id="somenteBalcao"
-                            name="somenteBalcao"
-                            checked={!!formData.somenteBalcao}
-                            onChange={(e) => setFormData(prev => ({ ...prev, somenteBalcao: e.target.checked }))}
-                            className="mt-0.5 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor="somenteBalcao" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
-                            Só balcão/salão
-                            <span className="block text-xs text-gray-500">Não aparece no cardápio do site (ex.: ADD3, ADD5).</span>
-                        </label>
-                    </div>
-
-                    <div className="flex items-start">
-                        <input
-                            type="checkbox"
-                            id="saboresComQuantidade"
-                            name="saboresComQuantidade"
-                            checked={!!formData.saboresComQuantidade}
-                            onChange={(e) => setFormData(prev => ({ ...prev, saboresComQuantidade: e.target.checked }))}
-                            className="mt-0.5 h-4 w-4 text-red-600 focus:ring-red-500 border-gray-300 rounded"
-                        />
-                        <label htmlFor="saboresComQuantidade" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">
-                            Sabores com quantidade
-                            <span className="block text-xs text-gray-500">No site, o cliente escolhe a quantidade de cada sabor (ex.: picolés).</span>
-                        </label>
                     </div>
 
                     <div className="flex justify-end gap-2 pt-4 border-t border-gray-100 dark:border-gray-700">

@@ -235,8 +235,55 @@ export function isWebSerialSupported(): boolean {
  */
 let enqTimer: any = null;
 // 400 ms enfileirava respostas mais rapido do que o loop consumia, atrasando a
-// tela. 600 ms mantem a leitura fluida sem acumular fila.
-const ENQ_INTERVAL_MS = 600;
+// tela -- ANTES de o loop passar a usar so o ULTIMO frame de cada bloco. Com essa
+// protecao (ver runReadLoop) a fila velha e descartada, entao 250 ms e seguro e
+// o peso estavel chega mais cedo (3 leituras iguais = ~0,8 s em vez de ~1,6 s).
+const ENQ_INTERVAL_MS = 250;
+
+/**
+ * VIGIA: se a balanca parar de mandar frame valido (desligou, USB suspenso,
+ * cabo ruim) o ultimo peso NAO pode ficar na tela como "estavel" -- seria
+ * lancado no pedido por engano (Regra 6). Passado este tempo sem frame, o
+ * status volta para 'waiting' e o peso zera.
+ */
+const WATCHDOG_MS = 3000;
+let lastFrameAt = 0;
+let watchdogTimer: any = null;
+
+function stopWatchdog() {
+  if (watchdogTimer) {
+    clearInterval(watchdogTimer);
+    watchdogTimer = null;
+  }
+}
+
+function startWatchdog() {
+  stopWatchdog();
+  lastFrameAt = Date.now();
+  watchdogTimer = setInterval(() => {
+    if (!keepReading) return;
+    const semDados = Date.now() - lastFrameAt;
+    if (semDados <= WATCHDOG_MS) return;
+    if (snapshot.status === 'stable' || snapshot.status === 'unstable') {
+      pushRaw(`[watchdog] sem frame valido ha ${semDados} ms — peso descartado`);
+      lastWeight = 0;
+      sameWeightCount = 0;
+      emit({
+        status: 'waiting',
+        weightKg: 0,
+        isStable: false,
+        errorMessage: 'A balança parou de responder. Confira se está ligada e o cabo USB.'
+      });
+    } else if (snapshot.status === 'waiting' && !snapshot.errorMessage) {
+      emit({ errorMessage: 'Balança conectada, mas sem resposta. Confira se está ligada.' });
+    }
+  }, 500);
+}
+
+/** Há quantos ms não chega um frame válido (0 se nunca houve leitura ativa). */
+export function msSemDadosDaBalanca(): number {
+  return lastFrameAt ? Date.now() - lastFrameAt : 0;
+}
 
 let enqEnviados = 0;
 let enqFalhas = 0;
@@ -297,6 +344,7 @@ async function runReadLoop(port: any) {
 
   // Pede o peso periodicamente (balanças sob demanda).
   startEnqPolling(port);
+  startWatchdog();
 
   const decoder = new TextDecoder();
   let buffer = '';
@@ -362,6 +410,8 @@ async function runReadLoop(port: any) {
               continue;
             }
 
+            lastFrameAt = Date.now(); // a balança está viva (alimenta o vigia)
+
             // Confirmação por repetição: o peso precisa se repetir N vezes
             // antes de ser considerado confiável para lançar no pedido.
             if (Math.abs(parsed.weightKg - lastWeight) < 0.0005) {
@@ -413,13 +463,27 @@ async function runReadLoop(port: any) {
     });
   } finally {
     stopEnqPolling();
+    stopWatchdog();
     readLoopRunning = false;
     // O loop terminou. Se ninguém pediu para parar, a porta caiu de verdade:
     // volta para 'disconnected' para a reconexão automática poder agir.
     // Sem isto o status ficava preso em 'waiting' e ninguém tentava de novo.
     if (keepReading) {
       keepReading = false;
-      emit({ status: 'disconnected', weightKg: 0, isStable: false });
+      // ESQUECE a porta morta: ao replugar o cabo o Chromium entrega outro
+      // objeto, e reaproveitar o antigo fazia o open() falhar e a reconexão
+      // varrer dezenas de portas Bluetooth (auditoria de 05/10/2026).
+      const morta = activeSerialPort;
+      activeSerialPort = null;
+      try { Promise.resolve(morta?.close?.()).catch(() => {}); } catch (_) {}
+      lastWeight = 0;
+      sameWeightCount = 0;
+      emit({
+        status: 'disconnected',
+        weightKg: 0,
+        isStable: false,
+        errorMessage: 'A conexão com a balança caiu. Reconectando...'
+      });
     }
   }
 }
@@ -446,12 +510,26 @@ export async function connectScale(
 
   // Uma tentativa por vez (ver conexaoEmAndamento acima).
   if (conexaoEmAndamento) return false;
+
+  // "Conectar USB" com a balança JA lendo: nao derruba a conexao boa (antes o
+  // botao fazia disconnect + requestPort e podia deixar a balanca desconectada).
+  const conexaoViva =
+    readLoopRunning && keepReading &&
+    (snapshot.status === 'stable' || snapshot.status === 'unstable' ||
+      (snapshot.status === 'waiting' && msSemDadosDaBalanca() < WATCHDOG_MS));
+  if (forcePrompt && conexaoViva) {
+    pushRaw('[conexao] "Conectar USB" com a balanca ja lendo — mantendo a conexao atual');
+    return true;
+  }
+
   conexaoEmAndamento = true;
 
   emit({ status: 'connecting', errorMessage: undefined });
 
   try {
     let port: any = null;
+    // Por que nenhuma porta abriu (alimenta a mensagem para o operador).
+    let motivoSemPorta: 'sem-usb' | 'ocupada' | 'nao-abriu' = 'sem-usb';
 
     if (forcePrompt) {
       await disconnectScalePort();
@@ -494,6 +572,8 @@ export async function connectScale(
           pushRaw(`[conexao] ignorando ${known.length - candidatas.length} porta(s) Bluetooth (sem VID USB)`);
         }
 
+        if (candidatas.length > 0) motivoSemPorta = 'nao-abriu';
+
         for (const candidata of candidatas) {
           const info = typeof candidata.getInfo === 'function' ? candidata.getInfo() : {};
           const etiqueta = info?.usbVendorId
@@ -519,6 +599,7 @@ export async function connectScale(
             // Quase sempre a porta esta OCUPADA por outro programa (software da
             // balanca, emulador de teclado, PDV antigo) ou o driver esta em uso.
             if (err?.name === 'NetworkError' && info?.usbVendorId) {
+              motivoSemPorta = 'ocupada';
               pushRaw('[conexao] >>> A porta da balanca existe mas o Windows recusou.');
               pushRaw('[conexao] >>> Causa provavel: OUTRO PROGRAMA esta usando a COM.');
               pushRaw('[conexao] >>> Feche softwares da balanca/PDV antigo e tente de novo.');
@@ -547,12 +628,18 @@ export async function connectScale(
           pushRaw('[conexao] nenhuma porta autorizada — clique em "Conectar USB" uma vez');
         }
 
-        // Nao e erro: fica aguardando o clique em "Conectar USB".
+        // Nao e "erro" de verdade: continua tentando sozinho (gerenciador de
+        // reconexao). A mensagem diz ao operador O QUE esta acontecendo.
         emit({
           status: 'disconnected',
           weightKg: 0,
           isStable: false,
-          errorMessage: undefined
+          errorMessage:
+            motivoSemPorta === 'ocupada'
+              ? 'Porta da balança ocupada por outro programa. Feche o programa antigo da balança.'
+              : motivoSemPorta === 'nao-abriu'
+                ? 'Não foi possível abrir a porta da balança. Tentando de novo...'
+                : 'Balança USB não detectada. Confira o cabo e se ela está ligada.'
         });
         return false;
       }
@@ -576,6 +663,11 @@ export async function connectScale(
             const todas = await (navigator as any).serial.getPorts();
             for (const outra of todas || []) {
               if (outra === port) continue;
+              // SO portas USB: esta maquina lista ~38 portas, quase todas
+              // Bluetooth, e cada uma leva segundos para o Windows recusar
+              // (auditoria 05/10/2026: a reconexao varria todas antes da USB).
+              const vidOutra = typeof outra.getInfo === 'function' ? outra.getInfo()?.usbVendorId : undefined;
+              if (!vidOutra) continue;
               if (outra.readable) {
                 alternativa = outra;
                 break;
@@ -698,4 +790,107 @@ export async function disconnectScalePort(): Promise<void> {
   lastWeight = 0;
   sameWeightCount = 0;
   emit({ status: 'disconnected', weightKg: 0, isStable: false, lastRaw: '' });
+}
+
+// ─────────────────────────────────────────────────────────────
+// RECONEXÃO AUTOMÁTICA (gerenciador próprio, independe de tela/aba)
+// ─────────────────────────────────────────────────────────────
+// Antes: a reconexão morava num efeito do CounterTab (só rodava com a aba
+// Balcão aberta), tentava a cada 20 s e não sabia quando o cabo era replugado.
+// Agora: um gerenciador único, iniciado no boot do Admin, que
+//  - tenta de novo em 3 s (recua para 6 s e depois 10 s se continuar falhando);
+//  - reage NA HORA ao evento 'connect' do Web Serial (USB plugada);
+//  - se a porta está aberta mas a balança fica muda por muito tempo (USB
+//    suspenso pelo Windows), fecha e reabre a porta.
+// `conexaoEmAndamento` em connectScale impede tentativas simultâneas.
+
+const SEM_RESPOSTA_REABRIR_MS = 12000;
+
+let autoAtivo = false;
+let autoBaud = 9600;
+let autoTimer: any = null;
+let autoFalhas = 0;
+let autoListenersAnexados = false;
+
+function agendarAuto(ms: number) {
+  if (autoTimer) clearTimeout(autoTimer);
+  autoTimer = setTimeout(tentarAuto, ms);
+}
+
+async function tentarAuto() {
+  if (!autoAtivo) return;
+  const st = snapshot.status;
+
+  if (st === 'stable' || st === 'unstable') {
+    autoFalhas = 0;
+    agendarAuto(3000);
+    return;
+  }
+
+  if (st === 'waiting') {
+    // Porta aberta e nenhum frame: espera um pouco; se for demais, reabre.
+    if (msSemDadosDaBalanca() > SEM_RESPOSTA_REABRIR_MS) {
+      pushRaw('[auto] balanca muda ha muito tempo — fechando e reabrindo a porta');
+      await disconnectScalePort();
+      await connectScale(autoBaud, false);
+    }
+    agendarAuto(3000);
+    return;
+  }
+
+  if (st === 'connecting') {
+    agendarAuto(1500);
+    return;
+  }
+
+  // 'disconnected' ou 'error': tenta conectar.
+  const ok = await connectScale(autoBaud, false);
+  autoFalhas = ok ? 0 : autoFalhas + 1;
+  agendarAuto(autoFalhas < 5 ? 3000 : autoFalhas < 15 ? 6000 : 10000);
+}
+
+function aoPlugarUsb() {
+  // Dá meio segundo para o driver terminar de montar a porta.
+  pushRaw('[auto] porta serial conectada (evento do sistema) — tentando abrir');
+  autoFalhas = 0;
+  if (autoAtivo) agendarAuto(500);
+}
+
+function aoRemoverUsb() {
+  pushRaw('[auto] porta serial removida (evento do sistema)');
+}
+
+/** Liga a reconexão automática (idempotente). Chamar quando a balança estiver habilitada. */
+export function ensureScaleAutoConnect(baudRate: number = 9600): void {
+  autoBaud = baudRate || 9600;
+  if (autoAtivo) return;
+  if (!isWebSerialSupported()) return;
+  autoAtivo = true;
+  autoFalhas = 0;
+  try {
+    const serial = (navigator as any).serial;
+    if (!autoListenersAnexados && typeof serial.addEventListener === 'function') {
+      serial.addEventListener('connect', aoPlugarUsb);
+      serial.addEventListener('disconnect', aoRemoverUsb);
+      autoListenersAnexados = true;
+    }
+  } catch (_) {}
+  agendarAuto(0);
+}
+
+/** Desliga a reconexão automática (balança desabilitada nas configurações). */
+export function stopScaleAutoConnect(): void {
+  autoAtivo = false;
+  if (autoTimer) {
+    clearTimeout(autoTimer);
+    autoTimer = null;
+  }
+  try {
+    const serial = (navigator as any).serial;
+    if (autoListenersAnexados && typeof serial.removeEventListener === 'function') {
+      serial.removeEventListener('connect', aoPlugarUsb);
+      serial.removeEventListener('disconnect', aoRemoverUsb);
+    }
+  } catch (_) {}
+  autoListenersAnexados = false;
 }
