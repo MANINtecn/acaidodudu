@@ -2218,17 +2218,31 @@ export const fetchSalesByDateRange = async (storeId: string, startDate: string, 
     const start = new Date(startDate + 'T00:00:00');
     const end = new Date(endDate + 'T23:59:59.999');
 
-    const { data, error } = await supabase
-        .from('orders')
-        .select(ORDER_COLUMNS)
-        .eq('store_id', storeId)
-        .neq('status', 'Cancelado') // Include everything except Cancelled (User request: count pending/delivering too)
-        .gte('timestamp', start.toISOString())
-        .lte('timestamp', end.toISOString())
-        .order('timestamp', { ascending: false });
+    // PAGINADO (auditoria de 05/10/2026): o servidor devolve no MAXIMO 1000 linhas
+    // por consulta, e a consulta antiga nao pedia mais paginas -- um periodo com
+    // mais de 1000 pedidos (o fechamento do mes do Marlon passa disso: ~57 pedidos
+    // por dia) vinha CORTADO, em silencio, com totais menores que os reais.
+    // Ordena por timestamp e por id (desempate) para as paginas nao repetirem nem
+    // pularem pedidos com a mesma data.
+    const TAMANHO_PAGINA = 1000;
+    const todos: any[] = [];
+    for (let de = 0; ; de += TAMANHO_PAGINA) {
+        const { data, error } = await supabase
+            .from('orders')
+            .select(ORDER_COLUMNS)
+            .eq('store_id', storeId)
+            .neq('status', 'Cancelado') // Include everything except Cancelled (User request: count pending/delivering too)
+            .gte('timestamp', start.toISOString())
+            .lte('timestamp', end.toISOString())
+            .order('timestamp', { ascending: false })
+            .order('id', { ascending: true })
+            .range(de, de + TAMANHO_PAGINA - 1);
 
-    if (error) throw error;
-    return (data || []).map((dbOrder: any) => mapOrderFromDB(dbOrder));
+        if (error) throw error;
+        todos.push(...(data || []));
+        if (!data || data.length < TAMANHO_PAGINA) break;
+    }
+    return todos.map((dbOrder: any) => mapOrderFromDB(dbOrder));
 };
 
 export const deleteOrdersByDateRange = async (storeId: string, startDate: string, endDate: string) => {
