@@ -26,7 +26,7 @@ const TOTAL_MESAS = 30;
  * pega categorias parecidas. So esconde a BARRA: os produtos continuam lancaveis por codigo e
  * achaveis na busca. V1 nao muda.
  */
-const CATEGORIAS_OCULTAS_NO_BALCAO_V2 = ['porcaodesalgadosmedios(10unid)', 'monteseuacai', 'sorvete350ml'];
+const CATEGORIAS_OCULTAS_NO_BALCAO_V2 = ['porcaodesalgadosmedios(10unid)', 'monteseuacai', 'monteseuacaicomcomplementoszerolactose', 'sorvete350ml'];
 
 interface CounterTabProps {
     categories: Category[];
@@ -217,6 +217,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // Fluxo do balcão: pesa → digita o número da mesa → Enter → lançou.
     // Produtos usam código a partir de 100, então 1–30 nunca colide com produto.
     const [teclasMesa, setTeclasMesa] = useState('');           // dígitos em digitação
+    // REF sincrona dos digitos (06/10/2026, "se der varios Enter repete o lancamento"): o handler de
+    // teclado lia `teclasMesa` da closure, que fica um render atras -- dois Enter (ou digitos rapidos)
+    // dentro do mesmo intervalo viam o mesmo valor: o codigo era lancado 2x e digitos se perdiam.
+    // Agora toda escrita passa por definirTeclasMesa (atualiza a ref NA HORA) e o handler le a ref.
+    const teclasMesaRef = useRef('');
+    const definirTeclasMesa = (v: string) => { teclasMesaRef.current = v; setTeclasMesa(v); };
     const [nomeAberto, setNomeAberto] = useState(false);        // campo de nome na confirmação
     const campoNomeRef = useRef<HTMLInputElement>(null);
     const [avisoAtalho, setAvisoAtalho] = useState<{
@@ -843,17 +849,28 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
      * pedido"). Depois disso o fluxo de vincular a mesa continua igual,
      * sem mudanca nenhuma.
      */
+    // Trava SINCRONA (06/10/2026, print do Ikarus: varios Enter no campo de peso lancavam 4 itens
+    // iguais): o modal so fecha no proximo render e, ate la, cada Enter chamava esta funcao de novo
+    // com o mesmo peso. Vale 1 confirmacao por abertura do modal.
+    const pesoManualConfirmadoRef = useRef(false);
+    useEffect(() => { if (isScaleModalOpen) pesoManualConfirmadoRef.current = false; }, [isScaleModalOpen]);
+
     const confirmarPesoManual = () => {
+        if (pesoManualConfirmadoRef.current) return;
         if (!manualWeight || manualWeight <= 0) {
             alert('Por favor, informe ou capture um peso válido.');
             return;
         }
+        pesoManualConfirmadoRef.current = true;
         handleScaleItemAdd(manualWeight, scaleItemName || 'Açaí/Sorvete por Quilo', scalePricePerKg || 60);
         setIsScaleModalOpen(false);
     };
 
     const handleLaunchScaleItemToOrder = (weightKg: number) => {
         if (!weightKg || weightKg <= 0) return;
+        // V2: o mesmo prato nao e lancado duas vezes -- so depois que a balanca passar por zero
+        // (mesma regra que o Enter ja seguia; o clique repetido no botao nao a respeitava).
+        if (balcaoV2Ref.current && pesoLancadoRef.current) return;
         const currentPricePerKg = scalePricePerKg || 60;
         const itemName = scaleItemName || 'Açaí/Sorvete por Quilo';
         handleScaleItemAdd(weightKg, itemName, currentPricePerKg);
@@ -1342,10 +1359,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     setCustomerName('');
                     setNomeAberto(false);
                     setAvisoAtalho({ tipo: 'erro', titulo: 'Cancelado', detalhe: 'Nada foi enviado.' });
-                    setTeclasMesa('');
+                    definirTeclasMesa('');
                     return;
                 }
-                setTeclasMesa('');
+                definirTeclasMesa('');
                 setAvisoAtalho(null);
                 // Balcão V2: ESC só fecha a tela da comanda se ela estiver
                 // VAZIA (nada lançado ainda) -- pedido do Ikarus, 30/09: com
@@ -1361,8 +1378,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
             if (/^[0-9]$/.test(e.key)) {
                 e.preventDefault();
-                const novoValor = (teclasMesa + e.key).slice(0, 4); // mesa: 2 dígitos · código: até 4
-                setTeclasMesa(novoValor);
+                const novoValor = (teclasMesaRef.current + e.key).slice(0, 4); // mesa: 2 dígitos · código: até 4
+                definirTeclasMesa(novoValor);
                 setAvisoAtalho(null);
 
                 // Popup de sabor (Balcão V2): assim que o código digitado bate
@@ -1376,7 +1393,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     if (produtoBatido && produtoBatido.isAvailable !== false) {
                         const seletor = montarSeletorInicial(produtoBatido);
                         if (seletor) {
-                            setTeclasMesa('');
+                            definirTeclasMesa('');
                             setSeletorSabor(seletor);
                             bipar('ok');
                         }
@@ -1438,7 +1455,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     : temPesoR ? `${scaleWeight.toFixed(3)} kg` : `${cart.length} item(ns)`;
 
                 bipar('ok');
-                setTeclasMesa('');
+                definirTeclasMesa('');
                 setAvisoAtalho({
                     tipo: 'enviar',
                     titulo: `RETIRADA · ${descR} · R$ ${(valorPesoR + valorCarrinhoR).toFixed(2)}`,
@@ -1522,7 +1539,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // ficava travado depois de lançar o produto (achado em 30/09,
             // Ikarus: "C, N, nome, Enter, código, Enter e não lançou").
             if (balcaoV2Ref.current && isComandaModalOpenRef.current &&
-                e.key === 'Enter' && !teclasMesa) {
+                e.key === 'Enter' && !teclasMesaRef.current) {
                 e.preventDefault();
                 // Enter com BALANÇA AUTOMÁTICA (pedido do Ikarus 04/10 e 05/10/2026):
                 // Enter = lança o peso NOVO que está na balança, em QUALQUER
@@ -1583,7 +1600,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // hora um código digitado errado, sem precisar de mouse.
             // Só dentro da comanda e sem dígitos pendentes, pra não colidir
             // com nada do fluxo de código/mesa.
-            if (balcaoV2Ref.current && isComandaModalOpenRef.current && !teclasMesa &&
+            if (balcaoV2Ref.current && isComandaModalOpenRef.current && !teclasMesaRef.current &&
                 (e.key === '+' || e.key === '-' || e.key === 'Delete' || e.key.toUpperCase() === 'Q')) {
                 const ultimo = cartRef.current[cartRef.current.length - 1];
                 if (ultimo) {
@@ -1597,10 +1614,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             }
 
             // 1º ENTER: 1..30 = mesa · 100+ = código de produto.
-            if (e.key === 'Enter' && teclasMesa) {
+            if (e.key === 'Enter' && teclasMesaRef.current) {
                 e.preventDefault();
-                const numero = parseInt(teclasMesa, 10);
-                setTeclasMesa('');
+                const numero = parseInt(teclasMesaRef.current, 10);
+                definirTeclasMesa('');
 
                 if (numero >= 100) {
                     // Código de produto: adiciona ao carrinho, sem mouse.
@@ -1666,9 +1683,9 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 return;
             }
 
-            if (e.key === 'Backspace' && teclasMesa) {
+            if (e.key === 'Backspace' && teclasMesaRef.current) {
                 e.preventDefault();
-                setTeclasMesa(prev => prev.slice(0, -1));
+                definirTeclasMesa(teclasMesaRef.current.slice(0, -1));
             }
         };
 
@@ -1944,6 +1961,9 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
     const finalizarComanda = async (): Promise<boolean> => {
         const numeroEnvio = parseInt(selectedTable, 10);
+        // Carrinho que ESTE envio leva (o handler pode estar uma renderizacao atras do que o operador ja
+        // lancou). Serve para detectar item lancado enquanto o envio estava em andamento.
+        const cartEnviado = cart;
         // CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei todos os
         // itens da comanda, achei que ela sumiria sozinha, mas continuou
         // pendurada em Pedidos -- tive que ir lá cancelar manualmente"):
@@ -2180,20 +2200,45 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 delete rascunhosComandaRef.current[parseInt(selectedTable, 10)];
                 persistirRascunhos();
                 setVersaoRascunhos(v => v + 1);
-                setIsComandaModalOpen(false);
                 // CAUSA RAIZ da duplicacao (auditoria 05/10/2026, pedidos #13->#20): o envio NAO
                 // limpava o carrinho local. Ao trocar de comanda, salvarRascunhoAtual() guardava
                 // esse carrinho (itens JA enviados) como rascunho e, ao reabrir, ele ressuscitava
                 // por cima do banco -> o proximo Enter criava um pedido novo com tudo de novo.
                 // Agora a comanda enviada sai da tela: reabrir carrega do banco (handleSelectTable).
                 // So limpa se o operador ainda esta nesta comanda (nao apaga outra que abriu no meio).
+                //
+                // ATENCAO (06/10/2026, "varios pesos na mesma comanda + Enter apressado"): o envio leva
+                // alguns instantes (rede). Se o operador JA lancou outro peso/produto nesse intervalo,
+                // limpar a tela apagaria esse item sem ele ter sido enviado. Nesse caso a comanda NAO
+                // fecha: recarrega o banco e mantem so o que ainda esta pendente.
+                const mesmaComanda = parseInt(selectedTableRef.current, 10) === numeroEnvio;
+                const idsEnviados = new Set(cartEnviado.map(i => i.cartId));
+                const lancadosNoMeioDoEnvio = mesmaComanda ? cartRef.current.filter(i => !idsEnviados.has(i.cartId)) : [];
                 cartIdsJaEnviadosRef.current = new Set();
-                if (parseInt(selectedTableRef.current, 10) === numeroEnvio) {
-                    setCart([]);
-                    setCurrentOrderId(null);
-                    setPedidosDaMesa([]);
-                    setCustomerName('');
-                    setSelectedTable('');
+                if (lancadosNoMeioDoEnvio.length > 0) {
+                    try {
+                        const abertos = await fetchAllOpenOrdersForTable(storeId, numeroEnvio);
+                        const r = reconciliarRascunho(
+                            { cart: cartRef.current, customerName, pedidosDaMesa, currentOrderId },
+                            abertos,
+                        );
+                        setPedidosDaMesa(r.pedidosDaMesa);
+                        setCart(r.cart);
+                        setCurrentOrderId(r.currentOrderId);
+                    } catch (e) {
+                        // Sem conseguir reler o banco: tira da tela so o que JA foi enviado e mantem o novo.
+                        console.error('Reconciliar comanda apos envio falhou:', e);
+                        setCart(cartRef.current.filter(i => !idsEnviados.has(i.cartId)));
+                    }
+                } else {
+                    setIsComandaModalOpen(false);
+                    if (mesmaComanda) {
+                        setCart([]);
+                        setCurrentOrderId(null);
+                        setPedidosDaMesa([]);
+                        setCustomerName('');
+                        setSelectedTable('');
+                    }
                 }
             }
             if (!(pedidosDaMesa.length > 0 && orderType === 'Balcão' && selectedTable)) {
@@ -2586,10 +2631,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         <button
                             type="button"
                             onClick={() => handleLaunchScaleItemToOrder(scaleWeight)}
-                            disabled={!scaleWeight || scaleWeight <= 0 || !isScaleStable}
+                            disabled={!scaleWeight || scaleWeight <= 0 || !isScaleStable || (!!settings?.balcaoV2 && pesoLancado)}
                             title={!isScaleStable && scaleWeight > 0 ? 'Aguarde o peso estabilizar' : undefined}
                             className={`flex-1 lg:flex-initial px-5 py-2.5 rounded-xl font-black text-xs md:text-sm uppercase tracking-wider transition-all flex items-center justify-center gap-2 shadow-lg ${
-                                scaleWeight > 0 && isScaleStable
+                                scaleWeight > 0 && isScaleStable && !(settings?.balcaoV2 && pesoLancado)
                                     ? 'bg-gradient-to-r from-orange-500 via-orange-500 to-amber-600 hover:brightness-110 text-black shadow-orange-500/40 active:scale-95 cursor-pointer ring-2 ring-orange-300/60 animate-pulse'
                                     : 'bg-slate-900 text-slate-600 border border-slate-800 cursor-not-allowed'
                             }`}
@@ -2598,6 +2643,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             <span>
                                 {scaleWeight > 0 && !isScaleStable
                                     ? 'Aguarde estabilizar...'
+                                    : (settings?.balcaoV2 && pesoLancado && scaleWeight > 0)
+                                    ? 'Peso lançado · retire o prato'
                                     : `Lançar Pedido (R$ ${((scaleWeight || 0) * (scalePricePerKg || 60)).toFixed(2)})`}
                             </span>
                         </button>
@@ -2769,7 +2816,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     </div>
                 </div>
                 
-                <CounterMenuGrid items={filteredItems} onAdd={addToCart} />
+                <CounterMenuGrid items={filteredItems} onAdd={addToCart} modoLista={balcaoV2} />
             </div>
 
             {/* CARRINHO DA COMANDA ATIVA (Balcão V2) — ocupa o MESMO lugar do

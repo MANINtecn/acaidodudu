@@ -30,6 +30,8 @@ const PROIBIDOS = [
     // a esse efeito faria o handler ver um avisoAtalho velho sem o lint
     // acusar nada. Corrigido tambem no codigo (avisoAtalhoRef).
     'avisoAtalho',
+    // 06/10/2026: digitos do codigo/mesa. Lidos da closure, dois Enter rapidos lancavam o produto 2x.
+    'teclasMesa',
 ];
 
 // \r\n: o editor as vezes salva linhas mistas (CRLF) no Windows. Sem

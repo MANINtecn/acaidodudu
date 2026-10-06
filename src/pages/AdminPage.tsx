@@ -26,6 +26,7 @@ import {
     Search,
     MapPin,
     Keyboard,
+    RefreshCw,
     FileText as FileTextIcon
 } from 'lucide-react';
 import { normalizeString } from '../utils/searchUtils';
@@ -221,6 +222,7 @@ const AdminPage = () => {
     const [editingAddon, setEditingAddon] = useState<Addon | undefined>(undefined);
     const [lastSelectedCategoryId, setLastSelectedCategoryId] = useState<number | undefined>(undefined);
     const [menuSearchTerm, setMenuSearchTerm] = useState('');
+    const [atualizandoCardapio, setAtualizandoCardapio] = useState(false);
     const [showAvailabilityReminder, setShowAvailabilityReminder] = useState(false);
     // Banner de impressora não encontrada -- pedido do Ikarus 02/10/2026:
     // "se eu reinstalar por cima e esquecer de reselecionar a impressora,
@@ -608,9 +610,34 @@ const AdminPage = () => {
     // é descartada.
     const loadDataCallIdRef = useRef(0);
 
+    // Guardas separadas (06/10/2026): antes TODA recarga de pedidos (polling de 30 s, envio, checkout)
+    // invalidava uma carga completa em andamento -- e agora o cardapio so recarrega de 10 em 10 min,
+    // entao essa carga nao pode ser descartada por um refresh de pedidos qualquer.
+    const ordersCallIdRef = useRef(0);
+    const ultimaCargaCompletaRef = useRef(0);
+
+    /**
+     * Recarrega SO os pedidos ativos (~0,2 s). E o que envio de comanda, checkout, cancelar etc. usam:
+     * cardapio/adicionais/configuracoes/promocoes (~1 s, em sequencia) quase nunca mudam e so recarregam
+     * de 10 em 10 minutos, ao salvar algo no Admin, ou pelo botao "Atualizar cardapio".
+     * Sem som nem impressao de redundancia (isso continua so no polling de 30 s).
+     */
+    const recarregarSoPedidos = async () => {
+        if (!currentStore) return;
+        const chamadaId = ++ordersCallIdRef.current;
+        try {
+            const ordersData = await fetchActiveOrders(currentStore.id);
+            if (chamadaId !== ordersCallIdRef.current) return; // resposta obsoleta, descarta
+            setOrders(ordersData);
+        } catch (error) {
+            console.error('Error refreshing orders:', error);
+        }
+    };
+
     const loadData = async (silent = false) => {
         if (!currentStore) return;
         const chamadaId = ++loadDataCallIdRef.current;
+        const chamadaPedidosId = ++ordersCallIdRef.current;
         try {
             if (!silent) setLoading(true);
             const [ordersData, menuData, settingsData, promotionsData] = await Promise.all([
@@ -620,9 +647,12 @@ const AdminPage = () => {
                 fetchAllPromotions(currentStore.id)
             ]);
 
-            if (chamadaId !== loadDataCallIdRef.current) return; // resposta obsoleta, descarta
+            // Pedidos: so aplica se nenhuma recarga de pedidos mais nova chegou antes.
+            if (chamadaPedidosId === ordersCallIdRef.current) setOrders(ordersData);
+            // Cardapio/configuracoes: so descarta se OUTRA carga completa mais nova existe.
+            if (chamadaId !== loadDataCallIdRef.current) return;
+            ultimaCargaCompletaRef.current = Date.now();
 
-            setOrders(ordersData);
             setCategories(menuData.categories);
             setMenuItems(menuData.menuItems);
             setAddons(menuData.addons || []);
@@ -641,11 +671,11 @@ const AdminPage = () => {
         // Mesmo guard de loadData: o polling de 30s roda em paralelo com
         // envios manuais do Balcão, então uma resposta deste fetch pode
         // chegar atrasada e sobrescrever um estado mais novo.
-        const chamadaId = ++loadDataCallIdRef.current;
+        const chamadaId = ++ordersCallIdRef.current;
         try {
             console.log(`[Polling] Checking for new orders... Store ID: ${currentStore.id}`);
             const ordersData = await fetchActiveOrders(currentStore.id);
-            if (chamadaId !== loadDataCallIdRef.current) return; // resposta obsoleta, descarta
+            if (chamadaId !== ordersCallIdRef.current) return; // resposta obsoleta, descarta
 
             // REDUNDANCY: Check for unprinted orders in the poll result
             if ((window as any).electron) {
@@ -706,6 +736,10 @@ const AdminPage = () => {
         if (!currentStore) return;
         loadData();
         const interval = setInterval(() => refreshOrdersOnly(), 30000); // Poll orders every 30s
+        // Cardapio, adicionais, configuracoes e promocoes: de 10 em 10 minutos (pedido do Ikarus, 06/10/2026:
+        // "nao e toda hora que atualizam preco"). No PC que edita, atualiza na hora; nos outros, ate 10 min
+        // ou pelo botao "Atualizar cardapio".
+        const intervaloCardapio = setInterval(() => loadData(true), 10 * 60 * 1000);
 
         // Real-time subscription
         const subscription = supabase
@@ -842,6 +876,7 @@ const AdminPage = () => {
 
         return () => {
             clearInterval(interval);
+            clearInterval(intervaloCardapio);
             supabase.removeChannel(subscription);
             if (tvChannelRef.current) {
                 supabase.removeChannel(tvChannelRef.current);
@@ -1122,7 +1157,7 @@ const AdminPage = () => {
     const handleUpdateOrder = async (orderId: string, updates: Partial<Order>) => {
         try {
             await updateOrder(orderId, updates);
-            await loadData(true);
+            await recarregarSoPedidos();
             if (selectedOrder?.id === orderId) {
                 setSelectedOrder(prev => prev ? { ...prev, ...updates } : null);
             }
@@ -1311,7 +1346,7 @@ const AdminPage = () => {
             if (newStatus === 'Cancelado' && pedido?.table_number) {
                 await limparPagamentosSeMesaFicouVazia(pedido.table_number);
             }
-            await loadData(true);
+            await recarregarSoPedidos();
         } catch (error) {
             console.error("Error updating status:", error);
             alert("Erro ao atualizar status");
@@ -1327,7 +1362,7 @@ const AdminPage = () => {
             if (pedido?.table_number) {
                 await limparPagamentosSeMesaFicouVazia(pedido.table_number);
             }
-            await loadData(true);
+            await recarregarSoPedidos();
         } catch (error) {
             console.error("Error deleting order:", error);
             alert("Erro ao excluir pedido.");
@@ -1412,8 +1447,8 @@ const AdminPage = () => {
                 await handlePrintOrder(updatedOrder, true);
             }
 
-            // 4. Refresh
-            await loadData(true);
+            // 4. Refresh (so pedidos: o cardapio nao muda ao fechar a conta)
+            await recarregarSoPedidos();
             setIsCheckoutModalOpen(false);
             setCheckoutOrder(null);
             // Comanda fechou: some tambem o badge "Mesa N · F7 fecha a
@@ -1546,12 +1581,12 @@ const AdminPage = () => {
             // enviarComandaAtivaRef.current() terminar pra então buscar o
             // pedido recém-criado em ordersRef -- sem o await aqui, essa
             // busca sempre rodava cedo demais e nunca achava nada.
-            await loadData(true);
+            await recarregarSoPedidos();
         } catch (error) {
             console.error('Error creating/updating order:', error);
             if (!salvou) throw error;
         }
-    }, [currentStore?.id, handlePrintOrder, loadData]);
+    }, [currentStore?.id, handlePrintOrder, recarregarSoPedidos]);
 
 
     // Retirada aparece na coluna ENTREGA, nao mais em Balcao/Retirada — pedido
@@ -1967,6 +2002,22 @@ const AdminPage = () => {
                             <div className="flex justify-between items-center">
                                 <div className="flex flex-col md:flex-row md:items-center gap-4 flex-1 mx-4">
                                     <h2 className="text-2xl font-bold text-gray-800 dark:text-white whitespace-nowrap">Gerenciar Cardápio</h2>
+                                    {/* O cardapio recarrega sozinho de 10 em 10 min; este botao puxa as mudancas
+                                        feitas em OUTRO computador na hora. */}
+                                    <button
+                                        type="button"
+                                        disabled={atualizandoCardapio}
+                                        onClick={async () => {
+                                            setAtualizandoCardapio(true);
+                                            try { await loadData(true); showNotify('Cardápio atualizado! ✅'); }
+                                            finally { setAtualizandoCardapio(false); }
+                                        }}
+                                        title="Recarrega cardápio, adicionais, configurações e promoções agora"
+                                        className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm font-bold whitespace-nowrap disabled:opacity-60 transition-all active:scale-95"
+                                    >
+                                        <RefreshCw size={16} className={atualizandoCardapio ? 'animate-spin' : ''} />
+                                        {atualizandoCardapio ? 'Atualizando...' : 'Atualizar cardápio'}
+                                    </button>
                                     <div className="relative flex-1 max-w-md">
                                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                                         <input
@@ -2346,7 +2397,7 @@ const AdminPage = () => {
                                 }
                                 
                                 setIsEditOrderModalOpen(false);
-                                await loadData(true);
+                                await recarregarSoPedidos();
                             } catch (error) {
                                 console.error("Error saving edit:", error);
                                 alert("Erro ao salvar alterações");
@@ -2405,7 +2456,7 @@ const AdminPage = () => {
                         // os pedidos (o sub-pedido já virou 'Entregue' no banco
                         // pela RPC settle_table).
                         setSplitBillTable(null);
-                        loadData(true);
+                        recarregarSoPedidos();
                         if (activeTabRef.current === 'counter') {
                             setFecharComandaSignal(v => v + 1);
                         }

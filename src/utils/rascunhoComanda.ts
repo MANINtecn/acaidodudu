@@ -52,7 +52,10 @@ export function reconciliarRascunho<I extends ItemComCartId, P extends PedidoCom
     const doBancoNovo = itensDoBanco.filter(i => !S.has(i.cartId));
 
     return {
-        cart: abertos.length > 0 ? [...doRascunho, ...doBancoNovo] : doRascunho,
+        // Ordem na tela: o que ja estava na comanda, o que chegou do banco, e por ultimo o pendente.
+        cart: abertos.length > 0
+            ? [...doRascunho.filter(i => S.has(i.cartId)), ...doBancoNovo, ...doRascunho.filter(i => !S.has(i.cartId))]
+            : doRascunho,
         pedidosDaMesa: abertos,
         currentOrderId: abertos[0]?.id ?? null,
         customerName: rascunho.customerName,

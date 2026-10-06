@@ -6,9 +6,55 @@ import { precoParaExibir } from './PrecoDoItem';
 interface CounterMenuGridProps {
     items: MenuItem[];
     onAdd: (item: MenuItem) => void;
+    /** Balcão V2: lista compacta (nome · código · valor) em vez de cards -- cabem muito mais produtos. */
+    modoLista?: boolean;
 }
 
-const CounterMenuGrid: React.FC<CounterMenuGridProps> = ({ items, onAdd }) => {
+const CounterMenuGrid: React.FC<CounterMenuGridProps> = ({ items, onAdd, modoLista = false }) => {
+    // LISTA (Balcão V2, pedido do Ikarus 06/10/2026): "em vez de cards, lista: nome do produto,
+    // código e valor" -- os cards mostravam no máximo 4 a 6 produtos; em lista cabem dezenas.
+    // Colunas fixas: nome (cresce, até 2 linhas) | código | valor.
+    if (modoLista) {
+        return (
+            <div className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide">
+                {items.length > 0 && (
+                    <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-1 bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 text-[10px] font-black uppercase tracking-wider text-gray-400">
+                        <span className="flex-1 min-w-0">Produto</span>
+                        <span className="w-12 text-center">Cód.</span>
+                        <span className="w-24 text-right">Valor</span>
+                    </div>
+                )}
+                {items.map(item => {
+                    const preco = precoParaExibir(item);
+                    return (
+                        <button
+                            key={item.id}
+                            onClick={() => onAdd(item)}
+                            className="group w-full flex items-center gap-3 px-4 py-1.5 text-left border-b border-gray-100 dark:border-gray-700/60 hover:bg-blue-50 dark:hover:bg-blue-900/20 active:bg-blue-100 dark:active:bg-blue-900/30 transition-colors"
+                        >
+                            <span className="flex-1 min-w-0 line-clamp-2 break-words [overflow-wrap:anywhere] font-bold text-[13px] leading-tight uppercase tracking-tight text-gray-800 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400">
+                                {item.name}
+                            </span>
+                            <span className="w-12 shrink-0 text-center font-mono font-black text-[12px] text-gray-500 dark:text-gray-400">
+                                {item.codigo != null ? item.codigo : ''}
+                            </span>
+                            <span className="w-24 shrink-0 text-right font-black text-sm text-blue-600 dark:text-blue-400 whitespace-nowrap">
+                                {preco.aPartirDe && <span className="mr-1 text-[9px] font-bold uppercase tracking-wide opacity-70">a partir de</span>}
+                                R$ {preco.valor.toFixed(2)}
+                            </span>
+                        </button>
+                    );
+                })}
+                {items.length === 0 && (
+                    <div className="py-20 text-center text-gray-400">
+                        <Search className="mx-auto mb-3 opacity-20" size={48} />
+                        <p className="font-medium">Nenhum produto encontrado</p>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
     // console.log("Rendering Menu Grid"); // Debug check
     // Colunas AUTOMÁTICAS (cada card com no mínimo 130 px): com 2/3 colunas fixas, nomes
     // longos ("TRADICIONAIS", "CASQUINHA") estouravam o card e empurravam o código do
