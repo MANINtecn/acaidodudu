@@ -708,17 +708,6 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         return { temCalda: true as const, etapa1, caldas };
     };
 
-    /** V2: so exige escolha na hora (popup) o produto com CALDA e mais de 1 SABOR (Milk Shake 500ml, com
-     * 21 sabores). Kits de sorvete (com ou sem calda), picoles, acai etc. entram direto; um produto com
-     * 1 sabor + 1 calda (Gourmet Ferrero Rocher) nao tem o que escolher. Vem dos DADOS (grupos dos
-     * adicionais), sem nome de produto no codigo. */
-    const exigeEscolhaNoV2 = (produto: MenuItem): boolean => {
-        const todos = opcoesDeSaborDoProduto(produto);
-        const temCalda = todos.some(a => a.addonGroup === 'calda');
-        const sabores = todos.filter(a => a.addonGroup === 'sabor').length;
-        return temCalda && sabores > 1;
-    };
-
     /** Decide como abrir o popup pra um produto: fluxo único (lista com
      * "Prosseguir sem adicional" no topo, MULTI-seleção com tecla S -- pedido
      * do Ikarus 02/10/2026, ex.: leite condensado + leite em pó no mesmo
@@ -730,7 +719,10 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         // popup -- o produto entra direto, no preco dele. So o fluxo com CALDA (Milk Shake, kit sorvete
         // com calda) continua perguntando, porque la a escolha e obrigatoria. Opcionais podem ser
         // acrescentados depois no botao "Adds" da linha do carrinho.
-        if (balcaoV2Ref.current && !exigeEscolhaNoV2(produto)) return null;
+        // 06/10/2026 (Ikarus: "540 caiu na comanda e acabou"): no V2 NENHUM produto abre popup -- nem o
+        // Milk Shake 540. Sabor/calda/adicionais a cliente combina na hora e entram como ADD (333, 555...)
+        // ou pelo botao "+ Adds" da linha do carrinho. O popup continua so no V1.
+        if (balcaoV2Ref.current) return null;
         if (temCalda) {
             // Sabor+calda sempre abre popup, mesmo com 1 única opção em cada
             // etapa -- escolher calda é uma decisão de verdade (ex.: Chantilly
@@ -3018,13 +3010,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                     onClick={() => openAddonModal(item)}
                                     className={`shrink-0 px-1.5 py-0.5 text-[9px] font-black rounded uppercase tracking-wide transition-all border ${
                                         item.selectedAddons.length === 0
-                                            ? (exigeEscolhaNoV2(item)
-                                                ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 animate-pulse'
-                                                : 'bg-gray-100 dark:bg-gray-700/50 text-gray-500 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200')
+                                            ? 'bg-gray-100 dark:bg-gray-700/50 text-gray-500 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200'
                                             : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-green-200/50 dark:border-green-700/50 hover:bg-green-100'
                                     }`}
                                 >
-                                    {item.selectedAddons.length === 0 ? (exigeEscolhaNoV2(item) ? '⚠ Sabor' : '+ Adds') : `Adds (${item.selectedAddons.length})`}
+                                    {item.selectedAddons.length === 0 ? '+ Adds' : `Adds (${item.selectedAddons.length})`}
                                 </button>
                             )}
                             <div className="shrink-0 flex items-center bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-px">
