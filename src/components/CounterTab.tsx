@@ -594,6 +594,23 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     }, [promotions]);
 
     const filteredItems = useMemo(() => {
+        // V2 (pedido do Ikarus, 06/10/2026): sem barra de categorias -- so a busca e a lista. Sem busca
+        // mostra todos os produtos disponiveis em ordem de CODIGO (vira uma "colinha" na tela), menos os
+        // das categorias que ele tirou do balcao; com busca, procura em tudo, por nome ou codigo.
+        if (balcaoV2) {
+            const termo = debouncedSearchTerm.trim();
+            const termoNorm = normalizeString(termo);
+            const soDigitos = /^\d+$/.test(termo);
+            const idsOcultos = new Set(categories.filter(c => !categoriasVisiveis.includes(c)).map(c => c.id));
+            return normalizedMenuData
+                .filter(item => {
+                    if (!item.isAvailable) return false;
+                    if (!termo) return !idsOcultos.has(item.categoryId);
+                    if (soDigitos && item.codigo != null && String(item.codigo).startsWith(termo)) return true;
+                    return item._normalizedName.includes(termoNorm);
+                })
+                .sort((a, b) => (a.codigo ?? 1e9) - (b.codigo ?? 1e9) || a.name.localeCompare(b.name));
+        }
         const normalizedSearch = normalizeString(debouncedSearchTerm);
         const isPromoCategory = selectedCategoryId === -1;
         
@@ -634,7 +651,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         }
 
         return items;
-    }, [normalizedMenuData, selectedCategoryId, debouncedSearchTerm, normalizedPromotions, mostrarPromocoes]);
+    }, [normalizedMenuData, selectedCategoryId, debouncedSearchTerm, normalizedPromotions, mostrarPromocoes, balcaoV2, categories, categoriasVisiveis]);
 
     const addToCart = (item: MenuItem) => {
         setCart(prev => {
@@ -694,6 +711,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
      * `null` = não precisa de popup nenhum (0 opções). */
     const montarSeletorInicial = (produto: MenuItem): typeof seletorSabor => {
         const { temCalda, etapa1 } = montarEtapasDeSabor(produto);
+        // V2 (06/10/2026, "digito 300 e ja cai na comanda"): sabores/adicionais OPCIONAIS nao abrem
+        // popup -- o produto entra direto, no preco dele. So o fluxo com CALDA (Milk Shake, kit sorvete
+        // com calda) continua perguntando, porque la a escolha e obrigatoria. Opcionais podem ser
+        // acrescentados depois no botao "Adds" da linha do carrinho.
+        if (balcaoV2Ref.current && !temCalda) return null;
         if (temCalda) {
             // Sabor+calda sempre abre popup, mesmo com 1 única opção em cada
             // etapa -- escolher calda é uma decisão de verdade (ex.: Chantilly
@@ -1644,8 +1666,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         bipar('ok');
                         return;
                     }
-                    const opcoesSabor = opcoesDeSaborDoProduto(produto);
-                    addToCartComSabor(produto, opcoesSabor[0]);
+                    if (balcaoV2Ref.current) {
+                        // V2: entra direto, SEM sabor embutido (antes, sem popup, embutia a 1a opcao da lista).
+                        addToCart(produto);
+                    } else {
+                        const opcoesSabor = opcoesDeSaborDoProduto(produto);
+                        addToCartComSabor(produto, opcoesSabor[0]);
+                    }
                     bipar('ok');
                     // Balcão V2: SEM aviso na tela -- pedido do Ikarus, 30/09
                     // ("mais prático", sem modal verde a cada código digitado).
@@ -2759,6 +2786,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         />
                         </div>
                     </div>
+                    {!balcaoV2 && (
                     <div className="flex flex-wrap items-center gap-2 pb-1">
                         {mostrarPromocoes && normalizedPromotions.length > 0 && (
                             <button 
@@ -2814,6 +2842,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             </button>
                         )}
                     </div>
+                    )}
                 </div>
                 
                 <CounterMenuGrid items={filteredItems} onAdd={addToCart} modoLista={balcaoV2} />
@@ -2959,11 +2988,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                     onClick={() => openAddonModal(item)}
                                     className={`shrink-0 px-1.5 py-0.5 text-[9px] font-black rounded uppercase tracking-wide transition-all border ${
                                         item.selectedAddons.length === 0
-                                            ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 animate-pulse'
+                                            ? (montarEtapasDeSabor(item).temCalda
+                                                ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 animate-pulse'
+                                                : 'bg-gray-100 dark:bg-gray-700/50 text-gray-500 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200')
                                             : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-green-200/50 dark:border-green-700/50 hover:bg-green-100'
                                     }`}
                                 >
-                                    {item.selectedAddons.length === 0 ? '⚠ Sabor' : `Adds (${item.selectedAddons.length})`}
+                                    {item.selectedAddons.length === 0 ? (montarEtapasDeSabor(item).temCalda ? '⚠ Sabor' : '+ Adds') : `Adds (${item.selectedAddons.length})`}
                                 </button>
                             )}
                             <div className="shrink-0 flex items-center bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-px">

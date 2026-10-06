@@ -179,6 +179,18 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
         // campo é numérico (type="number"), letras nunca são dígito de
         // verdade nele -- então D/C/P têm que valer mesmo com o campo
         // focado. Só dígitos/Backspace/etc continuam indo pro campo.
+        // SETAS (06/10/2026, pedido do Ikarus: "as letras podem nao funcionar no teclado deles"):
+        // <- -> trocam a forma de pagamento na ordem da tela (Dinheiro, Pix, Cartao) e ENTER finaliza.
+        // Trava nas pontas. Com o cursor num campo (V1: Valor Recebido) as setas continuam sendo do campo.
+        if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && (!digitando || modoRapido) && !isProcessing) {
+            e.preventDefault();
+            const ordem = ['Dinheiro', 'PIX', 'Cartão'];
+            const atual = ordem.indexOf(method);
+            const proximo = Math.min(ordem.length - 1, Math.max(0, (atual < 0 ? 0 : atual) + (e.key === 'ArrowRight' ? 1 : -1)));
+            setMethod(ordem[proximo] as typeof method);
+            return;
+        }
+
         const tecla = e.key.toUpperCase();
         if (tecla === 'D') { e.preventDefault(); setMethod('Dinheiro'); return; }
         if (tecla === 'C') { e.preventDefault(); setMethod('Cartão'); return; }
@@ -221,6 +233,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({ isOpen, onClose, o
                                 { tecla: 'D', acao: 'DINHEIRO' },
                                 { tecla: 'C', acao: 'CARTÃO' },
                                 { tecla: 'P', acao: 'PIX' },
+                                { tecla: '← →', acao: 'TROCAR' },
                                 ...(modoRapido ? [] : [{ tecla: '=', acao: 'VALOR EXATO' }]),
                                 { tecla: 'ENTER', acao: 'FINALIZA' },
                                 // F8 pagamento fracionado -- pedido do Ikarus
