@@ -19,6 +19,15 @@ import { reconciliarRascunho, rascunhoEstaValido, comandaTemPendencia } from '..
  */
 const TOTAL_MESAS = 30;
 
+/**
+ * Categorias que NAO aparecem na barra do Balcao V2 (pedido do Ikarus, 05/10/2026: "remover essas
+ * categorias"): a aba Promocoes + Porcao de Salgados, Monte Seu Acai e Sorvete 350ml. Comparacao
+ * pelo NOME normalizado inteiro (sem acento/espaco/caixa), assim sobrevive a troca de id e nao
+ * pega categorias parecidas. So esconde a BARRA: os produtos continuam lancaveis por codigo e
+ * achaveis na busca. V1 nao muda.
+ */
+const CATEGORIAS_OCULTAS_NO_BALCAO_V2 = ['porcaodesalgadosmedios(10unid)', 'monteseuacai', 'sorvete350ml'];
+
 interface CounterTabProps {
     categories: Category[];
     menuItems: MenuItem[];
@@ -554,6 +563,22 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         }));
     }, [menuItems]);
 
+    const balcaoV2 = !!settings?.balcaoV2;
+    const categoriasVisiveis = useMemo(
+        () => balcaoV2
+            ? categories.filter(c => !CATEGORIAS_OCULTAS_NO_BALCAO_V2.some(t => normalizeString(c.name) === t))
+            : categories,
+        [categories, balcaoV2]
+    );
+    // V2: a aba "Promocoes" tambem sai (da barra, do "MAIS..." e da busca).
+    const mostrarPromocoes = !balcaoV2;
+    // Se a categoria selecionada deixou de existir na barra (ex.: era Promocoes), vai para a 1a visivel.
+    useEffect(() => {
+        if (!balcaoV2) return;
+        const ok = categoriasVisiveis.some(c => c.id === selectedCategoryId);
+        if (!ok && categoriasVisiveis.length > 0) setSelectedCategoryId(categoriasVisiveis[0].id);
+    }, [balcaoV2, categoriasVisiveis, selectedCategoryId]);
+
     const normalizedPromotions = useMemo(() => {
         return (promotions || []).map(p => ({
             ...p,
@@ -577,7 +602,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         });
 
         // Filter promotions
-        const showPromos = debouncedSearchTerm || isPromoCategory;
+        const showPromos = mostrarPromocoes && (debouncedSearchTerm || isPromoCategory);
         if (showPromos && normalizedPromotions.length > 0) {
             const promoItems = normalizedPromotions
                 .filter(p => {
@@ -603,7 +628,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         }
 
         return items;
-    }, [normalizedMenuData, selectedCategoryId, debouncedSearchTerm, normalizedPromotions]);
+    }, [normalizedMenuData, selectedCategoryId, debouncedSearchTerm, normalizedPromotions, mostrarPromocoes]);
 
     const addToCart = (item: MenuItem) => {
         setCart(prev => {
@@ -2688,7 +2713,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         </div>
                     </div>
                     <div className="flex flex-wrap items-center gap-2 pb-1">
-                        {normalizedPromotions.length > 0 && (
+                        {mostrarPromocoes && normalizedPromotions.length > 0 && (
                             <button 
                                 onClick={() => setSelectedCategoryId(-1)} 
                                 className={`px-3.5 py-1.5 rounded-full whitespace-nowrap font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5
@@ -2702,7 +2727,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         )}
 
                         {/* Top 5 Categorias */}
-                        {categories.slice(0, 5).map(cat => (
+                        {categoriasVisiveis.slice(0, 5).map(cat => (
                             <button 
                                 key={cat.id} 
                                 onClick={() => setSelectedCategoryId(cat.id)} 
@@ -2716,7 +2741,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         ))}
 
                         {/* Categoria Ativa se fora das top 5 */}
-                        {selectedCategoryId !== -1 && !categories.slice(0, 5).some(c => c.id === selectedCategoryId) && (
+                        {selectedCategoryId !== -1 && !categoriasVisiveis.slice(0, 5).some(c => c.id === selectedCategoryId) && (
                             <button 
                                 onClick={() => setSelectedCategoryId(selectedCategoryId)} 
                                 className="px-3.5 py-1.5 rounded-full whitespace-nowrap font-bold text-xs uppercase tracking-wider transition-all shadow-sm bg-blue-600 text-white shadow-blue-500/20 ring-2 ring-blue-400/30"
@@ -2726,7 +2751,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         )}
 
                         {/* Botão MAIS... */}
-                        {categories.length > 5 && (
+                        {categoriasVisiveis.length > 5 && (
                             <button 
                                 type="button"
                                 onClick={() => {
@@ -3541,7 +3566,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                     <Grid size={22} />
                                 </div>
                                 <div>
-                                    <h3 className="font-black text-gray-900 dark:text-white text-lg">Todas as Categorias ({categories.length})</h3>
+                                    <h3 className="font-black text-gray-900 dark:text-white text-lg">Todas as Categorias ({categoriasVisiveis.length})</h3>
                                     <p className="text-xs text-gray-500 dark:text-gray-400">Selecione para filtrar os produtos do cardápio</p>
                                 </div>
                             </div>
@@ -3551,7 +3576,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         </div>
 
                         {/* Campo de Busca de Categoria se houver mais de 6 */}
-                        {categories.length > 6 && (
+                        {categoriasVisiveis.length > 6 && (
                             <div className="relative mb-4">
                                 <Search className="absolute left-3.5 top-1/2 transform -translate-y-1/2 text-gray-400" size={16} />
                                 <input 
@@ -3566,7 +3591,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
                         {/* Grid de Categorias */}
                         <div className="flex-1 overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-3 gap-3 scrollbar-hide">
-                            {normalizedPromotions.length > 0 && (
+                            {mostrarPromocoes && normalizedPromotions.length > 0 && (
                                 <button 
                                     onClick={() => {
                                         setSelectedCategoryId(-1);
@@ -3588,7 +3613,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                 </button>
                             )}
 
-                            {categories
+                            {categoriasVisiveis
                                 .filter(cat => !categorySearchTerm || normalizeString(cat.name).includes(normalizeString(categorySearchTerm)))
                                 .map(cat => {
                                     const itemCount = menuItems.filter(i => i.categoryId === cat.id).length;
