@@ -36,6 +36,12 @@ export function rascunhoEstaValido(r: { salvoEm?: number } | null | undefined, a
     return !!r && typeof r.salvoEm === 'number' && agora - r.salvoEm >= 0 && agora - r.salvoEm <= VALIDADE_RASCUNHO_MS;
 }
 
+/** Mantem so a 1a ocorrencia de cada cartId (um item existe UMA vez numa comanda). */
+export function unicosPorCartId<I extends ItemComCartId>(itens: I[]): I[] {
+    const vistos = new Set<string | undefined>();
+    return itens.filter(i => { if (vistos.has(i.cartId)) return false; vistos.add(i.cartId); return true; });
+}
+
 export function reconciliarRascunho<I extends ItemComCartId, P extends PedidoComItens<I>>(
     rascunho: RascunhoComanda<I, P>,
     abertos: P[],
@@ -53,9 +59,9 @@ export function reconciliarRascunho<I extends ItemComCartId, P extends PedidoCom
 
     return {
         // Ordem na tela: o que ja estava na comanda, o que chegou do banco, e por ultimo o pendente.
-        cart: abertos.length > 0
+        cart: unicosPorCartId(abertos.length > 0
             ? [...doRascunho.filter(i => S.has(i.cartId)), ...doBancoNovo, ...doRascunho.filter(i => !S.has(i.cartId))]
-            : doRascunho,
+            : doRascunho),
         pedidosDaMesa: abertos,
         currentOrderId: abertos[0]?.id ?? null,
         customerName: rascunho.customerName,

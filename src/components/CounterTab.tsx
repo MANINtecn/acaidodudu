@@ -11,7 +11,7 @@ import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, ensure
 import { decidirEnterComPeso, PESO_ZERO_KG } from '../utils/pesoBalanca';
 import { criarEnvioUnico } from '../utils/envioUnico';
 import { resolverCodigoDigitado } from '../utils/codigoProduto';
-import { reconciliarRascunho, rascunhoEstaValido, comandaTemPendencia } from '../utils/rascunhoComanda';
+import { reconciliarRascunho, rascunhoEstaValido, comandaTemPendencia, unicosPorCartId } from '../utils/rascunhoComanda';
 
 /**
  * Total de mesas do sistema. ERA const local dentro de lancarPesoNaMesa — por
@@ -1965,7 +1965,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 setCustomerName(abertos.length > 0 ? (rascunho.customerName || abertos[0].customerName) : rascunho.customerName);
             } else if (abertos.length > 0) {
                 setPedidosDaMesa(abertos);
-                setCart(abertos.flatMap(o => o.items || []));
+                setCart(unicosPorCartId(abertos.flatMap(o => o.items || [])));
                 setCurrentOrderId(abertos[0].id || null);
                 setCustomerName(abertos[0].customerName);
             } else {
@@ -2008,8 +2008,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // outras recebem o resultado dele em vez de gravar outro pedido.
     const handleFinalize = (): Promise<boolean> => envioUnicoRef.current(finalizarComanda);
 
-    const finalizarComanda = async (): Promise<boolean> => {
+    const finalizarComanda = async (cartDoRender: CartItem[] = cart): Promise<boolean> => {
         const numeroEnvio = parseInt(selectedTable, 10);
+        // Um item (cartId) existe UMA vez. Copia repetida no carrinho (sobra de duplicata antiga no banco
+        // ou de reenvio) nunca pode ser gravada de novo -- foi o que dobrava os itens a cada Enter.
+        const cart = unicosPorCartId(cartDoRender);
         // Carrinho que ESTE envio leva (o handler pode estar uma renderizacao atras do que o operador ja
         // lancou). Serve para detectar item lancado enquanto o envio estava em andamento.
         const cartEnviado = cart;
@@ -2166,6 +2169,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 const idsOriginais = new Set(
                     pedidosDaMesa.flatMap(o => (o.items || []).map(i => i.cartId))
                 );
+                // Dono de cada item = o PRIMEIRO pedido que o contem. Se dois pedidos abertos da comanda
+                // tiverem o mesmo cartId (duplicata antiga), o item fica so no primeiro e o outro pedido,
+                // que fica sem item proprio, e apagado pelo passo B -- em vez de os DOIS receberem todos os
+                // itens e dobrarem a cada envio (1 -> 2 -> 4 -> ... -> 512, como na Comanda 2).
+                const donoDoItem = new Map<string, string>();
+                pedidosDaMesa.forEach(p => (p.items || []).forEach(i => { if (!donoDoItem.has(i.cartId)) donoDoItem.set(i.cartId, p.id!); }));
                 const itensNovos = cart.filter(i => !idsOriginais.has(i.cartId) && !cartIdsJaEnviadosRef.current.has(i.cartId));
                 const itensExistentes = cart.filter(i => idsOriginais.has(i.cartId));
 
@@ -2196,8 +2205,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 // outro, não há motivo pra esperar um terminar antes do
                 // próximo começar).
                 await Promise.all(pedidosDaMesa.map(pedido => {
-                    const idsDoPedido = new Set((pedido.items || []).map(i => i.cartId));
-                    const meusItens = itensExistentes.filter(i => idsDoPedido.has(i.cartId));
+                    const meusItens = itensExistentes.filter(i => donoDoItem.get(i.cartId) === pedido.id);
 
                     // CRÍTICO (achado pela auditoria de 01/10/2026): antes a
                     // condição era `pedido.items.length > 0 && meusItens
@@ -2221,7 +2229,23 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
                 showNotify('Comanda da mesa atualizada! ✅');
             } else {
-                await onOrderComplete(orderData);
+                // Envio simples (comanda nova / sem pedido anterior). Reenvio FANTASMA: logo depois de um envio
+                // que deu certo existe uma janela de milissegundos em que um Enter ainda roda o handler antigo,
+                // com o carrinho antigo -- era o 2o pedido igual criado ~0,5 s depois (#42/#43, #48/#49).
+                // Item que ja foi enviado nesta comanda nao e criado de novo. So vale para pedido NOVO
+                // (sem id): com id e uma atualizacao e precisa levar o carrinho inteiro.
+                const jaFoi = cartIdsJaEnviadosRef.current;
+                if (!orderData.id) {
+                    const itensDeVerdade = cart.filter(i => !jaFoi.has(i.cartId));
+                    if (itensDeVerdade.length === 0) return true; // nada novo: reenvio fantasma, ignora
+                    const dados = itensDeVerdade.length === cart.length
+                        ? orderData
+                        : { ...orderData, items: itensDeVerdade, total: calcularValorCarrinho(itensDeVerdade, settings?.comboPrice) + (Number(orderData.deliveryFee) || 0) };
+                    await onOrderComplete(dados);
+                    itensDeVerdade.forEach(i => jaFoi.add(i.cartId));
+                } else {
+                    await onOrderComplete(orderData);
+                }
             }
 
             // Balcão V2 (decisão do Ikarus, 30/09): a comanda continua
@@ -2263,7 +2287,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 const mesmaComanda = parseInt(selectedTableRef.current, 10) === numeroEnvio;
                 const idsEnviados = new Set(cartEnviado.map(i => i.cartId));
                 const lancadosNoMeioDoEnvio = mesmaComanda ? cartRef.current.filter(i => !idsEnviados.has(i.cartId)) : [];
-                cartIdsJaEnviadosRef.current = new Set();
+                // cartIdsJaEnviadosRef NAO e zerado aqui: ele protege justamente contra um Enter atrasado que
+                // chega logo apos o envio. So zera quando a comanda e recarregada do banco (handleSelectTable).
                 if (lancadosNoMeioDoEnvio.length > 0) {
                     try {
                         const abertos = await fetchAllOpenOrdersForTable(storeId, numeroEnvio);
