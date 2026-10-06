@@ -10,6 +10,7 @@ import CounterMenuGrid from './CounterMenuGrid';
 import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, ensureScaleAutoConnect, getScaleRawLog, clearScaleRawLog, getScaleSnapshot, type ScaleStatus } from '../services/scaleService';
 import { decidirEnterComPeso, PESO_ZERO_KG } from '../utils/pesoBalanca';
 import { criarEnvioUnico } from '../utils/envioUnico';
+import { resolverCodigoDigitado } from '../utils/codigoProduto';
 import { reconciliarRascunho, rascunhoEstaValido, comandaTemPendencia } from '../utils/rascunhoComanda';
 
 /**
@@ -223,6 +224,9 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // Agora toda escrita passa por definirTeclasMesa (atualiza a ref NA HORA) e o handler le a ref.
     const teclasMesaRef = useRef('');
     const definirTeclasMesa = (v: string) => { teclasMesaRef.current = v; setTeclasMesa(v); };
+    // Quando o ULTIMO codigo caiu direto na comanda (V2). Um Enter logo em seguida (< 0,5 s) e' o habito
+    // antigo "codigo + Enter", nao a intencao de enviar -- sem isto cada produto enviaria a comanda.
+    const ultimoCodigoLancadoEmRef = useRef(0);
     const [nomeAberto, setNomeAberto] = useState(false);        // campo de nome na confirmação
     const campoNomeRef = useRef<HTMLInputElement>(null);
     const [avisoAtalho, setAvisoAtalho] = useState<{
@@ -704,6 +708,17 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         return { temCalda: true as const, etapa1, caldas };
     };
 
+    /** V2: so exige escolha na hora (popup) o produto com CALDA e mais de 1 SABOR (Milk Shake 500ml, com
+     * 21 sabores). Kits de sorvete (com ou sem calda), picoles, acai etc. entram direto; um produto com
+     * 1 sabor + 1 calda (Gourmet Ferrero Rocher) nao tem o que escolher. Vem dos DADOS (grupos dos
+     * adicionais), sem nome de produto no codigo. */
+    const exigeEscolhaNoV2 = (produto: MenuItem): boolean => {
+        const todos = opcoesDeSaborDoProduto(produto);
+        const temCalda = todos.some(a => a.addonGroup === 'calda');
+        const sabores = todos.filter(a => a.addonGroup === 'sabor').length;
+        return temCalda && sabores > 1;
+    };
+
     /** Decide como abrir o popup pra um produto: fluxo único (lista com
      * "Prosseguir sem adicional" no topo, MULTI-seleção com tecla S -- pedido
      * do Ikarus 02/10/2026, ex.: leite condensado + leite em pó no mesmo
@@ -715,7 +730,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         // popup -- o produto entra direto, no preco dele. So o fluxo com CALDA (Milk Shake, kit sorvete
         // com calda) continua perguntando, porque la a escolha e obrigatoria. Opcionais podem ser
         // acrescentados depois no botao "Adds" da linha do carrinho.
-        if (balcaoV2Ref.current && !temCalda) return null;
+        if (balcaoV2Ref.current && !exigeEscolhaNoV2(produto)) return null;
         if (temCalda) {
             // Sabor+calda sempre abre popup, mesmo com 1 única opção em cada
             // etapa -- escolher calda é uma decisão de verdade (ex.: Chantilly
@@ -1409,16 +1424,29 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 // Ikarus 01/10/2026 ("assim que digitar o código do produto já
                 // aparece o popup"). Só dispara aqui se tiver 2+ sabores: com 0
                 // ou 1, o fluxo normal do Enter (abaixo) já lança direto.
+                //
+                // 06/10/2026 (Ikarus: "bateu o codigo, caiu. Eu nao quero o Enter"): no V2, dentro da comanda,
+                // o codigo COMPLETO ja lanca o produto na hora. O ENTER seguinte (com nada digitado) envia a
+                // comanda. So espera Enter se o codigo for prefixo de outro maior (ex.: 100 e 1000) -- hoje
+                // todos tem 3 digitos, entao nao ha ambiguidade.
                 if (balcaoV2Ref.current && isComandaModalOpenRef.current) {
-                    const numeroDigitado = parseInt(novoValor, 10);
-                    const produtoBatido = numeroDigitado >= 100 ? menuItems.find(p => p.codigo === numeroDigitado) : null;
-                    if (produtoBatido && produtoBatido.isAvailable !== false) {
-                        const seletor = montarSeletorInicial(produtoBatido);
-                        if (seletor) {
-                            definirTeclasMesa('');
-                            setSeletorSabor(seletor);
-                            bipar('ok');
+                    const resolucao = resolverCodigoDigitado(novoValor, menuItems);
+                    if (resolucao.tipo === 'lancar' || resolucao.tipo === 'indisponivel') {
+                        definirTeclasMesa('');
+                        const produtoBatido = resolucao.produto;
+                        if (resolucao.tipo === 'indisponivel') {
+                            bipar('erro');
+                            setAvisoAtalho({ tipo: 'erro', titulo: `${produtoBatido.name}`, detalhe: 'Produto está indisponível.' });
+                            return;
                         }
+                        const seletor = montarSeletorInicial(produtoBatido);
+                        if (seletor) setSeletorSabor(seletor);
+                        else { addToCart(produtoBatido); ultimoCodigoLancadoEmRef.current = Date.now(); }
+                        bipar('ok');
+                    } else if (resolucao.tipo === 'nao-encontrado') {
+                        definirTeclasMesa('');
+                        bipar('erro');
+                        setAvisoAtalho({ tipo: 'erro', titulo: `Código ${resolucao.numero} não encontrado`, detalhe: 'Nenhum produto tem este código.' });
                     }
                 }
                 return;
@@ -1563,6 +1591,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             if (balcaoV2Ref.current && isComandaModalOpenRef.current &&
                 e.key === 'Enter' && !teclasMesaRef.current) {
                 e.preventDefault();
+                // Enter colado no codigo que acabou de cair (habito "codigo + Enter"): ignora, nao envia.
+                if (Date.now() - ultimoCodigoLancadoEmRef.current < 500) return;
                 // Enter com BALANÇA AUTOMÁTICA (pedido do Ikarus 04/10 e 05/10/2026):
                 // Enter = lança o peso NOVO que está na balança, em QUALQUER
                 // comanda (nova, com produtos, com pesos anteriores, 2ª rodada);
@@ -2922,7 +2952,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                             <span className="flex items-center gap-1 flex-wrap justify-center">
                                 {[
                                     { tecla: 'N', acao: 'RENOMEIA' },
-                                    { tecla: 'CÓDIGO + ENTER', acao: 'LANÇA' },
+                                    { tecla: 'CÓDIGO', acao: 'LANÇA' },
                                     { tecla: '+/-', acao: 'QTD' },
                                     { tecla: 'DEL', acao: 'REMOVE ÚLTIMO' },
                                     { tecla: 'B', acao: 'BALANÇA' },
@@ -2988,13 +3018,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                                     onClick={() => openAddonModal(item)}
                                     className={`shrink-0 px-1.5 py-0.5 text-[9px] font-black rounded uppercase tracking-wide transition-all border ${
                                         item.selectedAddons.length === 0
-                                            ? (montarEtapasDeSabor(item).temCalda
+                                            ? (exigeEscolhaNoV2(item)
                                                 ? 'bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-300 dark:border-red-700 animate-pulse'
                                                 : 'bg-gray-100 dark:bg-gray-700/50 text-gray-500 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200')
                                             : 'bg-green-50 dark:bg-green-900/30 text-green-600 dark:text-green-400 border-green-200/50 dark:border-green-700/50 hover:bg-green-100'
                                     }`}
                                 >
-                                    {item.selectedAddons.length === 0 ? (montarEtapasDeSabor(item).temCalda ? '⚠ Sabor' : '+ Adds') : `Adds (${item.selectedAddons.length})`}
+                                    {item.selectedAddons.length === 0 ? (exigeEscolhaNoV2(item) ? '⚠ Sabor' : '+ Adds') : `Adds (${item.selectedAddons.length})`}
                                 </button>
                             )}
                             <div className="shrink-0 flex items-center bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-px">
@@ -3011,7 +3041,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         <div className="flex flex-col items-center justify-center h-full text-gray-300 dark:text-gray-600 opacity-50 space-y-2">
                             <ShoppingBag size={48} strokeWidth={1} />
                             <p className="font-bold uppercase tracking-widest text-[10px]">Carrinho vazio</p>
-                            <p className="text-[10px]">Digite o código do produto + ENTER, ou aperte B para pegar o peso</p>
+                            <p className="text-[10px]">Digite o código do produto (cai na hora), ENTER envia a comanda, ou aperte B para pegar o peso</p>
                         </div>
                     )}
                 </div>

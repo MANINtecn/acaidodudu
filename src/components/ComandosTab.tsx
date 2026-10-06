@@ -16,12 +16,13 @@ const ATALHOS: { tecla: string; oque: string }[] = [
     { tecla: 'F5', oque: 'Pedidos (comandas)' },
     { tecla: 'F6', oque: 'Esta tela' },
     { tecla: 'F7', oque: 'Fechar a comanda aberta' },
-    { tecla: 'CODIGO + ENTER', oque: 'Codigo do produto' },
+    { tecla: 'CODIGO', oque: 'Produto cai na comanda na hora (V2; no V1 + ENTER)' },
     { tecla: '1-30', oque: 'Numero da mesa' },
     { tecla: 'R', oque: 'Retirada (sem mesa)' },
     { tecla: 'B', oque: 'Abre a Balanca (pesagem manual)' },
     { tecla: 'N', oque: 'Nome do cliente' },
-    { tecla: 'ENTER', oque: '1x monta / 2x envia' },
+    { tecla: 'ENTER', oque: 'Envia a comanda (V2) / 1x monta, 2x envia (V1)' },
+    { tecla: 'SETAS', oque: 'Troca a forma de pagamento no checkout' },
     { tecla: 'ESC', oque: 'Cancela tudo' },
     { tecla: 'D / C / P', oque: 'Dinheiro/Cartao/Pix' },
 ];
@@ -110,7 +111,8 @@ export const ComandosTab = ({ menuItems, categories }: ComandosTabProps) => {
         L.push('FLUXO');
         L.push(linha);
         L.push('LANCAR');
-        L.push('401 ENTER  produto no pedido');
+        L.push('      401  produto na comanda');
+        L.push('           (V1: 401 + ENTER)');
         L.push('  3 ENTER  vai p/ mesa 3');
         L.push('        N  nome (opcional)');
         L.push('    ENTER  confirma e envia');
