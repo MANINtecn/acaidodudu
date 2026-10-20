@@ -3,6 +3,7 @@ import { Calendar, Search, Trash2, Trophy, Gift, DollarSign, ShoppingBag, Trendi
 import { Order, Settings, Category } from '../types';
 import { fetchSalesByDateRange, deleteOrdersByDateRange, fetchEligibleCustomersForRaffle, fetchPublicSettings, fetchMenuForAdmin } from '../services/supabaseService';
 import { classificarTipoPedido } from '../services/estacaoService';
+import { offlineDisponivel, carregarArmazem, vendasNaFila, vendaComoPedido } from '../offline/armazemBalcao';
 
 interface SalesHistoryProps {
     storeId: string;
@@ -58,7 +59,20 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
         setLoading(true);
         try {
             const data = await fetchSalesByDateRange(storeId, startDate, endDate);
-            setOrders(data || []);
+            // Balcão V2 offline (15/10/2026): venda fechada neste PC que ainda não subiu (sem internet)
+            // ENTRA na soma, marcada -- o Marlon fecha o mês por aqui e não pode ver total menor.
+            let pendentes: Order[] = [];
+            if (offlineDisponivel()) {
+                await carregarArmazem();
+                const ini = new Date(startDate + 'T00:00:00').getTime();
+                const fim = new Date(endDate + 'T23:59:59.999').getTime();
+                const jaNoBanco = new Set((data || []).map(o => o.id));
+                pendentes = vendasNaFila().map(vendaComoPedido).filter(o => {
+                    const t = new Date(o.timestamp || 0).getTime();
+                    return t >= ini && t <= fim && !jaNoBanco.has(o.id);
+                });
+            }
+            setOrders([...pendentes, ...(data || [])]);
         } catch (error) {
             console.error("Error fetching sales:", error);
             alert("Erro ao buscar vendas.");
@@ -206,10 +220,17 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
     type TotaisForma = Record<string, { valor: number; qtd: number }>;
     const somarPorForma = (lista: Order[]): TotaisForma =>
         lista.reduce((acc, o) => {
-            const forma = o.paymentMethod || 'Outros';
-            if (!acc[forma]) acc[forma] = { valor: 0, qtd: 0 };
-            acc[forma].valor += o.total;
-            acc[forma].qtd += 1;
+            // Venda paga em partes (Balcão V2 offline, 15/10/2026): cada forma recebe a SUA parte.
+            // Antes o F8 gravava "Dinheiro, PIX" como uma forma só, e o valor ia inteiro para "Outros".
+            const partes = Array.isArray(o.pagamentos) && o.pagamentos.length > 0
+                ? o.pagamentos
+                : [{ forma: o.paymentMethod || 'Outros', valor: o.total }];
+            partes.forEach(p => {
+                const forma = p.forma || 'Outros';
+                if (!acc[forma]) acc[forma] = { valor: 0, qtd: 0 };
+                acc[forma].valor += Number(p.valor) || 0;
+                acc[forma].qtd += 1;
+            });
             return acc;
         }, {} as TotaisForma);
     const pagBalcaoRetirada = somarPorForma([...balcaoOrders, ...retiradaOrders]);
@@ -535,6 +556,11 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
                                 </tbody>
                             </table>
                         </div>
+                        {orders.some(o => o.pendenteEnvio) && (
+                            <p className="mt-3 text-[11px] font-bold text-sky-700 dark:text-sky-400">
+                                ⏳ {orders.filter(o => o.pendenteEnvio).length} venda(s) (R$ {orders.filter(o => o.pendenteEnvio).reduce((s, o) => s + o.total, 0).toFixed(2)}) fechada(s) neste computador ainda não subiram para o sistema (sem internet). JÁ ESTÃO somadas aqui e sobem sozinhas.
+                            </p>
+                        )}
                         {pedidosNaoEntregues.length > 0 && (
                             <p className="mt-3 text-[11px] font-bold text-amber-600 dark:text-amber-400">
                                 ⚠️ {pedidosNaoEntregues.length} pedido(s) deste período (R$ {valorNaoEntregues.toFixed(2)}) ainda não estão como "Entregue".

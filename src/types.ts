@@ -55,7 +55,17 @@ export interface Addon {
    * ItemDetailModal -- outros produtos continuam como sempre foram.
    */
   addonGroup?: 'sabor' | 'calda';
+  /**
+   * TIPO NO CARDÁPIO (21/10/2026). Item com tipo faz o produto abrir o passo a passo no site:
+   *   sabor     -> passo 1, obrigatório, escolhe 1 (preço único: outro sabor = outra unidade)
+   *   opcional  -> passo 2, grátis, pode pular
+   *   adicional -> passo 3, pago, pode pular
+   * Sem tipo = lista antiga de sempre. Não confundir com addonGroup (passos do Milkshake).
+   */
+  tipoComplemento?: TipoComplemento;
 }
+
+export type TipoComplemento = 'sabor' | 'opcional' | 'adicional';
 
 export interface MenuItem {
   id: number;
@@ -280,6 +290,10 @@ export interface Order {
   courier_id?: string;
   courier_name?: string;
   subOrderIndex?: number;
+  /** Balcão V2 offline (15/10/2026): detalhe por forma (venda paga em partes). */
+  pagamentos?: { forma: string; valor: number }[];
+  /** Venda fechada neste PC que ainda não subiu para o banco (só no Histórico). */
+  pendenteEnvio?: boolean;
 }
 
 export interface OrderStatusHistoryItem {

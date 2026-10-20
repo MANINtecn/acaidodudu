@@ -113,6 +113,73 @@ ipcMain.handle("get-app-version", () => {
   return app.getVersion();
 });
 
+// --- BALCAO V2 OFFLINE (15/10/2026) ---------------------------------------
+// Comandas abertas e vendas ainda nao enviadas vivem num ARQUIVO em userData,
+// fora do cache do Chromium (a limpeza de cache de 14/10 apagaria o
+// localStorage). Gravacao atomica: escreve num .tmp com fsync, guarda a versao
+// anterior em .bak e so entao renomeia -- queda de energia no meio nunca deixa
+// meio arquivo. O diario (.jsonl, so acrescenta) e a trilha de auditoria.
+function balcaoDir() {
+  const dir = path.join(app.getPath("userData"), "balcao");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+ipcMain.handle("balcao-carregar", () => {
+  const dir = balcaoDir();
+  for (const nome of ["estado.json", "estado.bak.json"]) {
+    try {
+      const p = path.join(dir, nome);
+      if (!fs.existsSync(p)) continue;
+      const texto = fs.readFileSync(p, "utf8");
+      JSON.parse(texto); // so devolve se estiver integro
+      if (nome !== "estado.json") logToFile(`[Balcao] estado.json ilegivel, usando ${nome}`);
+      return texto;
+    } catch (e) {
+      logToFile(`[Balcao] falha ao ler ${nome}: ${e.message}`);
+    }
+  }
+  return null;
+});
+
+ipcMain.handle("balcao-salvar", (event, texto) => {
+  try {
+    const dir = balcaoDir();
+    const final = path.join(dir, "estado.json");
+    const tmp = path.join(dir, "estado.tmp");
+    const fd = fs.openSync(tmp, "w");
+    try { fs.writeSync(fd, texto); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    if (fs.existsSync(final)) fs.copyFileSync(final, path.join(dir, "estado.bak.json"));
+    fs.renameSync(tmp, final);
+    return { ok: true };
+  } catch (e) {
+    logToFile(`[Balcao] FALHA AO GRAVAR estado: ${e.message}`);
+    return { ok: false, erro: e.message };
+  }
+});
+
+ipcMain.handle("balcao-diario", (event, linha) => {
+  try {
+    const mes = new Date().toISOString().slice(0, 7);
+    fs.appendFileSync(path.join(balcaoDir(), `diario-${mes}.jsonl`), linha + "\n");
+    return true;
+  } catch (e) {
+    logToFile(`[Balcao] falha no diario: ${e.message}`);
+    return false;
+  }
+});
+
+ipcMain.handle("balcao-espaco-livre", () => {
+  try {
+    const s = fs.statfsSync(app.getPath("userData"));
+    return s.bavail * s.bsize;
+  } catch (e) {
+    return null;
+  }
+});
+
+ipcMain.handle("balcao-log", (event, msg) => { logToFile(`[Balcao] ${msg}`); return true; });
+
 // FOCO ROUBADO POR alert()/confirm() (05/10/2026): no Windows, depois que uma
 // caixa nativa fecha, a janela continua "ativa" mas o teclado nao volta para
 // a pagina -- campos param de aceitar clique/digitacao ate minimizar e

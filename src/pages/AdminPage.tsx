@@ -43,6 +43,7 @@ import { tocarSirene, type TipoSirene } from '../services/sireneService';
 import { estacaoDeveTocar, estacaoDeveImprimir, estacaoAtiva, estacaoMostraJanela, classificarTipoPedido } from '../services/estacaoService';
 import { mesmaMesa, nomeDaComanda } from '../utils/mesaUtils';
 import { calcularValorCarrinho } from '../utils/orderUtils';
+import { planejarFechamentoMesa } from '../utils/fechamentoMesa';
 import {
     fetchMenuForAdmin,
     createCategory,
@@ -78,6 +79,14 @@ import {
 import OrderCard from '../components/OrderCard';
 import TableGroupCard from '../components/TableGroupCard';
 import { printOrder } from '../services/printerService';
+// Balcão V2 OFFLINE (15/10/2026) -- ver DESIGN-BALCAO-OFFLINE.md
+import { definirContextoBalcao, usandoComandaLocal } from '../services/comandaBackend';
+import {
+    carregarArmazem, assinarArmazem, offlineDisponivel, pedidosAbertosLocais, pedidosAbertosDaComanda,
+    criarPedidoLocal, atualizarPedidoLocal, fecharComandaLocal, erroDeDisco, vendasNaFila,
+} from '../offline/armazemBalcao';
+import { iniciarSincronizador, dispararEnvio } from '../offline/sincronizadorBalcao';
+import { supabase as clienteSupabase, dispararEmissaoNotaFiscal } from '../services/supabaseService';
 import { ensureScaleAutoConnect, stopScaleAutoConnect } from '../services/scaleService';
 import type { Category, MenuItem, Order, Settings as SettingsType, Promotion, Addon, OrderStatus } from '../types';
 import { useNavigate } from 'react-router-dom';
@@ -131,6 +140,9 @@ const AdminPage = () => {
     // F7 dentro do Balcão V2 fechou uma comanda via checkout -- avisa o
     // CounterTab fechar a tela da comanda sozinho (ela já virou pedido pago).
     const [fecharComandaSignal, setFecharComandaSignal] = useState(0);
+    // Muda a cada gravação do armazém do Balcão V2 offline (comandas no disco do PC):
+    // faz o Balcão e o F8 enxergarem a comanda local na hora.
+    const [versaoArmazem, setVersaoArmazem] = useState(0);
     // F8 dentro do Balcão V2: número da mesa/comanda sendo dividida agora
     // (null = modal fechado). Trazido do Papaleguas, pedido do Ikarus
     // 01/10/2026.
@@ -187,6 +199,37 @@ const AdminPage = () => {
         settingsRef.current = settings;
     }, [settings]);
 
+    // ── BALCÃO V2 OFFLINE (15/10/2026, DESIGN-BALCAO-OFFLINE.md) ──────────────
+    // O despachante (comandaBackend) precisa saber, já neste render, se a loja é V2.
+    definirContextoBalcao(!!settings?.balcaoV2);
+    // Carrega o arquivo de comandas/vendas do PC e re-renderiza a cada gravação.
+    useEffect(() => {
+        if (!offlineDisponivel()) return;
+        const sair = assinarArmazem(() => setVersaoArmazem(v => v + 1));
+        carregarArmazem().then(() => setVersaoArmazem(v => v + 1));
+        return sair;
+    }, []);
+    // Sobe as vendas fechadas (e manda o sinal de vida). Roda em qualquer PC com o app,
+    // mesmo com o modo offline desligado: venda que ficou na fila precisa subir de qualquer jeito.
+    useEffect(() => {
+        if (!offlineDisponivel() || !currentStore?.id) return;
+        let parar: (() => void) | null = null;
+        let cancelado = false;
+        (async () => {
+            await carregarArmazem();
+            let versaoApp: string | undefined;
+            try { versaoApp = await (window as any).electron?.getAppVersion?.(); } catch (_) { /* opcional */ }
+            if (cancelado) return;
+            parar = iniciarSincronizador({
+                supabase: clienteSupabase,
+                storeId: currentStore.id,
+                versaoApp,
+                emitirNota: (pedido: any, storeId: string) => dispararEmissaoNotaFiscal(pedido, storeId),
+            });
+        })();
+        return () => { cancelado = true; parar?.(); };
+    }, [currentStore?.id]);
+
     // Balança: a reconexão automática começa NO BOOT do Admin (antes só rodava com
     // a aba Balcão aberta) e acompanha a configuração. Ver scaleService.ts.
     useEffect(() => {
@@ -222,6 +265,8 @@ const AdminPage = () => {
     const [editingAddon, setEditingAddon] = useState<Addon | undefined>(undefined);
     const [lastSelectedCategoryId, setLastSelectedCategoryId] = useState<number | undefined>(undefined);
     const [menuSearchTerm, setMenuSearchTerm] = useState('');
+    // Biblioteca separada por tipo (21/10/2026): Sabores / Opcionais / Adicionais / Sem tipo.
+    const [filtroTipoAddon, setFiltroTipoAddon] = useState<'todos' | 'sabor' | 'opcional' | 'adicional' | 'sem'>('todos');
     const [atualizandoCardapio, setAtualizandoCardapio] = useState(false);
     const [showAvailabilityReminder, setShowAvailabilityReminder] = useState(false);
     // Banner de impressora não encontrada -- pedido do Ikarus 02/10/2026:
@@ -457,7 +502,7 @@ const AdminPage = () => {
     // pra travar pagamento duplicado de item. Preço unitário já com adicionais.
     const itensDoSplitBill = useMemo(() => {
         if (splitBillTable == null) return [];
-        return orders
+        return (usandoComandaLocal() ? pedidosAbertosLocais() : orders)
             .filter(o => mesmaMesa(o.table_number, splitBillTable) && o.status !== 'Entregue' && o.status !== 'Cancelado')
             .flatMap(o => (o.items || []).map((it: any, idx: number) => {
                 const addons = (it.selectedAddons || []).reduce((a: number, b: any) => a + (Number(b.price) || 0), 0);
@@ -472,7 +517,7 @@ const AdminPage = () => {
                     line_total: Number((unit * qty).toFixed(2)),
                 };
             }));
-    }, [orders, splitBillTable]);
+    }, [orders, splitBillTable, versaoArmazem]);
 
     /**
      * Abre a comanda de uma mesa pelo teclado.
@@ -493,7 +538,8 @@ const AdminPage = () => {
         // mesmaMesa(): o banco devolve table_number como STRING. Com `===`
         // direto, "1" === 1 era false e isto dizia "mesa nao tem comanda"
         // com a comanda aberta na tela ao lado.
-        const daMesa = ordersRef.current.filter(o =>
+        // Balcão V2 offline: a comanda aberta mora no disco do PC, não no banco.
+        const daMesa = usandoComandaLocal() ? pedidosAbertosDaComanda(numeroMesa) : ordersRef.current.filter(o =>
             mesmaMesa(o.table_number, numeroMesa) &&
             o.status !== 'Entregue' && o.status !== 'Cancelado'
         );
@@ -930,10 +976,12 @@ const AdminPage = () => {
     }, [categories, menuItems, menuSearchTerm]);
 
     const filteredAddons = useMemo(() => {
-        if (!menuSearchTerm) return addons;
+        const doTipo = filtroTipoAddon === 'todos' ? addons
+            : addons.filter(a => filtroTipoAddon === 'sem' ? !a.tipoComplemento : a.tipoComplemento === filtroTipoAddon);
+        if (!menuSearchTerm) return doTipo;
         const search = normalizeString(menuSearchTerm);
-        return addons.filter(addon => normalizeString(addon.name).includes(search));
-    }, [addons, menuSearchTerm]);
+        return doTipo.filter(addon => normalizeString(addon.name).includes(search));
+    }, [addons, menuSearchTerm, filtroTipoAddon]);
 
     const printedOrderIds = useRef<Set<string>>(new Set());
     const currentlyPrintingIds = useRef<Set<string>>(new Set());
@@ -1382,6 +1430,25 @@ const AdminPage = () => {
                 discount: details.discount,
                 tax: details.tax
             };
+            // BALCÃO V2 OFFLINE: fecha a comanda NO PC, sem nenhuma ida ao banco. Vira UMA venda
+            // na fila, que sobe sozinha em segundo plano (sincronizadorBalcao). A tela fecha na hora.
+            if (checkoutOrder.table_number && usandoComandaLocal()) {
+                const r = await fecharComandaLocal(Number(checkoutOrder.table_number), Number(checkoutOrder.total) || 0, details);
+                setIsCheckoutModalOpen(false);
+                setCheckoutOrder(null);
+                setComandaAberta(null);
+                if (!r.ok) {
+                    checkoutVeioDoBalcaoRef.current = false;
+                    showNotify(`A conta não bateu (tela R$ ${r.totalTela.toFixed(2)} x comanda R$ ${r.totalLocal.toFixed(2)}). NADA foi cobrado nem fechado. Confira os itens e feche de novo.`, 'error');
+                    return;
+                }
+                dispararEnvio();
+                if (checkoutVeioDoBalcaoRef.current) {
+                    checkoutVeioDoBalcaoRef.current = false;
+                    setFecharComandaSignal(v => v + 1);
+                }
+                return;
+            }
             if (checkoutOrder.table_number) {
                 // CRÍTICO (achado pela auditoria de 01/10/2026, mesmo padrão
                 // da reclamação original do Marlon "o caixa nunca bate"):
@@ -1401,23 +1468,31 @@ const AdminPage = () => {
                 // cobrado na tela, e cada sub-pedido individual continua
                 // auditável no histórico.
                 const subPedidos = await fetchAllOpenOrdersForTable(currentStore.id, Number(checkoutOrder.table_number));
-                const somaOriginal = subPedidos.reduce((s, o) => s + (Number(o.total) || 0), 0);
-                let acumulado = 0;
-                for (let i = 0; i < subPedidos.length; i++) {
-                    const sub = subPedidos[i];
-                    const ehUltimo = i === subPedidos.length - 1;
-                    // Último sub-pedido absorve o resto da divisão -- evita que
-                    // arredondamento de centavos faça a soma ficar 1 centavo
-                    // diferente de details.finalTotal.
-                    const parteDoTotal = ehUltimo
-                        ? Number((details.finalTotal - acumulado).toFixed(2))
-                        : Number(((Number(sub.total) || 0) / (somaOriginal || 1) * details.finalTotal).toFixed(2));
-                    acumulado += parteDoTotal;
-                    await updateOrder(sub.id!, {
+                // TRAVA (15/10/2026, pedido #165: cobrado R$ 26,50, gravado so R$ 13,57): o total da tela
+                // vem da lista LOCAL e o rateio, do BANCO. Se as duas somas divergem (segundo peso que
+                // nao foi gravado, lista atrasada, "AVANCAR" de um sub-pedido so), NAO fecha -- antes o
+                // total inteiro caia no unico sub-pedido que o banco tinha e a venda saia errada, em
+                // silencio. Sem desconto/taxa cada sub-pedido mantem o proprio total (ver fechamentoMesa.ts).
+                const plano = planejarFechamentoMesa(
+                    subPedidos.map(s => ({ id: s.id!, total: Number(s.total) || 0 })),
+                    Number(checkoutOrder.total) || 0,
+                    { discount: details.discount, tax: details.tax, finalTotal: details.finalTotal },
+                );
+                if (!plano.ok) {
+                    console.error(`[Checkout] BLOQUEADO: total da tela R$ ${plano.totalTela.toFixed(2)} != soma dos sub-pedidos no banco R$ ${plano.totalBanco.toFixed(2)} (mesa ${checkoutOrder.table_number})`);
+                    setIsCheckoutModalOpen(false);
+                    setCheckoutOrder(null);
+                    checkoutVeioDoBalcaoRef.current = false;
+                    await recarregarSoPedidos();
+                    showNotify(`A conta não bateu (tela R$ ${plano.totalTela.toFixed(2)} x sistema R$ ${plano.totalBanco.toFixed(2)}). NADA foi cobrado nem fechado. Confira os itens da comanda e feche de novo.`, 'error');
+                    return;
+                }
+                for (const parte of plano.partes) {
+                    await updateOrder(parte.id, {
                         status: 'Entregue',
                         paymentMethod: details.method,
                         changeFor: details.method === 'Dinheiro' ? details.amountTendered.toString() : undefined,
-                        total: parteDoTotal,
+                        total: parte.total,
                         discount: details.discount,
                         tax: details.tax,
                     });
@@ -1524,7 +1599,23 @@ const AdminPage = () => {
 
 
 
+    // O que o Balcão enxerga como "pedidos abertos": com o V2 offline, as comandas 1-20 vêm do
+    // disco do PC (o banco não tem nenhuma -- o interruptor só liga sem comanda aberta no banco).
+    const pedidosParaBalcao = useMemo(() => {
+        if (!usandoComandaLocal()) return orders;
+        const doBancoSemComanda = orders.filter(o => !(o.table_number && Number(o.table_number) >= 1 && Number(o.table_number) <= 20));
+        return [...doBancoSemComanda, ...pedidosAbertosLocais()];
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [orders, versaoArmazem, settings?.balcaoV2]);
+
     const handleCounterOrderComplete = useCallback(async (order: any) => {
+        // Balcão V2 OFFLINE: comanda (pedido com número de comanda) grava no disco do PC.
+        // Nada vai ao banco enquanto a comanda está aberta; quem sobe é a venda, no fechamento.
+        if (usandoComandaLocal() && order.table_number) {
+            if (order.id && String(order.id).startsWith('L-')) await atualizarPedidoLocal(order.id, order);
+            else await criarPedidoLocal(order);
+            return;
+        }
         console.log('Attempting to create/update order:', order);
         // Balcão V2 (decisão do Ikarus, 30/09): NUNCA redireciona pra aba
         // Pedidos, nem imprime sozinho -- o operador lança e continua no
@@ -1865,7 +1956,7 @@ const AdminPage = () => {
                         addons={addons}
                         settings={settings}
                         storeId={currentStore.id}
-                        activeOrders={orders}
+                        activeOrders={pedidosParaBalcao}
                         onOrderComplete={handleCounterOrderComplete}
                         promotions={promotions}
                         focusSearchSignal={focusSearchSignal}
@@ -2157,6 +2248,14 @@ const AdminPage = () => {
                                 </div>
                             ) : (
                                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden">
+                                    <div className="p-3 flex flex-wrap gap-2 border-b border-gray-100 dark:border-gray-700">
+                                        {([['todos', 'Todos'], ['sabor', 'Sabores'], ['opcional', 'Opcionais (grátis)'], ['adicional', 'Adicionais (pagos)'], ['sem', 'Sem tipo']] as const).map(([v, rotulo]) => (
+                                            <button key={v} onClick={() => setFiltroTipoAddon(v)}
+                                                className={`px-3 py-1.5 rounded-full text-sm font-bold border ${filtroTipoAddon === v ? 'bg-red-600 text-white border-red-600' : 'bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600'}`}>
+                                                {rotulo} ({v === 'todos' ? addons.length : addons.filter(a => v === 'sem' ? !a.tipoComplemento : a.tipoComplemento === v).length})
+                                            </button>
+                                        ))}
+                                    </div>
                                     {filteredAddons.length === 0 ? (
                                         <div className="p-8 text-center text-gray-500 dark:text-gray-400">
                                             {menuSearchTerm ? 'Nenhum adicional encontrado para esta busca.' : 'Nenhum adicional cadastrado.'}
@@ -2166,7 +2265,14 @@ const AdminPage = () => {
                                     {filteredAddons.map((addon: Addon) => (
                                                 <div key={addon.id} className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                                     <div>
-                                                        <h4 className="font-bold text-gray-900 dark:text-white">{addon.name}</h4>
+                                                        <h4 className="font-bold text-gray-900 dark:text-white">
+                                                            {addon.name}
+                                                            {addon.tipoComplemento && (
+                                                                <span className={`ml-2 px-2 py-0.5 rounded text-[10px] font-black uppercase align-middle ${addon.tipoComplemento === 'sabor' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' : addon.tipoComplemento === 'opcional' ? 'bg-sky-100 text-sky-800 dark:bg-sky-900/40 dark:text-sky-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'}`}>
+                                                                    {addon.tipoComplemento}
+                                                                </span>
+                                                            )}
+                                                        </h4>
                                                         <p className="text-sm text-gray-500 dark:text-gray-400">
                                                             {addon.categoryId ? `Vinculado a: ${categories.find(c => c.id === addon.categoryId)?.name || 'Categoria Desconhecida'}` : 'Disponível para todas as categorias'}
                                                         </p>
@@ -2319,6 +2425,7 @@ const AdminPage = () => {
                 onClose={() => setIsAddonModalOpen(false)}
                 onSave={handleSaveAddon}
                 initialData={editingAddon}
+                tipoPadrao={filtroTipoAddon === 'sabor' || filtroTipoAddon === 'opcional' || filtroTipoAddon === 'adicional' ? filtroTipoAddon : undefined}
                 storeId={currentStore?.id || ''}
                 categories={categories}
             />
@@ -2456,13 +2563,31 @@ const AdminPage = () => {
                         // os pedidos (o sub-pedido já virou 'Entregue' no banco
                         // pela RPC settle_table).
                         setSplitBillTable(null);
-                        recarregarSoPedidos();
+                        // Offline: a venda acabou de entrar na fila -- tenta subir já.
+                        if (usandoComandaLocal()) dispararEnvio(); else recarregarSoPedidos();
                         if (activeTabRef.current === 'counter') {
                             setFecharComandaSignal(v => v + 1);
                         }
                     }}
                 />
             )}
+
+            {/* Balcão V2 offline: só aparece quando há PROBLEMA (o envio normal é invisível). */}
+            {offlineDisponivel() && erroDeDisco() && (
+                <div className="fixed bottom-4 left-4 z-[70] max-w-md bg-red-600 text-white px-4 py-3 rounded-xl shadow-2xl font-bold text-sm" data-versao={versaoArmazem}>
+                    ⚠️ O computador NÃO conseguiu gravar as comandas no disco ({erroDeDisco()}). Libere espaço no disco e chame o suporte.
+                </div>
+            )}
+            {offlineDisponivel() && !erroDeDisco() && (() => {
+                const presas = vendasNaFila().filter(v => v.tentativas >= 3);
+                if (presas.length === 0) return null;
+                const valor = presas.reduce((s, v) => s + v.total, 0);
+                return (
+                    <div className="fixed bottom-4 left-4 z-[70] max-w-sm bg-amber-500 text-slate-950 px-4 py-2.5 rounded-xl shadow-xl font-bold text-xs">
+                        📶 {presas.length} venda(s) (R$ {valor.toFixed(2)}) esperando internet para subir. Estão salvas neste computador e sobem sozinhas.
+                    </div>
+                );
+            })()}
 
             <AvailabilityReminderModal
                 isOpen={showAvailabilityReminder}

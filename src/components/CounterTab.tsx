@@ -1,14 +1,18 @@
 import { useState, useMemo, useEffect, memo, useRef, useCallback } from 'react';
 import { Plus, Minus, Trash2, Search, X, Bike, ShoppingBag, LogOut, Percent, Scale, Grid, ChevronDown, Volume2, VolumeX, Check } from 'lucide-react';
 import type { Category, MenuItem, Addon, CartItem, OrderType, PaymentMethod, Settings, OrderStatus, Customer, Order, Promotion } from '../types';
-import { fetchAllOpenOrdersForTable, updateOrder, deleteOrder, fetchCustomerByPhone, upsertCustomer, searchCustomers, clearTablePayments } from '../services/supabaseService';
+// comandaBackend: mesmas funções do supabaseService, mas com o modo offline ligado as comandas do
+// Balcão V2 moram no disco do PC (offline/armazemBalcao.ts). Ver DESIGN-BALCAO-OFFLINE.md.
+import { fetchAllOpenOrdersForTable, updateOrder, deleteOrder, fetchCustomerByPhone, upsertCustomer, searchCustomers, clearTablePayments } from '../services/comandaBackend';
+// Diário do PC (só no app do computador; no site não faz nada): registra a pergunta da balança e a resposta.
+import { registrarNoDiario } from '../offline/armazemBalcao';
 import { normalizeString } from '../utils/searchUtils';
 import { mesmaMesa, nomeDaComanda, nomeSemPrefixoDeMesa } from '../utils/mesaUtils';
 import { calcularValorCarrinho } from '../utils/orderUtils';
 import { Notification, NotificationType } from './Notification';
 import CounterMenuGrid from './CounterMenuGrid';
 import { getScaleWeightWithFallback, requestSerialPort, subscribeToScale, ensureScaleAutoConnect, getScaleRawLog, clearScaleRawLog, getScaleSnapshot, type ScaleStatus } from '../services/scaleService';
-import { decidirEnterComPeso, PESO_ZERO_KG } from '../utils/pesoBalanca';
+import { PESO_ZERO_KG, PESO_MUDOU_KG, decidirEnterComBalanca, pratoFoiRetirado, type UltimoPesoLancado } from '../utils/pesoBalanca';
 import { criarEnvioUnico } from '../utils/envioUnico';
 import { resolverCodigoDigitado } from '../utils/codigoProduto';
 import { reconciliarRascunho, rascunhoEstaValido, comandaTemPendencia, unicosPorCartId } from '../utils/rascunhoComanda';
@@ -254,11 +258,16 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             setScaleWeight(snap.weightKg);
             setIsScaleStable(snap.isStable);
 
-            // Balança voltou a zero (prato retirado) -> o próximo peso é NOVO.
-            if (snap.weightKg <= PESO_ZERO_KG) {
+            // Prato RETIRADO -> o próximo peso é NOVO. 19/10/2026: além de zerar, vale cair abaixo da
+            // metade do peso lançado (resto/migalha de 16 g travava o próximo prato -- balanca.tsx S4).
+            if (pratoFoiRetirado(snap.weightKg, ultimoPesoLancadoRef.current)) {
                 pesoLancadoRef.current = false;
+                ultimoPesoLancadoRef.current = null;
+                confirmacaoPesoRef.current = null;
                 setPesoLancado(false);
             }
+            // Enter apertado com a balança ainda firmando: lança SOZINHO assim que firmar (19/10/2026, S22).
+            if (snap.isStable && snap.weightKg > PESO_ZERO_KG) lancarPesoArmadoRef.current(snap.weightKg);
 
             switch (snap.status) {
                 case 'disconnected':
@@ -435,6 +444,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // comanda mais lenta pode chegar DEPOIS da resposta de uma comanda mais
     // rápida e sobrescrever o carrinho que o operador já está editando.
     const handleSelectTableCallIdRef = useRef(0);
+    /** true enquanto a comanda aberta por último ainda está carregando (ver handleSelectTable). */
+    const carregandoComandaRef = useRef(false);
     /** Só existe para forçar `cardsComandas` (useMemo) a recalcular quando o
      * cache de rascunhos muda -- a ref em si não dispara re-render. */
     const [versaoRascunhos, setVersaoRascunhos] = useState(0);
@@ -482,7 +493,12 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
      * cart realmente DIVERGE do que está em pedidosDaMesa (edição pendente de
      * verdade) -- sem alteração nenhuma, não grava nada, e reabrir usa o
      * banco como sempre deveria. */
-    const salvarRascunhoAtual = () => {
+    /** CAIXA-PRETA (20/10/2026): resumo curto dos itens para o diário (peso em kg, produto em qtd x nome). */
+    const resumoParaDiario = (itens: CartItem[] | undefined) => (itens || []).map((i: any) => i.weightKg
+        ? `${Number(i.weightKg).toFixed(3)}kg#${String(i.cartId).slice(-6)}`
+        : `${i.quantity || 1}x ${String(i.name || '').slice(0, 24)}#${String(i.cartId).slice(-6)}`);
+
+    const salvarRascunhoAtual = (motivo: 'troca' | 'saiu-da-tela' = 'troca') => {
         const numero = parseInt(selectedTable, 10);
         if (!numero || cart.length === 0) return;
         if (pedidosDaMesa.length > 0) {
@@ -493,7 +509,22 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         rascunhosComandaRef.current[numero] = { cart, customerName, pedidosDaMesa, currentOrderId, salvoEm: Date.now() };
         persistirRascunhos();
         setVersaoRascunhos(v => v + 1);
+        registrarNoDiario(motivo === 'saiu-da-tela' ? 'balcao-saiu-com-pendente' : 'rascunho-salvo', {
+            comanda: numero, tela: resumoParaDiario(cart), salvos: resumoParaDiario(pedidosDaMesa.flatMap(o => o.items || [])),
+        });
     };
+
+    // BALCÃO SAINDO DA TELA (19/10/2026 -- o peso que "sumiu sozinho" da comanda 5 de 18/10, reproduzido em
+    // scripts/teste-balcao/aba.tsx): ir em Pedidos/F5, Comandos, Histórico, Configurações, ou o app fechar/
+    // recarregar DESMONTA o Balcão. O rascunho só era gravado ao trocar de comanda, então o peso lançado na
+    // tela e ainda não salvo ia embora calado. Agora grava na saída e ao fechar a janela.
+    const salvarRascunhoAtualRef = useRef(salvarRascunhoAtual);
+    salvarRascunhoAtualRef.current = salvarRascunhoAtual;
+    useEffect(() => {
+        const aoSair = () => { try { salvarRascunhoAtualRef.current('saiu-da-tela'); } catch (_) { /* nunca trava a saída */ } };
+        window.addEventListener('beforeunload', aoSair);
+        return () => { window.removeEventListener('beforeunload', aoSair); aoSair(); };
+    }, []);
 
     /** Escreve o cache inteiro no localStorage -- chamado sempre que ele
      * muda (salvar um novo rascunho, ou consumir um ao reabrir o slot). */
@@ -797,6 +828,8 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     };
 
     const removeItem = (cartId: string) => {
+        const saiu = cartRef.current.find(i => i.cartId === cartId);
+        if (saiu) registrarNoDiario('item-removido-da-tela', { comanda: parseInt(selectedTableRef.current, 10) || 0, item: resumoParaDiario([saiu])[0], id: cartId });
         setCart(prev => prev.filter(item => item.cartId !== cartId));
     };
 
@@ -867,6 +900,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             weightKg: weightKg,
             pricePerKg: pricePerKg
         };
+        registrarNoDiario('peso-na-tela', { comanda: parseInt(selectedTableRef.current, 10) || 0, kg: weightKg, id: newItem.cartId, estavel: isScaleStableRef.current });
         setCart(prev => [...prev, newItem]);
     };
 
@@ -884,28 +918,42 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     const pesoManualConfirmadoRef = useRef(false);
     useEffect(() => { if (isScaleModalOpen) pesoManualConfirmadoRef.current = false; }, [isScaleModalOpen]);
 
+    /**
+     * Balcão V2: peso só entra com uma comanda ABERTA na tela. Achado no teste offline.tsx
+     * (15/10/2026): Enter envia e FECHA a comanda; um peso confirmado logo depois caía num
+     * carrinho sem comanda (invisível na lista) e sumia ao abrir a próxima comanda -- o mesmo
+     * efeito do #165 (cobra um peso, perde o outro). Agora recusa com bipe e aviso.
+     */
+    const pesoSemComandaNoV2 = (): boolean => {
+        if (!balcaoV2Ref.current || isComandaModalOpenRef.current) return false;
+        bipar('erro');
+        setAvisoAtalho({ tipo: 'erro', titulo: 'Nenhuma comanda aberta', detalhe: 'O peso NÃO foi lançado. Abra a comanda (número + Enter, ou C) e lance o peso de novo.' });
+        return true;
+    };
+
     const confirmarPesoManual = () => {
         if (pesoManualConfirmadoRef.current) return;
         if (!manualWeight || manualWeight <= 0) {
             alert('Por favor, informe ou capture um peso válido.');
             return;
         }
+        if (pesoSemComandaNoV2()) { setIsScaleModalOpen(false); return; }
         pesoManualConfirmadoRef.current = true;
         handleScaleItemAdd(manualWeight, scaleItemName || 'Açaí/Sorvete por Quilo', scalePricePerKg || 60);
         setIsScaleModalOpen(false);
     };
 
-    const handleLaunchScaleItemToOrder = (weightKg: number) => {
+    const handleLaunchScaleItemToOrder = (weightKg: number, confirmadoOutroPrato = false) => {
         if (!weightKg || weightKg <= 0) return;
-        // V2: o mesmo prato nao e lancado duas vezes -- so depois que a balanca passar por zero
-        // (mesma regra que o Enter ja seguia; o clique repetido no botao nao a respeitava).
-        if (balcaoV2Ref.current && pesoLancadoRef.current) return;
+        // V2: o mesmo prato nao e lancado duas vezes NESTA comanda -- so depois de retirado. Peso que
+        // MUDOU sem retirar passa pela pergunta do Enter (confirmadoOutroPrato) -- ver pesoBalanca.ts.
+        if (balcaoV2Ref.current && !confirmadoOutroPrato && mesmoPratoNestaComanda(weightKg)) return;
+        if (pesoSemComandaNoV2()) return;
         const currentPricePerKg = scalePricePerKg || 60;
         const itemName = scaleItemName || 'Açaí/Sorvete por Quilo';
         handleScaleItemAdd(weightKg, itemName, currentPricePerKg);
-        // Clique e Enter passam por aqui: os dois marcam o peso como lançado.
-        pesoLancadoRef.current = true;
-        setPesoLancado(true);
+        // Clique e Enter passam por aqui: os dois marcam o peso como lançado (nesta comanda).
+        marcarPesoLancado(weightKg);
 
         setNotification({
             show: true,
@@ -989,8 +1037,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         const valorPeso = temPeso ? scaleWeight * precoKg : 0;
         if (temPeso) {
             handleScaleItemAdd(scaleWeight, scaleItemName || 'Açaí/Sorvete por Quilo', precoKg);
-            pesoLancadoRef.current = true;
-            setPesoLancado(true);
+            marcarPesoLancado(scaleWeight);
         }
 
         const valor = valorPeso + valorCarrinho;
@@ -1092,6 +1139,52 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // para o aviso na tela.
     const pesoLancadoRef = useRef(false);
     const [pesoLancado, setPesoLancado] = useState(false);
+    /** Último peso lançado (e em qual comanda) cujo prato ainda está na balança. 19/10/2026: a marca
+     *  passou a ser POR COMANDA -- antes valia para todas (balanca.tsx S11). */
+    const ultimoPesoLancadoRef = useRef<UltimoPesoLancado | null>(null);
+    /** Pergunta pendente do Enter quando o peso mudou sem retirar o prato (ver pesoBalanca.ts). */
+    const confirmacaoPesoRef = useRef<null | { tipo: 'mudou' | 'outra'; kg: number; de: number; ate: number }>(null);
+    const comandaNaTela = () => parseInt(selectedTableRef.current, 10) || 0;
+    /** Enter apertado com a balança oscilando: lança sozinho quando firmar, por até 3 s, na MESMA comanda. */
+    const pesoArmadoRef = useRef<null | { comanda: number; ate: number }>(null);
+    const lancarPesoArmadoRef = useRef<(kg: number) => void>(() => {});
+    lancarPesoArmadoRef.current = (kg: number) => {
+        const armado = pesoArmadoRef.current;
+        if (!armado) return;
+        if (Date.now() > armado.ate || !isComandaModalOpenRef.current || comandaNaTela() !== armado.comanda) { pesoArmadoRef.current = null; return; }
+        const d = decidirEnterComBalanca({
+            peso: kg, estavel: true,
+            ultimoLancado: pratoFoiRetirado(kg, ultimoPesoLancadoRef.current) ? null : ultimoPesoLancadoRef.current,
+            comandaAtual: armado.comanda, carrinhoVazio: cartRef.current.length === 0, temPedidoAnterior: pedidosDaMesaRef.current.length > 0,
+        });
+        pesoArmadoRef.current = null;
+        // Só o caso simples (prato novo) lança sozinho; peso que mudou continua perguntando no próximo Enter.
+        if (d !== 'lancar-peso') return;
+        handleLaunchScaleItemToOrder(kg);
+        setAvisoAtalho(null);
+        ultimoAvisoEstabilizarRef.current = undefined;
+        registrarNoDiario('balanca-lancou-ao-firmar', { comanda: armado.comanda, kg });
+        bipar('ok');
+    };
+    const marcarPesoLancado = (kg: number) => {
+        pesoLancadoRef.current = true;
+        ultimoPesoLancadoRef.current = { comanda: comandaNaTela(), kg };
+        confirmacaoPesoRef.current = null;
+        setPesoLancado(true);
+    };
+    const mesmoPratoNestaComanda = (kg: number) => {
+        const u = ultimoPesoLancadoRef.current;
+        return !!u && u.comanda === comandaNaTela() && Math.abs(kg - u.kg) <= PESO_MUDOU_KG;
+    };
+    /** Tecla A na pergunta: o cliente pôs MAIS comida no mesmo prato -- troca o peso antigo pelo novo. */
+    const atualizarPesoDoPrato = (de: number, para: number) => {
+        const lista = cartRef.current;
+        let alvo = -1;
+        for (let i = lista.length - 1; i >= 0; i--) { const w = (lista[i] as any).weightKg; if (w && Math.abs(w - de) <= 0.0005) { alvo = i; break; } }
+        if (alvo >= 0) removeItem(lista[alvo].cartId);
+        handleScaleItemAdd(para, scaleItemName || 'Açaí/Sorvete por Quilo', scalePricePerKg || 60);
+        marcarPesoLancado(para);
+    };
     const ultimoAvisoEstabilizarRef = useRef<number | undefined>(undefined);
     const pedidosDaMesaRef = useRef<Order[]>([]);
     pedidosDaMesaRef.current = pedidosDaMesa;
@@ -1119,7 +1212,18 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
      * achar vazia).
      */
     const fecharComandaAtivaRef = useRef<() => void>(() => {});
-    fecharComandaAtivaRef.current = () => { salvarRascunhoAtual(); setIsComandaModalOpen(false); };
+    // Depois de salvar o rascunho, ESVAZIA a tela (achado pela bateria pico.tsx, 15/10/2026): o carrinho
+    // ficava na memória com os itens desta comanda e, com a próxima comanda ainda carregando (internet
+    // lenta), "número + Enter" levava esses itens para OUTRA comanda. O rascunho já tem tudo.
+    fecharComandaAtivaRef.current = () => {
+        salvarRascunhoAtual();
+        setIsComandaModalOpen(false);
+        setCart([]);
+        setPedidosDaMesa([]);
+        setCurrentOrderId(null);
+        setCustomerName('');
+        setSelectedTable('');
+    };
 
     // F7 (global, AdminPage) terminou um checkout da comanda ativa com
     // sucesso -- fecha a tela sozinha, sem salvar rascunho (o pedido já virou
@@ -1333,6 +1437,43 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
             if (digitando || modalAbertoRef.current) return;
 
+            // RESPOSTA À PERGUNTA DO PESO QUE MUDOU (19/10/2026, ver pesoBalanca.ts): Enter = outro prato,
+            // A = atualizar o prato (mais comida), Esc = ignorar. Qualquer outra tecla cancela a pergunta.
+            const perguntaPeso = confirmacaoPesoRef.current;
+            if (perguntaPeso && balcaoV2Ref.current && isComandaModalOpenRef.current && !teclasMesaRef.current) {
+                if (Date.now() > perguntaPeso.ate) {
+                    confirmacaoPesoRef.current = null;
+                } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    confirmacaoPesoRef.current = null;
+                    setAvisoAtalho(null);
+                    handleLaunchScaleItemToOrder(perguntaPeso.kg, true);
+                    registrarNoDiario('balanca-resposta', { comanda: comandaNaTela(), resposta: 'outro-prato', kg: perguntaPeso.kg });
+                    bipar('ok');
+                    return;
+                } else if (perguntaPeso.tipo === 'mudou' && e.key.toUpperCase() === 'A') {
+                    e.preventDefault();
+                    confirmacaoPesoRef.current = null;
+                    setAvisoAtalho(null);
+                    atualizarPesoDoPrato(perguntaPeso.de, perguntaPeso.kg);
+                    registrarNoDiario('balanca-resposta', { comanda: comandaNaTela(), resposta: 'atualizou', de: perguntaPeso.de, para: perguntaPeso.kg });
+                    bipar('ok');
+                    return;
+                } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    confirmacaoPesoRef.current = null;
+                    setAvisoAtalho(null);
+                    // Ignorar: este peso vira "o prato da balança" nesta comanda -- o próximo Enter envia.
+                    registrarNoDiario('balanca-resposta', { comanda: comandaNaTela(), resposta: 'ignorou', kg: perguntaPeso.kg });
+                    pesoLancadoRef.current = true;
+                    ultimoPesoLancadoRef.current = { comanda: comandaNaTela(), kg: perguntaPeso.kg };
+                    setPesoLancado(true);
+                    return;
+                } else {
+                    confirmacaoPesoRef.current = null;
+                }
+            }
+
             // F4/F5/F6/F7/F8 sao da NAVEGACAO (AdminPage). Sair antes de
             // marcar o evento — senao o F4 falhava de forma intermitente,
             // dependendo de qual listener rodava primeiro. F7/F8 adicionados
@@ -1488,8 +1629,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 const valorPesoR = temPesoR ? scaleWeight * precoKgR : 0;
                 if (temPesoR) {
                     handleScaleItemAdd(scaleWeight, scaleItemName || 'Açaí/Sorvete por Quilo', precoKgR);
-                    pesoLancadoRef.current = true;
-                    setPesoLancado(true);
+                    marcarPesoLancado(scaleWeight);
                 }
 
                 const descR = temPesoR && valorCarrinhoR > 0
@@ -1594,10 +1734,11 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 // função pura (utils/pesoBalanca.ts, com teste) e só olha refs
                 // (Regra 10). Excluir comanda (carrinho esvaziado de propósito +
                 // pedido anterior) continua tendo prioridade.
-                const decisaoPeso = decidirEnterComPeso({
+                const decisaoPeso = decidirEnterComBalanca({
                     peso: scaleWeightRef.current,
                     estavel: isScaleStableRef.current,
-                    pesoJaLancado: pesoLancadoRef.current,
+                    ultimoLancado: pratoFoiRetirado(scaleWeightRef.current, ultimoPesoLancadoRef.current) ? null : ultimoPesoLancadoRef.current,
+                    comandaAtual: comandaNaTela(),
                     carrinhoVazio: cartRef.current.length === 0,
                     temPedidoAnterior: pedidosDaMesaRef.current.length > 0,
                     msDesdeAvisoEstabilizar: ultimoAvisoEstabilizarRef.current === undefined
@@ -1605,20 +1746,36 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                         : Date.now() - ultimoAvisoEstabilizarRef.current,
                 });
                 if (decisaoPeso === 'lancar-peso') {
+                    if (!isScaleStableRef.current) registrarNoDiario('balanca-lancou-sem-firmar', { comanda: comandaNaTela(), kg: scaleWeightRef.current });
+                    pesoArmadoRef.current = null;
                     handleLaunchScaleItemToOrder(scaleWeightRef.current);
-                    pesoLancadoRef.current = true;
-                    setPesoLancado(true);
                     ultimoAvisoEstabilizarRef.current = undefined;
+                    setAvisoAtalho(null);
                     bipar('ok');
+                    return;
+                }
+                // Peso MUDOU sem retirar o prato (19/10/2026, comanda 5 de 18/10): NUNCA envia calado.
+                // Pergunta; a resposta (Enter / A / Esc) é tratada no começo deste handler.
+                if (decisaoPeso === 'confirmar-mudou' || decisaoPeso === 'confirmar-outra-comanda') {
+                    const u = ultimoPesoLancadoRef.current!;
+                    const novo = scaleWeightRef.current;
+                    const kg = (x: number) => x.toFixed(3).replace('.', ',');
+                    confirmacaoPesoRef.current = { tipo: decisaoPeso === 'confirmar-mudou' ? 'mudou' : 'outra', kg: novo, de: u.kg, ate: Date.now() + 15000 };
+                    registrarNoDiario('balanca-perguntou', { comanda: comandaNaTela(), tipo: decisaoPeso, de: u.kg, para: novo, comandaDoPeso: u.comanda });
+                    ultimoAvisoEstabilizarRef.current = undefined;
+                    bipar('erro');
+                    setAvisoAtalho(decisaoPeso === 'confirmar-mudou'
+                        ? { tipo: 'erro', titulo: `⚖️ O peso mudou: ${kg(u.kg)} → ${kg(novo)} kg`, detalhe: 'ENTER = é OUTRO prato (lança este também) · A = ATUALIZAR o prato (mais comida) · ESC = ignorar' }
+                        : { tipo: 'erro', titulo: `⚖️ Este peso (${kg(novo)} kg) acabou de ser lançado na Comanda ${u.comanda}`, detalhe: 'ENTER = lançar também nesta comanda · ESC = não lançar (o prato é do cliente anterior)' });
                     return;
                 }
                 if (decisaoPeso === 'aguardar-estabilizar') {
                     ultimoAvisoEstabilizarRef.current = Date.now();
-                    bipar('erro');
+                    pesoArmadoRef.current = { comanda: comandaNaTela(), ate: Date.now() + 3000 };
                     setAvisoAtalho({
-                        tipo: 'erro',
-                        titulo: 'Aguarde o peso estabilizar',
-                        detalhe: 'A balança ainda está oscilando. Espere o peso ficar verde e aperte Enter (Enter de novo envia sem o peso).'
+                        tipo: 'ok',
+                        titulo: 'Pegando o peso...',
+                        detalhe: 'Lança sozinho assim que a balança firmar. Enter de novo = lança o peso que está na tela agora.'
                     });
                     return;
                 }
@@ -1725,6 +1882,18 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                     salvarRascunhoAtual();
                     handleSelectTable(numero.toString().padStart(2, '0'), `Comanda ${numero}`);
                     setIsComandaModalOpen(true);
+                    return;
+                }
+
+                // Balcão V2 NUNCA cai no fluxo de mesa do V1 (achado pela bateria pico.tsx, 15/10/2026):
+                // com uma comanda ainda carregando (isProcessing, internet lenta), "número + Enter" ia para
+                // lancarPesoNaMesa -- o "ENTER confirma e envia" do V1 -- e mandava o carrinho que estava
+                // na memória para OUTRA comanda. Agora só avisa para digitar de novo.
+                if (balcaoV2Ref.current) {
+                    bipar('erro');
+                    setAvisoAtalho(numero >= 1 && numero <= TOTAL_COMANDAS_V2
+                        ? { tipo: 'erro', titulo: 'Aguarde um instante', detalhe: `Ainda abrindo a comanda anterior. Digite ${numero} e Enter de novo.` }
+                        : { tipo: 'erro', titulo: `Comanda ${numero} não existe`, detalhe: `Use de 1 a ${TOTAL_COMANDAS_V2}.` });
                     return;
                 }
 
@@ -1926,6 +2095,13 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
         setSelectedTable(tableNum);
         setIsTableModalOpen(false);
         setIsProcessing(true);
+        // V2 (bateria pico.tsx, 15/10/2026): a tela já é da comanda NOVA -- esvazia agora (o rascunho da
+        // anterior já foi salvo por quem chamou). Item lançado enquanto ela carrega (internet lenta) é
+        // JUNTADO ao que vier do banco; antes a resposta do banco apagava esse item por cima. Enquanto
+        // carrega, Enter/F7 esperam (carregandoComandaRef) -- enviar no meio reabria brecha de duplicata.
+        const ehV2 = balcaoV2Ref.current;
+        if (ehV2) { setCart([]); setPedidosDaMesa([]); setCurrentOrderId(null); }
+        const comLancadosNaCarga = (carregado: CartItem[]) => (antes: CartItem[]) => ehV2 ? unicosPorCartId([...carregado, ...antes]) : carregado;
         // Retoma o popup de sabor/opcional PAUSADO desta comanda (tecla C
         // dentro do popup, pedido do Ikarus 02/10/2026) -- exatamente do
         // mesmo ponto: produto, opções, índice e marcados intactos.
@@ -1936,6 +2112,9 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             setSeletorSabor(pausado);
         }
         const chamadaId = ++handleSelectTableCallIdRef.current;
+        carregandoComandaRef.current = true;
+        // Mesma rede de segurança do isProcessing (15 s): resposta que nunca chega não trava o envio.
+        setTimeout(() => { if (chamadaId === handleSelectTableCallIdRef.current) carregandoComandaRef.current = false; }, 15000);
         try {
             // Carrega TODOS os pedidos abertos da mesa, nao so o ultimo.
             // Antes usava fetchOpenOrderForTable, que tem .limit(1): a comanda
@@ -1959,20 +2138,22 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 // enviado (ver utils/rascunhoComanda.ts) -- sem isto itens ja enviados voltavam do
                 // rascunho e o proximo Enter criava um pedido novo duplicando a comanda.
                 const r = reconciliarRascunho(rascunho, abertos);
+                registrarNoDiario('comanda-aberta', { comanda: numeroAbrindo, salvos: resumoParaDiario(abertos.flatMap(o => o.items || [])), rascunho: resumoParaDiario(rascunho.cart), tela: resumoParaDiario(r.cart) });
                 setPedidosDaMesa(r.pedidosDaMesa);
-                setCart(r.cart);
+                setCart(comLancadosNaCarga(r.cart));
                 setCurrentOrderId(r.currentOrderId);
                 setCustomerName(abertos.length > 0 ? (rascunho.customerName || abertos[0].customerName) : rascunho.customerName);
             } else if (abertos.length > 0) {
+                registrarNoDiario('comanda-aberta', { comanda: numeroAbrindo, salvos: resumoParaDiario(abertos.flatMap(o => o.items || [])), rascunho: rascunho ? 'vencido' : null });
                 setPedidosDaMesa(abertos);
-                setCart(unicosPorCartId(abertos.flatMap(o => o.items || [])));
+                setCart(comLancadosNaCarga(unicosPorCartId(abertos.flatMap(o => o.items || []))));
                 setCurrentOrderId(abertos[0].id || null);
                 setCustomerName(abertos[0].customerName);
             } else {
                 setPedidosDaMesa([]);
                 setCurrentOrderId(null);
                 setCustomerName(rotuloVazio || `Mesa ${tableNum}`);
-                setCart([]);
+                setCart(comLancadosNaCarga([]));
                 // CRÍTICO (achado 02/10/2026, relato do Ikarus: "deletei a
                 // comanda, abri uma nova no mesmo número, o F8 já mostrava
                 // pagamento de outro cliente"): slot genuinamente vazio (sem
@@ -1994,7 +2175,7 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
             // Só a chamada mais recente pode desligar o "carregando" -- uma
             // resposta atrasada não pode liberar isProcessing no meio de uma
             // troca de comanda mais nova que ainda está em andamento.
-            if (chamadaId === handleSelectTableCallIdRef.current) setIsProcessing(false);
+            if (chamadaId === handleSelectTableCallIdRef.current) { setIsProcessing(false); carregandoComandaRef.current = false; }
         }
     };
 
@@ -2006,7 +2187,15 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
 
     // Qualquer chamada (Enter, F7, F8, clique) passa pela trava: enquanto um envio esta em curso, as
     // outras recebem o resultado dele em vez de gravar outro pedido.
-    const handleFinalize = (): Promise<boolean> => envioUnicoRef.current(finalizarComanda);
+    // E com a comanda AINDA CARREGANDO (pico.tsx, 15/10/2026) não envia: avisa para aguardar.
+    const handleFinalize = (): Promise<boolean> => {
+        if (carregandoComandaRef.current) {
+            bipar('erro');
+            setAvisoAtalho({ tipo: 'erro', titulo: 'Aguarde a comanda abrir', detalhe: 'Ainda carregando os itens desta comanda. Aperte de novo em um instante.' });
+            return Promise.resolve(false);
+        }
+        return envioUnicoRef.current(finalizarComanda);
+    };
 
     const finalizarComanda = async (cartDoRender: CartItem[] = cart): Promise<boolean> => {
         const numeroEnvio = parseInt(selectedTable, 10);
@@ -2146,7 +2335,9 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
                 paymentMethod,
                 changeFor: paymentMethod === 'Dinheiro' && changeFor ? changeFor : undefined,
                 items: cart,
-                total,
+                // Total da MESMA lista que vai gravada (o `cart` daqui já tirou item repetido). Antes era o
+                // total da tela, que contava a cópia repetida: total gravado maior que os itens (pico.tsx).
+                total: calcularValorCarrinho(cart, settings?.comboPrice) + (orderType === 'Entrega' ? (Number(deliveryFee) || 0) : 0),
                 status: 'Novo',
                 store_id: storeId,
                 table_number: (isAvulso || orderType === 'Entrega' || orderType === 'Retirada') ? undefined : parseInt(selectedTable),
@@ -2339,12 +2530,36 @@ export const CounterTab = memo(({ categories, menuItems, addons, settings, store
     // checkout/split. Atualizado a cada render pra nunca ficar com uma
     // versão velha de handleFinalize (que fecha sobre cart/selectedTable
     // atuais).
+    // Sempre o handleFinalize do render mais recente (o loop abaixo roda por varios renders).
+    const handleFinalizeRef = useRef<() => Promise<boolean>>(async () => true);
+    handleFinalizeRef.current = handleFinalize;
     useEffect(() => {
         if (enviarComandaAtivaRef) {
-            // So envia se a comanda tem algo novo/alterado (F7/F8 chamam isto antes do checkout:
-            // sem pendencia, nao ha o que gravar e o checkout abre na hora).
-            enviarComandaAtivaRef.current = () =>
-                comandaTemPendencia(cart, pedidosDaMesa) ? handleFinalize() : Promise.resolve(true);
+            // F7/F8 chamam isto antes do checkout. So envia se a comanda tem algo novo/alterado.
+            //
+            // SEGUNDO PESO SUMIDO (sexta 09/10/2026, pedido #165: cobrado R$ 26,50, gravado so o 1o peso
+            // de R$ 13,57; reproduzido em scripts/teste-balcao/peso.tsx, cenario P4): com um envio em
+            // curso, a trava de envio unico (envioUnico.ts) devolve a QUALQUER chamada o resultado desse
+            // envio, sem enviar o carrinho dela. Peso lancado depois do Enter + F7 em seguida = o F7
+            // recebia "true" do envio velho, abria o checkout, e o 2o peso ficava so na tela.
+            // Agora confere o que AINDA falta enviar (lendo refs, nao a closure) e envia de novo ate
+            // nao sobrar nada; se sobrar, NAO deixa abrir o checkout.
+            enviarComandaAtivaRef.current = async () => {
+                const faltaEnviar = () => comandaTemPendencia(cartRef.current, pedidosDaMesaRef.current);
+                registrarNoDiario('fechamento-inicio', { comanda: parseInt(selectedTableRef.current, 10) || 0, tela: resumoParaDiario(cartRef.current), salvos: resumoParaDiario(pedidosDaMesaRef.current.flatMap(o => o.items || [])) });
+                for (let rodada = 0; rodada < 3; rodada++) {
+                    if (!faltaEnviar()) return true;
+                    const ok = await handleFinalizeRef.current();
+                    if (!ok) return false;
+                    // deixa o React gravar o que o envio acabou de mudar na tela antes de reconferir
+                    await new Promise(r => setTimeout(r, 60));
+                }
+                if (faltaEnviar()) {
+                    showNotify('Ainda há item na comanda que não foi salvo. Confira a tela e tente de novo.', 'error');
+                    return false;
+                }
+                return true;
+            };
         }
     });
 

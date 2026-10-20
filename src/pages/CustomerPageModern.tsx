@@ -26,6 +26,7 @@ import introJs from 'intro.js';
 import { MIN_ORDER_VALUE } from '../constants';
 import { SaboresComQuantidade, totalUnidadesPorSabor, totalValorPorSabor, montarLinhasPorSabor } from '../components/SaboresComQuantidade';
 import { PrecoDoItem } from '../components/PrecoDoItem';
+import { ModalComplementos, produtoTemPassos } from '../components/ModalComplementos';
 
 const sanitizeHtmlEntities = (text?: string) => {
     if (!text) return '';
@@ -3224,7 +3225,10 @@ const CustomerPage: React.FC = () => {
                     porque este return sai da funcao antes de chegar no modal do
                     modo cardapio (mesma armadilha dos modais de fidelidade acima).
                     Achado em 05/10/2026: "clico e nada acontece". */}
-                {selectedItem && (
+                {selectedItem && produtoTemPassos(selectedItem) && (
+                    <ModalComplementos item={selectedItem} onAddToCart={handleAddToCart} onClose={() => setSelectedItem(null)} />
+                )}
+                {selectedItem && !produtoTemPassos(selectedItem) && (
                     <ItemDetailModal
                         item={selectedItem}
                         comboPrice={settings?.comboPrice ?? 13.00}
@@ -3466,7 +3470,11 @@ const CustomerPage: React.FC = () => {
                 </div>
             )}
 
-            {selectedItem && (
+            {/* Produto com item de tipo (sabor/opcional/adicional) abre o passo a passo -- 21/10/2026. */}
+            {selectedItem && produtoTemPassos(selectedItem) && (
+                <ModalComplementos item={selectedItem} onAddToCart={handleAddToCart} onClose={() => setSelectedItem(null)} />
+            )}
+            {selectedItem && !produtoTemPassos(selectedItem) && (
                 <ItemDetailModal
                     item={selectedItem}
                     comboPrice={settings?.comboPrice ?? 13.00}

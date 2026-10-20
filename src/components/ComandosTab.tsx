@@ -22,6 +22,8 @@ const ATALHOS: { tecla: string; oque: string }[] = [
     { tecla: 'B', oque: 'Abre a Balanca (pesagem manual)' },
     { tecla: 'N', oque: 'Nome do cliente' },
     { tecla: 'ENTER', oque: 'Envia a comanda (V2) / 1x monta, 2x envia (V1)' },
+    { tecla: 'ENTER (balanca)', oque: 'Lanca o peso do prato. Prato novo: tire o anterior antes' },
+    { tecla: 'PESO MUDOU?', oque: 'ENTER = outro prato / A = atualizar o prato / ESC = ignorar' },
     { tecla: 'SETAS', oque: 'Troca a forma de pagamento no checkout' },
     { tecla: 'ESC', oque: 'Cancela tudo' },
     { tecla: 'D / C / P', oque: 'Dinheiro/Cartao/Pix' },

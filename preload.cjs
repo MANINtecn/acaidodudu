@@ -35,6 +35,15 @@ contextBridge.exposeInMainWorld("electron", {
   // Cleaners to remove listeners if needed (React UseEffect cleanup)
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 
+  // Balcao V2 offline (15/10/2026): arquivo de comandas/vendas em userData (ver main.js)
+  balcao: {
+    carregar: () => ipcRenderer.invoke("balcao-carregar"),
+    salvar: (texto) => ipcRenderer.invoke("balcao-salvar", texto),
+    diario: (linha) => ipcRenderer.invoke("balcao-diario", linha),
+    espacoLivre: () => ipcRenderer.invoke("balcao-espaco-livre"),
+    log: (msg) => ipcRenderer.invoke("balcao-log", msg),
+  },
+
   // Storage API for Persistence
   storage: {
     getItem: (key) => ipcRenderer.invoke("storage-get", key),

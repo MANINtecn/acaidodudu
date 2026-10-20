@@ -15,10 +15,9 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { X, Users, ShoppingBag, Check, Undo2, AlertTriangle, Loader2 } from 'lucide-react';
-import {
-    getTableBalance, addTablePayment, voidTablePayment, settleTable,
-    TableBalance, TablePayment
-} from '../services/supabaseService';
+// comandaBackend: com o Balcão V2 offline ligado, o F8 usa o saldo LOCAL da comanda (15/10/2026).
+import { getTableBalance, addTablePayment, voidTablePayment, settleTable } from '../services/comandaBackend';
+import type { TableBalance, TablePayment } from '../services/supabaseService';
 
 type Modo = 'ESCOLHA' | 'VALOR' | 'PRODUTO';
 type FormaPagamento = 'Dinheiro' | 'Cartão' | 'PIX';

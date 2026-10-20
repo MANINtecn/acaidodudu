@@ -190,16 +190,19 @@ export const mapAddonFromDB = (addon: any): Addon => {
         categoryId: addon.category_id || addon.categoryId,
         isAvailable: addon.is_available ?? addon.isAvailable ?? true,
         addonGroup: addon.addon_group || addon.addonGroup || undefined,
+        tipoComplemento: addon.tipo_complemento || addon.tipoComplemento || undefined,
     };
 };
 
 export const mapAddonToDB = (addon: Partial<Addon>) => {
-    const { id, categoryId, isAvailable, isSelected, daysOfWeek, addonGroup, ...rest } = addon as any;
+    const { id, categoryId, isAvailable, isSelected, daysOfWeek, addonGroup, tipoComplemento, ...rest } = addon as any;
     const payload: any = { ...rest };
     if (categoryId !== undefined) payload.category_id = categoryId;
     if (isAvailable !== undefined) payload.is_available = isAvailable;
     if (daysOfWeek !== undefined) payload.days_of_week = daysOfWeek;
     if (addonGroup !== undefined) payload.addon_group = addonGroup || null;
+    // undefined = não mexe (banco sem a coluna continua salvando); null = o admin tirou o tipo.
+    if (tipoComplemento !== undefined) payload.tipo_complemento = tipoComplemento || null;
 
     delete payload.categoryId;
     delete payload.isAvailable;
@@ -252,6 +255,7 @@ export const fetchMenuForAdmin = async (storeId: string) => {
 
     return { categories, menuItems: mappedItems, addons };
 };
+
 
 // --- Category Management ---
 export const createCategory = async (category: Omit<Category, 'id'>) => {
@@ -402,6 +406,7 @@ export const mapOrderFromDB = (dbOrder: any): Order => {
         comboPrice: Number(dbOrder.combo_price || dbOrder.comboPrice || 13) || 13,
         origin: dbOrder.origin,
         statusHistory: dbOrder.status_history || dbOrder.statusHistory,
+        pagamentos: Array.isArray(dbOrder.pagamentos) ? dbOrder.pagamentos : undefined,
         courier_id: dbOrder.courier_id,
         courier_name: dbOrder.courier_name
     };
@@ -1188,7 +1193,8 @@ export const createOrder = async (order: any) => {
  */
 const FORMAS_PAGAMENTO_COM_NOTA: string[] = ['PIX', 'Cartão', 'Cartao'];
 
-const dispararEmissaoNotaFiscal = async (order: Order, storeId: string): Promise<void> => {
+// exportada (15/10/2026): o sincronizador do Balcão V2 offline dispara a nota quando a venda SOBE.
+export const dispararEmissaoNotaFiscal = async (order: Order, storeId: string): Promise<void> => {
     const config = await fetchFiscalConfig(storeId);
     if (!config || !config.provedor_api) {
         // Sem config fiscal ou sem provedor escolhido ainda: nao e' erro,
@@ -2386,22 +2392,34 @@ export const fetchSalesByDateRange = async (storeId: string, startDate: string, 
     // Ordena por timestamp e por id (desempate) para as paginas nao repetirem nem
     // pularem pedidos com a mesma data.
     const TAMANHO_PAGINA = 1000;
-    const todos: any[] = [];
-    for (let de = 0; ; de += TAMANHO_PAGINA) {
-        const { data, error } = await supabase
-            .from('orders')
-            .select(ORDER_COLUMNS)
-            .eq('store_id', storeId)
-            .neq('status', 'Cancelado') // Include everything except Cancelled (User request: count pending/delivering too)
-            .gte('timestamp', start.toISOString())
-            .lte('timestamp', end.toISOString())
-            .order('timestamp', { ascending: false })
-            .order('id', { ascending: true })
-            .range(de, de + TAMANHO_PAGINA - 1);
+    const buscar = async (colunas: string) => {
+        const todos: any[] = [];
+        for (let de = 0; ; de += TAMANHO_PAGINA) {
+            const { data, error } = await supabase
+                .from('orders')
+                .select(colunas)
+                .eq('store_id', storeId)
+                .neq('status', 'Cancelado') // Include everything except Cancelled (User request: count pending/delivering too)
+                .gte('timestamp', start.toISOString())
+                .lte('timestamp', end.toISOString())
+                .order('timestamp', { ascending: false })
+                .order('id', { ascending: true })
+                .range(de, de + TAMANHO_PAGINA - 1);
 
-        if (error) throw error;
-        todos.push(...(data || []));
-        if (!data || data.length < TAMANHO_PAGINA) break;
+            if (error) throw error;
+            todos.push(...(data || []));
+            if (!data || data.length < TAMANHO_PAGINA) break;
+        }
+        return todos;
+    };
+    // `pagamentos` (15/10/2026): detalhe Dinheiro/PIX/Cartão de cada venda do Balcão V2 offline.
+    // Banco ainda sem a coluna -> busca sem ela (o Histórico continua igual a antes).
+    let todos: any[];
+    try {
+        todos = await buscar(`${ORDER_COLUMNS}, pagamentos`);
+    } catch (e: any) {
+        if (!/pagamentos/i.test(String(e?.message || ''))) throw e;
+        todos = await buscar(ORDER_COLUMNS);
     }
     return todos.map((dbOrder: any) => mapOrderFromDB(dbOrder));
 };

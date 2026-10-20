@@ -75,6 +75,16 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
         }
     };
 
+    // Marca/desmarca todos os itens de uma seção de uma vez (ex.: os 25 sabores).
+    const marcarTodos = (ids: string[], marcar: boolean) => {
+        setFormData(prev => {
+            const atuais = new Set(prev.allowedAddons || []);
+            ids.forEach(id => marcar ? atuais.add(id) : atuais.delete(id));
+            return { ...prev, allowedAddons: Array.from(atuais) };
+        });
+    };
+    const [buscaAddon, setBuscaAddon] = useState('');
+
     const handleAddonToggle = (addonId: string) => {
         setFormData(prev => {
             const currentAddons = prev.allowedAddons || [];
@@ -284,20 +294,52 @@ export const MenuItemModal: React.FC<MenuItemModalProps> = ({
                     <div className="space-y-4">
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Adicionais Permitidos</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 lg:max-h-80 overflow-y-auto p-2 border rounded-lg dark:border-gray-600">
-                            {addons.map(addon => (
-                                <label key={addon.id} className="flex items-center space-x-2 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={(formData.allowedAddons || []).includes(addon.id)}
-                                        onChange={() => handleAddonToggle(addon.id)}
-                                        className="rounded text-red-600 focus:ring-red-500 dark:bg-gray-700 dark:border-gray-600"
-                                    />
-                                    <span className="text-sm text-gray-700 dark:text-gray-300">{addon.name} (+R$ {addon.price.toFixed(2)})</span>
-                                </label>
-                            ))}
-                            {addons.length === 0 && <span className="text-sm text-gray-500">Nenhum adicional cadastrado.</span>}
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Complementos do produto</label>
+                            <input type="text" value={buscaAddon} onChange={e => setBuscaAddon(e.target.value)} placeholder="Buscar..." className="w-32 px-2 py-1 text-sm border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        </div>
+                        {addons.length === 0 && <span className="text-sm text-gray-500">Nenhum adicional cadastrado.</span>}
+                        <div className="space-y-2 max-h-72 lg:max-h-[28rem] overflow-y-auto pr-1">
+                            {([
+                                ['sabor', 'Sabores', 'O cliente escolhe 1 (passo 1)'],
+                                ['opcional', 'Opcionais', 'Grátis, pode pular (passo 2)'],
+                                ['adicional', 'Adicionais', 'Pagos, pode pular (passo 3)'],
+                                ['', 'Sem tipo', 'Lista antiga'],
+                            ] as const).map(([tipo, titulo, dica]) => {
+                                const daSecao = addons.filter(a => (a.tipoComplemento || '') === tipo);
+                                if (daSecao.length === 0) return null;
+                                const termo = buscaAddon.trim().toLowerCase();
+                                const visiveis = termo ? daSecao.filter(a => a.name.toLowerCase().includes(termo)) : daSecao;
+                                const marcados = daSecao.filter(a => (formData.allowedAddons || []).includes(a.id)).length;
+                                return (
+                                    <details key={tipo || 'sem'} open={marcados > 0 || !!termo} className="border rounded-lg dark:border-gray-600" data-testid={`secao-${tipo || 'sem'}`}>
+                                        <summary className="cursor-pointer select-none px-3 py-2 flex items-center gap-2 text-sm">
+                                            <span className="font-bold text-gray-800 dark:text-gray-100">{titulo}</span>
+                                            <span className="text-xs text-gray-500">{dica}</span>
+                                            <span className={`ml-auto text-xs font-bold ${marcados ? 'text-red-600' : 'text-gray-400'}`}>{marcados}/{daSecao.length}</span>
+                                        </summary>
+                                        <div className="px-3 pb-3">
+                                            <div className="flex gap-3 mb-2 text-xs">
+                                                <button type="button" onClick={() => marcarTodos(visiveis.map(a => a.id), true)} className="text-blue-600 hover:underline">Marcar todos</button>
+                                                <button type="button" onClick={() => marcarTodos(visiveis.map(a => a.id), false)} className="text-gray-500 hover:underline">Desmarcar todos</button>
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {visiveis.map(addon => (
+                                                    <label key={addon.id} className="flex items-center space-x-2 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={(formData.allowedAddons || []).includes(addon.id)}
+                                                            onChange={() => handleAddonToggle(addon.id)}
+                                                            className="rounded text-red-600 focus:ring-red-500 dark:bg-gray-700 dark:border-gray-600"
+                                                        />
+                                                        <span className="text-sm text-gray-700 dark:text-gray-300">{addon.name}{addon.price > 0 ? ` (+R$ ${addon.price.toFixed(2)})` : ''}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </details>
+                                );
+                            })}
                         </div>
                     </div>
 

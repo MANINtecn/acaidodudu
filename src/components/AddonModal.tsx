@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
-import { Addon, Category } from '../types';
+import { Addon, Category, TipoComplemento } from '../types';
 
 interface AddonModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: (addon: Partial<Addon>) => Promise<void>;
     initialData?: Addon;
+    /** Tipo já escolhido ao criar um item novo (o filtro aberto na biblioteca). */
+    tipoPadrao?: TipoComplemento;
     storeId: string;
     categories: Category[];
 }
@@ -16,6 +18,7 @@ export const AddonModal: React.FC<AddonModalProps> = ({
     onClose,
     onSave,
     initialData,
+    tipoPadrao,
     storeId,
     categories
 }) => {
@@ -36,10 +39,11 @@ export const AddonModal: React.FC<AddonModalProps> = ({
                 name: '',
                 price: 0,
                 isAvailable: true,
-                categoryId: undefined
+                categoryId: undefined,
+                tipoComplemento: tipoPadrao
             });
         }
-    }, [initialData, isOpen]);
+    }, [initialData, isOpen, tipoPadrao]);
 
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -120,7 +124,25 @@ export const AddonModal: React.FC<AddonModalProps> = ({
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo (Opcional)</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Tipo no cardápio</label>
+                        <select
+                            value={formData.tipoComplemento || ''}
+                            onChange={(e) => setFormData(prev => ({ ...prev, tipoComplemento: (e.target.value || null) as any }))}
+                            className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                            data-testid="tipo-complemento"
+                        >
+                            <option value="">Sem tipo (lista antiga)</option>
+                            <option value="sabor">Sabor -- o cliente escolhe 1</option>
+                            <option value="opcional">Opcional -- grátis, pode pular</option>
+                            <option value="adicional">Adicional -- pago, pode pular</option>
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                            Produto que tiver item com tipo abre no site em passos: Sabor, depois Opcionais, depois Adicionais.
+                        </p>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Passos do Milkshake (antigo)</label>
                         <select
                             name="addonGroup"
                             value={formData.addonGroup || ''}

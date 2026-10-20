@@ -17,6 +17,7 @@ import {
     Volume2
 } from 'lucide-react';
 import { Settings, Category, MenuItem } from '../types';
+import { ModoOfflineBalcao } from './ModoOfflineBalcao';
 import EstacaoImpressao from './EstacaoImpressao';
 import PixWhatsappConfig from './PixWhatsappConfig';
 import { SIRENES, testarSirene, VOLUME_MAXIMO, type TipoSirene } from '../services/sireneService';
@@ -753,6 +754,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                             </p>
                         </div>
                     </div>
+                    <ModoOfflineBalcao balcaoV2={settings?.balcaoV2 === true} />
                 </div>
 
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
