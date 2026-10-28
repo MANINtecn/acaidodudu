@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabaseService';
 import { useAuth } from '../auth/AuthContext';
+import { recuperacaoValida, encerrarRecuperacao } from '../auth/recuperacaoDeSenha';
 
 /**
  * Destino do link "redefinir senha" do e-mail. O link já traz uma sessão temporária:
@@ -15,6 +16,8 @@ const NovaSenhaPage: React.FC = () => {
     const [erro, setErro] = useState<string | null>(null);
     const [pronto, setPronto] = useState(false);
     const [ocupado, setOcupado] = useState(false);
+    // Só abre o formulário quem chegou pelo link do e-mail (ver recuperacaoDeSenha.ts).
+    const [chegouPeloLink] = useState(() => recuperacaoValida());
 
     // O Supabase devolve o motivo no # quando o link não vale (ex.: otp_expired).
     const motivoDoLink = useMemo(() => {
@@ -35,6 +38,9 @@ const NovaSenhaPage: React.FC = () => {
         const { error } = await supabase.auth.updateUser({ password: senha });
         setOcupado(false);
         if (error) return setErro(error.message || 'Não foi possível salvar a senha.');
+        // Senha trocada: o link não vale mais, e qualquer outro aparelho logado com a senha antiga é desconectado.
+        encerrarRecuperacao();
+        try { await supabase.auth.signOut({ scope: 'others' }); } catch (_) { /* sem rede: a senha já foi trocada */ }
         setPronto(true);
         setTimeout(() => navigate('/', { replace: true }), 1800);
     };
@@ -47,9 +53,9 @@ const NovaSenhaPage: React.FC = () => {
                 <h1 className="text-2xl font-black text-white">Nova senha</h1>
                 {loading ? (
                     <p className="text-gray-400">Carregando...</p>
-                ) : !session ? (
+                ) : !session || !chegouPeloLink ? (
                     <>
-                        <p className="text-gray-300">{motivoDoLink || 'Este link venceu ou já foi usado. Peça um novo link de redefinição.'}</p>
+                        <p className="text-gray-300">{motivoDoLink || (session && !chegouPeloLink && !pronto ? 'Esta tela só abre pelo link enviado ao seu e-mail. Para trocar a senha, use Esqueci minha senha na tela de login.' : 'Este link venceu ou já foi usado. Peça um novo link de redefinição.')}</p>
                         <Link to="/super-admin" className="block text-center text-blue-400 hover:underline">Voltar ao login</Link>
                     </>
                 ) : pronto ? (

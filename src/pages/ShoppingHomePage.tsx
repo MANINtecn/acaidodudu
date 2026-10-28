@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Search, Store as StoreIcon, MapPin, Sun, Moon, Sparkles, ArrowRight, X } from 'lucide-react';
+import { Search, Store as StoreIcon, MapPin, Sun, Moon, ArrowRight, X } from 'lucide-react';
 import { fetchLojasShopping, buscarProdutosShopping, type LojaShopping, type ProdutoBusca } from '../services/supabaseService';
 import { ImagemProduto } from '../components/ImagemProduto';
 import { MARCA } from '../services/marcaService';
@@ -127,7 +127,7 @@ const ShoppingHomePage: React.FC = () => {
                 <div className="absolute inset-0 bg-gradient-to-br from-[var(--pa-soft)] via-[var(--pa-bg)] to-[var(--pa-bg)]" />
                 <div className="absolute -top-24 -right-16 h-72 w-72 rounded-full bg-[var(--pa-primary-2)] opacity-20 blur-3xl" />
                 <div className="relative mx-auto max-w-5xl px-4 pt-10 pb-10">
-                    <p className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-[var(--pa-primary)]"><Sparkles size={14} /> Comércio da sua cidade</p>
+                    <p className="text-xs font-bold uppercase tracking-widest text-[var(--pa-primary)]">Comércio da sua cidade</p>
                     <h1 className="mt-2 text-3xl sm:text-5xl font-black leading-tight">Peça nas lojas<br className="sm:hidden" /> <span className="text-[var(--pa-primary)]">perto de você</span></h1>
                     <p className="mt-3 max-w-xl text-[var(--pa-muted)]">Lanchonetes, sorveterias, restaurantes e mais, todos num só lugar. Escolha a loja, veja o cardápio e peça.</p>
 

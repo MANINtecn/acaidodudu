@@ -1,3 +1,4 @@
+import './auth/recuperacaoDeSenha'; // precisa rodar ANTES de qualquer coisa limpar o endereço (ver o arquivo)
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
