@@ -7,7 +7,7 @@
  */
 export const MARCA = {
     produto: 'Pede Aqui',
-    site: 'pedeaqui.tecx.pro',
+    site: 'pedeaki.tecx.pro',
     suporte: 'TECX SISTEMAS',
 };
 
