@@ -2228,6 +2228,41 @@ export const ownsStore = async (storeId: string): Promise<boolean | null> => {
     return data === true;
 };
 
+// --- Shopping (Pede Aqui): lojas e produtos de todas as lojas que aparecem no shopping ---
+export interface LojaShopping {
+    id: string; name: string; slug: string; logo_url?: string | null;
+    categoria?: string | null; cidade?: string | null; subscription_end_date?: string | null;
+}
+export interface ProdutoBusca { id: string | number; name: string; price: number; image?: string | null; store_id: string }
+
+/** Lojas ativas, não vencidas e que marcaram "aparecer no shopping". */
+export const fetchLojasShopping = async (): Promise<LojaShopping[]> => {
+    const { data, error } = await supabase
+        .from('stores')
+        .select('id,name,slug,logo_url,categoria,cidade,subscription_end_date')
+        .eq('aparecer_no_shopping', true)
+        .eq('is_active', true)
+        .order('name');
+    if (error) throw error;
+    const agora = Date.now();
+    return ((data || []) as LojaShopping[]).filter(l => !l.subscription_end_date || new Date(l.subscription_end_date).getTime() > agora);
+};
+
+/** Busca produtos pelo nome nas lojas do shopping (no máximo 12, só disponíveis). */
+export const buscarProdutosShopping = async (termo: string, lojaIds: string[]): Promise<ProdutoBusca[]> => {
+    const t = termo.replace(/[%_,()]/g, ' ').trim();
+    if (t.length < 2 || lojaIds.length === 0) return [];
+    const { data, error } = await supabase
+        .from('menu_items')
+        .select('id,name,price,image,store_id')
+        .in('store_id', lojaIds)
+        .eq('is_available', true)
+        .ilike('name', `%${t}%`)
+        .limit(12);
+    if (error) throw error;
+    return (data || []) as ProdutoBusca[];
+};
+
 /** A loja deste usuário (um lojista tem no máximo uma), ou null. */
 export const fetchMinhaLoja = async (userId: string): Promise<Store | null> => {
     const { data, error } = await supabase.from('stores').select('*').eq('owner_id', userId).limit(1);

@@ -15,6 +15,7 @@ const CourierLoginPage = lazy(() => import('./pages/CourierLoginPage'));
 const CourierRegisterPage = lazy(() => import('./pages/CourierRegisterPage'));
 const SuperAdminPage = lazy(() => import('./pages/SuperAdminPage'));
 const CadastroLojistaPage = lazy(() => import('./pages/CadastroLojistaPage'));
+const ShoppingHomePage = lazy(() => import('./pages/ShoppingHomePage'));
 const WaiterPage = lazy(() => import('./pages/WaiterPage'));
 const StaffSelectionPage = lazy(() => import('./pages/StaffSelectionPage'));
 const StaffPortalPage = lazy(() => import('./pages/StaffPortalPage'));
@@ -193,6 +194,7 @@ const App: React.FC = () => {
                 <Route path="/" element={<RootRoute />} />
                 <Route path="/super-admin" element={<SuperAdminPage />} />
                 <Route path="/cadastro" element={<CadastroLojistaPage />} />
+                <Route path="/shopping" element={<ShoppingHomePage />} />
 
                 {/* HIGH PRIORITY ROUTES - Independent of Store Context */}
                 <Route path="/portal-equipe" element={<StaffSelectionPage />} />
@@ -252,8 +254,8 @@ const RootRoute: React.FC = () => {
     return <CustomerPage />;
   }
 
-  // If no store loaded at root, redirect to default path-based store
-  return <Navigate to="/acaidodudu" replace />;
+  // Sem loja na raiz: é a página do shopping (Pede Aqui)
+  return <ShoppingHomePage />;
 };
 
 export default App;

@@ -15,7 +15,7 @@ const VALOR_PADRAO: Record<Plano, number> = { basico: 199, avancado: 499 };
 const CATEGORIAS_LOJA = ['Lanchonete', 'Sorveteria / Açaí', 'Pizzaria', 'Restaurante', 'Padaria', 'Agropecuária', 'Outros'];
 const NOME_PLANO: Record<Plano, string> = { basico: 'Básico', avancado: 'Avançado' };
 // Endereços que já são rotas do app: não podem virar link de loja.
-const SLUGS_RESERVADOS = ['admin', 'login', 'super-admin', 'staff', 'acesso', 'hub-equipe', 'portal-equipe', 'garcom', 'waiter', 'entregador', 'tv', 'cadastro', 'assets', 'public'];
+const SLUGS_RESERVADOS = ['admin', 'login', 'super-admin', 'staff', 'acesso', 'hub-equipe', 'portal-equipe', 'garcom', 'waiter', 'entregador', 'tv', 'cadastro', 'shopping', 'assets', 'public'];
 
 const limparSlug = (texto: string) =>
     texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
