@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { Category, MenuItem, Addon, Order, Settings, Store, Customer, CashSession, CashTransaction, Promotion, LoyaltyRewardItem, FiscalConfig, NotaFiscal } from '../types';
+import { enviarImagem, enviarImagemComprimida, imagensR2Ativas, ErroDeCompressao, type TipoImagem } from './imagemService';
 
 // Firebase removido em 28/09/2026: nunca esteve configurado neste projeto
 // (todas as chaves em .env.local vazias) -- uploadMenuImage/uploadStoreLogo
@@ -1376,8 +1377,36 @@ export const fetchLastOrderByPhone = async (phone: string, storeId: string): Pro
     return data ? mapOrderFromDB(data) : null;
 };
 
+const tokenDoLogin = async () => (await supabase.auth.getSession()).data.session?.access_token;
+
+/**
+ * Sobe imagem comprimida (WebP, miniatura para produto) com cache de 1 ano.
+ * Destino: Cloudflare R2 se configurado; senão o bucket `assets` do Supabase.
+ * Devolve null só se a imagem não pôde ser comprimida: aí quem chamou segue com o envio original.
+ */
+const subirImagem = async (file: File, storeId: string, tipo: TipoImagem): Promise<string | null> => {
+    try {
+        if (imagensR2Ativas(storeId)) return await enviarImagem(file, storeId, tipo, tokenDoLogin);
+        return await enviarImagemComprimida(file, storeId, tipo, async (caminho, blob) => {
+            const { error } = await supabase.storage.from('assets').upload(caminho, blob, {
+                upsert: false, cacheControl: '31536000', contentType: 'image/webp',
+            });
+            // Nome = hash do conteúdo: "já existe" significa que é a mesma imagem.
+            if (error && !/already exists|duplicate/i.test(error.message)) throw error;
+            return supabase.storage.from('assets').getPublicUrl(caminho).data.publicUrl;
+        });
+    } catch (e) {
+        if (e instanceof ErroDeCompressao) {
+            console.warn('[imagem] não comprimiu, enviando o arquivo original:', e.message);
+            return null;
+        }
+        throw e;
+    }
+};
+
 // --- Settings Functions ---
 export const uploadLogoToStorage = async (storeId: string, file: File): Promise<string> => {
+    { const url = await subirImagem(file, storeId, 'logo'); if (url) return url; }
     const fileExt = file.name.split('.').pop();
     const fileName = `logo_${Date.now()}.${fileExt}`;
     const filePath = `${storeId}/${fileName}`;
@@ -1397,6 +1426,7 @@ export const uploadLogoToStorage = async (storeId: string, file: File): Promise<
 
 /** Mesmo mecanismo da logo -- so muda o prefixo do arquivo no bucket. */
 export const uploadHeroImageToStorage = async (storeId: string, file: File): Promise<string> => {
+    { const url = await subirImagem(file, storeId, 'hero'); if (url) return url; }
     const fileExt = file.name.split('.').pop();
     const fileName = `hero_${Date.now()}.${fileExt}`;
     const filePath = `${storeId}/${fileName}`;
@@ -2120,6 +2150,7 @@ export const fetchOrdersForSession = async (storeId: string, startTime: string, 
  * bucket novo, so mais um prefixo de arquivo dentro do mesmo.
  */
 export const uploadMenuImage = async (file: File, storeId: string): Promise<string | null> => {
+    { const url = await subirImagem(file, storeId, 'produto'); if (url) return url; }
     const fileExt = file.name.split('.').pop();
     const fileName = `${storeId}/produto_${Date.now()}.${fileExt}`;
 
@@ -2141,6 +2172,7 @@ export const uploadMenuImage = async (file: File, storeId: string): Promise<stri
  * so por compatibilidade caso algo a importe, migrada ao mesmo bucket.
  */
 export const uploadStoreLogo = async (file: File, storeId: string): Promise<string | null> => {
+    { const url = await subirImagem(file, storeId, 'logo'); if (url) return url; }
     const fileExt = file.name.split('.').pop();
     const fileName = `${storeId}/logo-${Date.now()}.${fileExt}`;
 
@@ -2180,6 +2212,36 @@ export const createStore = async (store: Omit<Store, 'id' | 'created_at'>) => {
         .single();
     if (error) throw error;
     return data;
+};
+
+/** Você é administrador da plataforma? `null` = não deu para perguntar (rede). */
+export const isPlatformAdmin = async (): Promise<boolean | null> => {
+    const { data, error } = await supabase.rpc('is_platform_admin');
+    if (error) return null;
+    return data === true;
+};
+
+/** O usuário logado é dono desta loja (ou administrador da plataforma)? `null` = erro de rede. */
+export const ownsStore = async (storeId: string): Promise<boolean | null> => {
+    const { data, error } = await supabase.rpc('owns_store', { sid: storeId });
+    if (error) return null;
+    return data === true;
+};
+
+/** A loja deste usuário (um lojista tem no máximo uma), ou null. */
+export const fetchMinhaLoja = async (userId: string): Promise<Store | null> => {
+    const { data, error } = await supabase.from('stores').select('*').eq('owner_id', userId).limit(1);
+    if (error) throw error;
+    return (data?.[0] as Store) || null;
+};
+
+/** Cadastro sozinho do lojista: cria a loja dele com 7 dias de teste (regras no banco, função criar_minha_loja). */
+export const criarMinhaLoja = async (dados: { nome: string; slug: string; categoria?: string; cidade?: string }): Promise<Store> => {
+    const { data, error } = await supabase.rpc('criar_minha_loja', {
+        p_nome: dados.nome, p_slug: dados.slug, p_categoria: dados.categoria || null, p_cidade: dados.cidade || null,
+    });
+    if (error) throw error;
+    return data as Store;
 };
 
 export const fetchAllStores = async (): Promise<Store[]> => {

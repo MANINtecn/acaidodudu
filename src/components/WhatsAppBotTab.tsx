@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { nomeDaLoja } from '../services/marcaService';
 import { 
     MessageSquare, 
     CheckCircle2, 
@@ -67,7 +68,7 @@ export const WhatsAppBotTab = ({ isBotEnabled, onToggleBot }: WhatsAppBotTabProp
             if (storedBypass) setBypassNumber(storedBypass);
             if (storedPrompt) setBotPrompt(storedPrompt);
             else {
-                setBotPrompt(`Você é o atendente da sorveteria "Açaí do Dudu".
+                setBotPrompt(`Você é o atendente da loja "${nomeDaLoja()}".
 Sua função é atender clientes no WhatsApp, tirar dúvidas e coletar pedidos de entrega.
 Fechamos às 23:30.
 

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { MARCA } from '../services/marcaService';
 import { supabase } from '../services/supabaseService';
 import { useStore } from '../contexts/StoreContext';
 import { useAuth } from '../auth/AuthContext';
@@ -97,7 +98,7 @@ const LoginPage: React.FC = () => {
           <div className="relative w-24 h-24 rounded-full overflow-hidden border-2 border-white/20 bg-gray-900 flex items-center justify-center p-1 shadow-inner">
             <img 
               src={storeLogo} 
-              alt={currentStore?.name || "Açaí do Dudu"} 
+              alt={currentStore?.name || MARCA.produto} 
               className="w-full h-full object-cover rounded-full"
               onError={(e) => {
                 // Fallback to logoImg if store logo fails to load
@@ -112,7 +113,7 @@ const LoginPage: React.FC = () => {
             Painel Administrativo
           </h2>
           <p className="text-xs font-semibold text-purple-300 uppercase tracking-widest mt-1">
-            Açaí do Dudu • Sistema PDV
+            {currentStore?.name || MARCA.produto} • Sistema PDV
           </p>
         </div>
 

@@ -1,7 +1,7 @@
 // Deploy trigger: fix bot visibility and auth
-import React, { lazy, Suspense } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { BrowserRouter, HashRouter, Routes, Route, Navigate, useLocation, useParams } from 'react-router-dom';
-import { isSupabaseConfigured } from './services/supabaseService';
+import { isSupabaseConfigured, supabase, ownsStore, isPlatformAdmin } from './services/supabaseService';
 import CustomerPage from './pages/CustomerPage';
 import { AuthProvider, useAuth } from './auth/AuthContext';
 import { StoreProvider, useStore } from './contexts/StoreContext';
@@ -14,15 +14,48 @@ const CourierPage = lazy(() => import('./pages/CourierPage'));
 const CourierLoginPage = lazy(() => import('./pages/CourierLoginPage'));
 const CourierRegisterPage = lazy(() => import('./pages/CourierRegisterPage'));
 const SuperAdminPage = lazy(() => import('./pages/SuperAdminPage'));
+const CadastroLojistaPage = lazy(() => import('./pages/CadastroLojistaPage'));
 const WaiterPage = lazy(() => import('./pages/WaiterPage'));
 const StaffSelectionPage = lazy(() => import('./pages/StaffSelectionPage'));
 const StaffPortalPage = lazy(() => import('./pages/StaffPortalPage'));
 const TvOverlayPage = lazy(() => import('./pages/TvOverlayPage'));
 
+const AvisoDeAcesso: React.FC<{ titulo: string; texto: string }> = ({ titulo, texto }) => (
+  <div className="flex items-center justify-center min-h-screen bg-gray-900 p-6">
+    <div className="max-w-md w-full bg-gray-800 border border-gray-700 rounded-2xl p-8 text-center space-y-4">
+      <h1 className="text-2xl font-black text-white">{titulo}</h1>
+      <p className="text-gray-300">{texto}</p>
+      <button onClick={() => supabase.auth.signOut()} className="bg-gray-700 hover:bg-gray-600 text-white font-bold px-5 py-2 rounded-lg">Sair</button>
+    </div>
+  </div>
+);
+
+type EstadoAcesso = 'checando' | 'ok' | 'negado' | 'bloqueada';
+
 const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { session, loading } = useAuth();
+  const { currentStore, loading: storeLoading } = useStore();
   const location = useLocation();
   const { storeSlug } = useParams();
+  const [estado, setEstado] = useState<EstadoAcesso>('checando');
+
+  // Só o dono da loja (ou o administrador da plataforma) entra no admin dela.
+  // Erro de rede NÃO bloqueia (o PDV precisa abrir sem internet); quem protege os dados é o RLS.
+  useEffect(() => {
+    if (!session || storeLoading) return;
+    // Sem loja carregada pode ser internet fora (o fetch da loja não distingue): não bloquear, como antes.
+    if (!currentStore) { setEstado('ok'); return; }
+    let vivo = true;
+    (async () => {
+      const [dono, admin] = await Promise.all([ownsStore(currentStore.id), isPlatformAdmin()]);
+      if (!vivo) return;
+      if (admin === true) return setEstado('ok');
+      if (dono === false) return setEstado('negado');
+      const vencida = currentStore.subscription_end_date && new Date(currentStore.subscription_end_date).getTime() < Date.now();
+      setEstado(currentStore.is_active === false || vencida ? 'bloqueada' : 'ok');
+    })();
+    return () => { vivo = false; };
+  }, [session?.user?.id, currentStore?.id, storeLoading]);
 
   if (loading) {
     return <div className="flex items-center justify-center h-screen bg-background"><div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
@@ -35,7 +68,10 @@ const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <Navigate to="/" replace />;
   }
 
-  return <>{children}</>;
+  if (estado === 'ok') return <>{children}</>;
+  if (estado === 'negado') return <AvisoDeAcesso titulo="Sem permissão" texto="Este login não é o dono desta loja. Entre com a conta correta." />;
+  if (estado === 'bloqueada') return <AvisoDeAcesso titulo="Assinatura inativa" texto="O acesso desta loja está suspenso ou vencido. Fale com o suporte para regularizar." />;
+  return <div className="flex items-center justify-center h-screen bg-background"><div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
 };
 
 const SupabaseConfigWarning = () => (
@@ -156,6 +192,7 @@ const App: React.FC = () => {
                 */}
                 <Route path="/" element={<RootRoute />} />
                 <Route path="/super-admin" element={<SuperAdminPage />} />
+                <Route path="/cadastro" element={<CadastroLojistaPage />} />
 
                 {/* HIGH PRIORITY ROUTES - Independent of Store Context */}
                 <Route path="/portal-equipe" element={<StaffSelectionPage />} />

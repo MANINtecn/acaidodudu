@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X as LucideX, History as LucideHistory, Utensils as LucideUtensils, Gift as LucideGift } from 'lucide-react';
+import { nomeDaLoja } from '../services/marcaService';
 import {
     fetchCustomerLoyaltyHistory, fetchPublicSettings,
     fetchLoyaltyRewardItems, fetchCustomerPointsBalance,
@@ -458,7 +459,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                         {loyaltyModel === 'pontos' ? (
                             <>
                                 <h3 className="text-xl font-display text-white mb-1 flex items-center gap-2">
-                                    <LucideGift size={20} className="text-yellow-400" /> Fidelidade Açaí do Dudu
+                                    <LucideGift size={20} className="text-yellow-400" /> Fidelidade {nomeDaLoja()}
                                 </h3>
                                 <p className="text-xs text-gray-400 mb-6">Acumule pontos a cada pedido e troque por produtos!</p>
 
@@ -519,7 +520,7 @@ const LoyaltyProfileModal: React.FC<LoyaltyProfileModalProps> = ({ isOpen, onClo
                         ) : (
                             <>
                                 <h3 className="text-xl font-display text-white mb-1 flex items-center gap-2">
-                                    Fidelidade Açaí do Dudu
+                                    Fidelidade {nomeDaLoja()}
                                 </h3>
                                 <p className="text-xs text-gray-400 mb-6">Junte 10 selos e ganhe R$ 20,00 ou um X-Tudo!</p>
 

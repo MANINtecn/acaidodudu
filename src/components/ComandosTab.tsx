@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Printer, Search, Keyboard } from 'lucide-react';
+import { nomeDaLoja } from '../services/marcaService';
 import type { MenuItem, Category } from '../types';
 
 interface ComandosTabProps {
@@ -96,7 +97,7 @@ export const ComandosTab = ({ menuItems, categories }: ComandosTabProps) => {
         };
 
         L.push(centro('COLINHA DO BALCAO'));
-        L.push(centro('Acai do Dudu'));
+        L.push(centro(nomeDaLoja()));
         L.push(linha);
         L.push('');
         L.push('ATALHOS');

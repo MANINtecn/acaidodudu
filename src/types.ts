@@ -13,6 +13,10 @@ export interface Store {
   };
   // SaaS Fields
   subscription_end_date?: string;
+  plan?: 'basico' | 'avancado';
+  categoria?: string;
+  cidade?: string;
+  aparecer_no_shopping?: boolean;
   plan_value?: number;
   is_active?: boolean;
   owner_email?: string;

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { MARCA } from '../services/marcaService';
 import { Truck, UtensilsCrossed } from 'lucide-react';
 import { useStore } from '../contexts/StoreContext';
 
@@ -19,7 +20,7 @@ const StaffSelectionPage: React.FC = () => {
                         ACESSO EQUIPE
                     </h1>
                     <p className="text-red-600 dark:text-red-500 font-bold uppercase tracking-widest text-sm">
-                        {currentStore?.name || 'AÇAÍ DO DUDU'}
+                        {currentStore?.name || MARCA.produto}
                     </p>
                 </div>
 
@@ -46,7 +47,7 @@ const StaffSelectionPage: React.FC = () => {
                 </div>
 
                 <p className="text-gray-500 dark:text-gray-400 text-[10px] uppercase font-bold tracking-widest">
-                    Açaí do Dudu PDV • Tecx Sistemas
+                    {MARCA.produto} PDV • {MARCA.suporte}
                 </p>
             </div>
         </div>

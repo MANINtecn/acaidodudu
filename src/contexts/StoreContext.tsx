@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { fetchStoreBySlug } from '../services/supabaseService';
 import { Store } from '../types';
+import { definirNomeDaLoja } from '../services/marcaService';
 
 interface StoreContextType {
     currentStore: Store | null;
@@ -54,14 +55,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const isLocalhost = hostname.includes('localhost');
         const minParts = isLocalhost ? 2 : 3;
 
-        if (parts.length >= minParts && parts[0] !== 'www') {
+        // Domínios compartilhados (ex.: projeto.vercel.app) não têm loja no subdomínio.
+        // O endereço da própria plataforma (ex.: pedeaqui.tecx.pro) também não é uma loja.
+        const dominioPlataforma = ((import.meta as any).env?.VITE_DOMINIO_PLATAFORMA || '').toLowerCase();
+        const dominioCompartilhado = hostname.endsWith('.vercel.app') || hostname.endsWith('.web.app') || hostname.endsWith('.netlify.app')
+            || (!!dominioPlataforma && hostname.toLowerCase() === dominioPlataforma);
+        if (parts.length >= minParts && parts[0] !== 'www' && !dominioCompartilhado) {
             slug = parts[0];
             // console.log("StoreContext: Identified slug from subdomain:", slug);
         }
 
+        // Link por loja: /<slug>, /<slug>/admin... A rota global (/admin, /login, /super-admin...)
+        // não é loja. O caminho vale mais que o subdomínio e que o padrão do Electron/localhost.
+        const rotasGlobais = ['admin', 'login', 'super-admin', 'staff', 'acesso', 'hub-equipe', 'portal-equipe', 'garcom', 'waiter', 'entregador', 'tv', 'cadastro'];
+        const primeiroSegmento = location.pathname.split('/').filter(Boolean)[0]?.toLowerCase();
+        if (primeiroSegmento && !rotasGlobais.includes(primeiroSegmento)) {
+            slug = primeiroSegmento;
+        }
+
         // QUICK EXIT FOR STAFF ROUTES - No loading, no fetching, instantly clean.
         // We only do this if there is NO subdomain slug. If there IS a subdomain, we want to load the store context even on /admin.
-        const reservedPaths = ['/admin', '/login', '/super-admin', '/staff', '/acesso', '/hub-equipe', '/portal-equipe', '/garcom', '/entregador'];
+        const reservedPaths = ['/admin', '/login', '/cadastro', '/super-admin', '/staff', '/acesso', '/hub-equipe', '/portal-equipe', '/garcom', '/entregador'];
         const isReserved = reservedPaths.some(p => location.pathname.toLowerCase().startsWith(p)) && !slug;
         
         if (isReserved) {
@@ -92,6 +106,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             } else {
                 // console.log("StoreContext: Store found:", store.name);
                 setCurrentStore(store);
+                definirNomeDaLoja(store.name);
             }
         } catch (err) {
             console.error("Unexpected error:", err);

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { MARCA } from '../services/marcaService';
 import { useCourier } from '../contexts/CourierContext';
 import { useStore } from '../contexts/StoreContext';
 import { Bike, LogIn, ChevronRight, Eye, EyeOff } from 'lucide-react';
@@ -106,7 +107,7 @@ const CourierLoginPage: React.FC = () => {
                     </form>
                 </div>
             </div>
-            <p className="mt-8 text-gray-400 text-xs">Sistema Açaí do Dudu &copy; 2026</p>
+            <p className="mt-8 text-gray-400 text-xs">{currentStore?.name || MARCA.produto} &copy; 2026</p>
         </div>
     );
 };

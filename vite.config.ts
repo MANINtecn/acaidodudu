@@ -55,9 +55,9 @@ export default defineConfig(({ mode }) => ({
         ]
       },
       manifest: {
-        name: 'Açaí do Dudu',
-        short_name: 'Açaí do Dudu',
-        description: 'Peça o melhor açaí da cidade com a entrega mais rápida!',
+        name: 'Pede Aqui',
+        short_name: 'Pede Aqui',
+        description: 'Peça pelo celular nas lojas da sua cidade.',
         theme_color: '#7C3AED',
         background_color: '#2E1065',
         display: 'standalone',

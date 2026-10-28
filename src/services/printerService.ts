@@ -1,5 +1,6 @@
 import { Order, CashSummary } from '../types';
 import { estacaoDeveImprimir, aplicarEstacao, estacaoAtiva } from './estacaoService';
+import { nomeDaLoja, MARCA } from './marcaService';
 
 class PrinterService {
   private static processedOrderIds = new Set<string>();
@@ -111,7 +112,7 @@ class PrinterService {
     if (titleOverride) {
       content += center(BOLD + `--- ${titleOverride} ---` + RESET) + "\n";
     }
-    content += center("AÇAÍ DO DUDU") + "\n";
+    content += center(this.normalizeText(nomeDaLoja()).toUpperCase()) + "\n";
     content += line() + "\n";
 
     // Sequence Number and Type (PROMINENT)
@@ -288,8 +289,8 @@ class PrinterService {
     }
 
     content += line() + "\n";
-    content += center(BOLD + "TECX SISTEMAS" + RESET) + "\n";
-    content += center("TECXSISTEMAS.APP") + "\n";
+    content += center(BOLD + this.normalizeText(MARCA.produto).toUpperCase() + RESET) + "\n";
+    content += center(MARCA.site.toUpperCase()) + "\n";
     
     // Final Feed (Customizable padding)
     content += "\n".repeat(bottomPadding);
@@ -324,7 +325,7 @@ class PrinterService {
       </head>
       <body>
         <div class="header">
-          <h1>AÇAÍ DO DUDU</h1>
+          <h1>${nomeDaLoja().toUpperCase().replace(/[<>&]/g, '')}</h1>
           <p>Relatório de Fechamento de Caixa</p>
           <p>${new Date().toLocaleString('pt-BR')}</p>
         </div>

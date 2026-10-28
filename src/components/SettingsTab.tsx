@@ -255,7 +255,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                             <div>
                                 <h3 className="text-xl font-bold">Instalar Aplicativo</h3>
                                 <p className="text-white/80 text-sm max-w-sm">
-                                    Adicione o Açaí do Dudu à sua tela de início para acesso rápido e uma experiência em tela cheia (estilo App).
+                                    Adicione o app à sua tela de início para acesso rápido e uma experiência em tela cheia (estilo App).
                                 </p>
                             </div>
                         </div>
@@ -487,7 +487,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                                             type="text"
                                             value={formData.instagramHandle || ''}
                                             onChange={(e) => setFormData({ ...formData, instagramHandle: e.target.value.replace(/^@/, '') })}
-                                            placeholder="acaidodudu"
+                                            placeholder="minha-loja"
                                             className="w-full p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                         />
                                         <p className="text-[11px] text-gray-500 mt-2">O ícone abre o perfil @{formData.instagramHandle || '...'} no Instagram.</p>

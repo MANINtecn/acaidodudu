@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { nomeDaLoja } from '../services/marcaService';
 import { useStore } from '../contexts/StoreContext';
 import LoyaltyProfileModal from '../components/LoyaltyProfileModal';
 import { 
@@ -22,6 +23,7 @@ import introJs from 'intro.js';
 import { MIN_ORDER_VALUE } from '../constants';
 import { SaboresComQuantidade, totalUnidadesPorSabor, totalValorPorSabor, montarLinhasPorSabor } from '../components/SaboresComQuantidade';
 import { PrecoDoItem } from '../components/PrecoDoItem';
+import { ImagemProduto } from '../components/ImagemProduto';
 
 const sanitizeHtmlEntities = (text?: string) => {
     if (!text) return '';
@@ -389,8 +391,7 @@ const Header: React.FC<{ onAdminClick: () => void; onMotoboyClick: () => void; o
                     )}
                 </div>
                 <div className="flex flex-col min-w-0 overflow-hidden">
-                    <h1 className="text-base md:text-lg font-display font-bold text-primary tracking-tight leading-none truncate">Açaí do Dudu</h1>
-                    <p className="text-[9px] text-text-light font-medium mt-0.5 truncate">Açaís, Sorvetes & Sobremesas</p>
+                    <h1 className="text-base md:text-lg font-display font-bold text-primary tracking-tight leading-none truncate">{nomeDaLoja()}</h1>
                 </div>
             </div>
             <div className="flex items-center gap-1 shrink-0">
@@ -475,10 +476,10 @@ const MenuItemCard: React.FC<{ item: MenuItem; onAddItem: (item: MenuItem) => vo
         >
             {item.image && (
                 <div className="h-36 md:h-44 overflow-hidden relative bg-black/20 p-2 flex items-center justify-center rounded-t-2xl">
-                    <img 
-                        src={item.image} 
-                        alt={item.name} 
-                        className="max-h-full max-w-full object-contain transition-transform duration-500 group-hover:scale-105 drop-shadow-md" 
+                    <ImagemProduto
+                        src={item.image}
+                        alt={item.name}
+                        className="max-h-full max-w-full object-contain transition-transform duration-500 group-hover:scale-105 drop-shadow-md"
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-end p-3">
                          <span className="text-white text-[10px] font-bold uppercase tracking-wider">Ver Detalhes</span>
@@ -1732,11 +1733,11 @@ const CustomerRecognitionBar: React.FC<{ onPhoneSubmit: (phone: string) => void;
                 <div className="flex flex-col items-center sm:items-start justify-center w-full sm:w-auto">
                     <div className="flex items-center gap-2">
                         <h2 className="font-black text-base md:text-xl text-transparent bg-clip-text bg-gradient-to-r from-purple-300 via-purple-100 to-white uppercase tracking-widest drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)] leading-none">
-                            Açaí do Dudu
+                            {nomeDaLoja()}
                         </h2>
                     </div>
                     <p className="text-[10px] md:text-xs font-black text-purple-100 uppercase tracking-widest mt-1 text-center sm:text-left w-full drop-shadow-md">
-                        O Melhor Açaí da Cidade • Peça Já!
+                        Peça já!
                     </p>
                 </div>
 
@@ -2177,7 +2178,7 @@ const CustomerPage: React.FC = () => {
                         steps: [
                             {
                                 title: 'Bem-vindo!',
-                                intro: 'Bem-vindo ao Açaí do Dudu! Vamos te mostrar como fazer seu pedido rapidinho.'
+                                intro: `Bem-vindo ao ${nomeDaLoja()}! Vamos te mostrar como fazer seu pedido rapidinho.`
                             },
                             {
                                 element: '#tour-fidelity',
@@ -2187,7 +2188,7 @@ const CustomerPage: React.FC = () => {
                             {
                                 element: '#tour-categories',
                                 title: 'Categorias',
-                                intro: 'Navegue pelas categorias aqui para encontrar Lanches ou Açaís.'
+                                intro: 'Navegue pelas categorias aqui para encontrar o que você procura.'
                             },
                             {
                                 element: '#tour-search',

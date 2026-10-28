@@ -1,0 +1,14 @@
+name = "imagens-saas"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[[r2_buckets]]
+binding = "IMAGENS"
+bucket_name = "imagens-saas"
+
+[vars]
+SUPABASE_URL = "https://sapcasskdnxgqadgrqwy.supabase.co"
+# A chave anon é pública (já vai no app). Cole a mesma do .env: VITE_SUPABASE_ANON_KEY.
+SUPABASE_ANON_KEY = "COLE_A_ANON_KEY_AQUI"
+# Quem pode enviar. "*" libera tudo (o login do Supabase é quem protege). Depois: "https://app.tecx.pro,https://..."
+ORIGENS_PERMITIDAS = "*"
