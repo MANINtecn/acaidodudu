@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { fetchStoreBySlug } from '../services/supabaseService';
 import { Store } from '../types';
-import { definirNomeDaLoja } from '../services/marcaService';
+import { definirNomeDaLoja, MARCA } from '../services/marcaService';
 
 interface StoreContextType {
     currentStore: Store | null;
@@ -56,8 +56,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         const minParts = isLocalhost ? 2 : 3;
 
         // Domínios compartilhados (ex.: projeto.vercel.app) não têm loja no subdomínio.
-        // O endereço da própria plataforma (ex.: pedeaqui.tecx.pro) também não é uma loja.
-        const dominioPlataforma = ((import.meta as any).env?.VITE_DOMINIO_PLATAFORMA || '').toLowerCase();
+        // O endereço da própria plataforma (ex.: pedeaki.tecx.pro) também não é uma loja.
+        // Padrão: MARCA.site. A variável VITE_DOMINIO_PLATAFORMA só é preciso se o endereço mudar.
+        const dominioPlataforma = ((import.meta as any).env?.VITE_DOMINIO_PLATAFORMA || MARCA.site).toLowerCase();
         const dominioCompartilhado = hostname.endsWith('.vercel.app') || hostname.endsWith('.web.app') || hostname.endsWith('.netlify.app')
             || (!!dominioPlataforma && hostname.toLowerCase() === dominioPlataforma);
         if (parts.length >= minParts && parts[0] !== 'www' && !dominioCompartilhado) {
