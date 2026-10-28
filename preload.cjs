@@ -44,6 +44,13 @@ contextBridge.exposeInMainWorld("electron", {
     log: (msg) => ipcRenderer.invoke("balcao-log", msg),
   },
 
+  // Login offline (impressao da senha guardada no PC; ver credencial-local.js)
+  credencial: {
+    salvar: (email, senha, userId) => ipcRenderer.invoke("credencial-salvar", email, senha, userId),
+    conferir: (email, senha) => ipcRenderer.invoke("credencial-conferir", email, senha),
+    existe: (email) => ipcRenderer.invoke("credencial-existe", email),
+  },
+
   // Copia local da loja, cardapio e configuracoes (para abrir sem internet; ver main.js)
   cacheLocal: {
     ler: (nome) => ipcRenderer.invoke("cache-local-ler", nome),

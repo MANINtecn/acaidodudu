@@ -12,7 +12,7 @@
  *   critico   a nuvem não responde há 1 minuto ou mais COM venda na fila, ou há 15 minutos ou mais
  */
 export type NivelConexao = 'ok' | 'enviando' | 'atencao' | 'critico';
-export type MotivoConexao = 'desconhecido' | 'sem-rede' | 'sem-internet' | 'servidor';
+export type MotivoConexao = 'desconhecido' | 'sem-rede' | 'sem-internet' | 'servidor' | 'sem-login';
 
 export const LIMIARES = { atencaoMs: 60_000, criticoMs: 15 * 60_000 };
 
@@ -82,6 +82,7 @@ export function lerEstadoConexao(fila: { total: number; fechadaEm: string }[], a
  *  sem-rede      o computador não está ligado a nenhuma rede (cabo ou Wi-Fi)
  *  sem-internet  há rede, mas não chega à internet (roteador ou provedor)
  *  servidor      a internet funciona, mas o sistema não responde
+ *  sem-login     o computador entrou sem internet e ainda não tem login válido para enviar as vendas
  */
 export async function diagnosticarRede(): Promise<MotivoConexao> {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) { definirMotivo('sem-rede'); return 'sem-rede'; }

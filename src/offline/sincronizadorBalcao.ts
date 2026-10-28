@@ -33,6 +33,9 @@ interface Opcoes {
     emitirNota?: (vendaComoPedido: any, storeId: string) => Promise<void>;
     intervaloMs?: number;
     timeoutMs?: number;
+    /** O computador tem a sessão do Supabase da pessoa que está logada? Sem ela nada sobe (o banco recusaria, e a venda iria
+     *  para "recusadas"). O PC que entrou sem internet só ganha essa sessão quando alguém entra de novo com internet. */
+    podeEnviar?: () => Promise<boolean>;
 }
 
 let opcoes: Opcoes | null = null;
@@ -169,6 +172,11 @@ export async function processarFila(): Promise<void> {
     if (!opcoes) return;
     if (rodando) { pedidoDeNovo = true; return; }
     if (Date.now() < proximaTentativaEm) return;
+    if (opcoes.podeEnviar && vendasNaFila().length > 0 && !(await opcoes.podeEnviar())) {
+        registrarFalha('sem login para enviar: entre de novo com internet');
+        definirMotivo('sem-login');
+        return;
+    }
     rodando = true;
     try {
         do {
@@ -201,6 +209,7 @@ async function sinalDeVida() {
     const ultima = enviadas.map(v => v.enviadaEm || '').sort().pop();
     const storeId = fila[0]?.storeId || enviadas[enviadas.length - 1]?.storeId || (opcoes as any).storeId;
     if (!storeId) return;
+    if (opcoes.podeEnviar && !(await opcoes.podeEnviar())) return; // sem login válido o sinal de vida seria recusado
     try {
         const r = await comTempoLimite<any>(opcoes.supabase.from('pdv_heartbeat').upsert({
             store_id: storeId,
@@ -248,5 +257,6 @@ export async function tentarAgora(): Promise<void> {
     proximaTentativaEm = 0;
     await processarFila().catch(() => {});
     await sinalDeVida();
-    if (estadoDaConexao().desde !== null) await diagnosticarRede();
+    // "Falta entrar de novo" não é problema de rede: não deixa o diagnóstico de rede trocar esse motivo.
+    if (estadoDaConexao().desde !== null && estadoDaConexao().motivo !== 'sem-login') await diagnosticarRede();
 }

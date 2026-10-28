@@ -80,6 +80,7 @@
       "dist/**/*",
       "build/**/*",
       "main.js",
+      "credencial-local.js",
       "print-worker.js",
       "preload.cjs",
       "servidor.cjs",

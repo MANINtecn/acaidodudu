@@ -5,6 +5,9 @@ import { estadoDaConexao, tentarAgora } from '../offline/sincronizadorBalcao';
 import { diagnosticarRede, type EstadoConexao, type MotivoConexao } from '../offline/estadoConexao';
 import { nomeDaLoja } from '../services/marcaService';
 import { copiaEmUsoDesde } from '../services/cacheLocal';
+import { useAuth } from '../auth/AuthContext';
+import { useNavigate } from 'react-router-dom';
+import { useStore } from '../contexts/StoreContext';
 
 const brl = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
 const hm = (ms: number | null) => (ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-');
@@ -32,6 +35,10 @@ const DIAGNOSTICO: Record<MotivoConexao, { titulo: string; dica: (desde: string)
         titulo: 'O sistema não está respondendo.',
         dica: () => 'O computador tenta de novo a cada 20 segundos.',
     },
+    'sem-login': {
+        titulo: 'Falta entrar de novo, com internet, para enviar as vendas.',
+        dica: () => 'Este computador entrou sem internet e ainda não tem o login do servidor. Com a internet funcionando, toque em Entrar de novo e digite e-mail e senha. As vendas continuam salvas aqui.',
+    },
 };
 
 /**
@@ -44,6 +51,9 @@ export const AvisoConexaoBalcao: React.FC = () => {
     const [aberto, setAberto] = useState(false);
     const [tentando, setTentando] = useState(false);
     const [copiado, setCopiado] = useState(false);
+    const { bloquear } = useAuth();
+    const navigate = useNavigate();
+    const { currentStore } = useStore();
 
     useEffect(() => {
         const t = setInterval(() => setEstado(estadoDaConexao()), 3000);
@@ -54,7 +64,7 @@ export const AvisoConexaoBalcao: React.FC = () => {
     useEffect(() => {
         if (estado.desde === null) return;
         let vivo = true;
-        const rodar = () => { diagnosticarRede().then(() => { if (vivo) setEstado(estadoDaConexao()); }); };
+        const rodar = () => { if (estadoDaConexao().motivo === 'sem-login') return; diagnosticarRede().then(() => { if (vivo) setEstado(estadoDaConexao()); }); };
         rodar();
         const t = setInterval(rodar, 30000);
         return () => { vivo = false; clearInterval(t); };
@@ -147,6 +157,11 @@ export const AvisoConexaoBalcao: React.FC = () => {
                             </ul>
                             {estado.naFila > fila.length && <p className="text-[11px] text-gray-500 mt-1">e mais {estado.naFila - fila.length}...</p>}
                         </div>
+                    )}
+                    {estado.motivo === 'sem-login' && (
+                        <button onClick={() => { bloquear(); navigate(`/${currentStore?.slug || ''}/login`); }} className="mt-3 w-full rounded-lg bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 text-xs">
+                            Entrar de novo
+                        </button>
                     )}
                     <div className="mt-3 flex gap-2">
                         <button onClick={tentar} disabled={tentando} className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-bold px-3 py-2 text-xs">

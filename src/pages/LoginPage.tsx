@@ -5,13 +5,16 @@ import { supabase } from '../services/supabaseService';
 import { useStore } from '../contexts/StoreContext';
 import { useAuth } from '../auth/AuthContext';
 import { isAuthRetryableFetchError } from '@supabase/supabase-js';
+import { credencialDisponivel, salvarCredencial, conferirCredencial, sessaoLocalMinima } from '../auth/credencialLocal';
+import { redeResponde } from '../services/radarDeRede';
+import { lerSessaoGuardada } from '../services/supabaseService';
 import logoImg from '../../public/icon.png';
 import bgHero from '../../public/acai_boat_hero.jpg';
 import { Lock, Mail, ArrowLeft, LogIn } from 'lucide-react';
 
 const LoginPage: React.FC = () => {
   const { currentStore } = useStore();
-  const { session, loading: authLoading } = useAuth();
+  const { session, loading: authLoading, desbloqueado, desbloquear, aceitarSessaoLocal } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
@@ -39,10 +42,11 @@ const LoginPage: React.FC = () => {
 
   // Auto-redirect if user already has an active session
   useEffect(() => {
-    if (session && !authLoading) {
+    // No app de PC só vale se a pessoa acabou de digitar a senha nesta abertura (desbloqueado).
+    if (session && desbloqueado && !authLoading) {
       navigate(from, { replace: true });
     }
-  }, [session, authLoading, navigate, from]);
+  }, [session, desbloqueado, authLoading, navigate, from]);
 
   useEffect(() => {
     const checkSavedCredentials = async () => {
@@ -62,13 +66,53 @@ const LoginPage: React.FC = () => {
     checkSavedCredentials();
   }, []);
 
+  const semTempo = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+
+  /** Mensagem para o lojista. Nunca diz se o e-mail existe: só "e-mail ou senha incorretos". */
+  const textoDoErro = (err: any): string => {
+    const l = err?.local;
+    if (l) {
+      if (l.motivo === 'travado' || l.travado) return `Muitas tentativas erradas. Aguarde ${Math.max(1, Math.ceil((l.esperaMs || 60000) / 60000))} min e tente de novo.`;
+      if (l.motivo === 'sem-credencial') return 'Sem internet, e este computador ainda não conhece este login. Conecte-o à internet uma vez e entre. Depois disso ele confere a senha mesmo sem internet.';
+      return 'E-mail ou senha incorretos.';
+    }
+    if (isAuthRetryableFetchError(err) || err?.message === 'timeout' || !navigator.onLine) {
+      return 'Sem internet. Para ativar este computador, conecte-o à internet uma vez e entre. Depois disso ele confere a senha mesmo sem internet.';
+    }
+    if (/invalid login credentials/i.test(String(err?.message || ''))) return 'E-mail ou senha incorretos.';
+    return err?.error_description || err?.message || 'Falha ao autenticar.';
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
+      const comConferenciaLocal = credencialDisponivel(); // só no app de PC
+      let entrou = false;
+
+      // 1) Com internet, quem confere a senha é o servidor. O teste rápido evita esperar o login travado numa queda.
+      if (!comConferenciaLocal || (await redeResponde())) {
+        try {
+          const { data, error } = await semTempo(supabase.auth.signInWithPassword({ email, password }), 15000);
+          if (error) throw error;
+          if (comConferenciaLocal) await salvarCredencial(email, password, data.user?.id); // renova a impressão da senha
+          entrou = true;
+        } catch (err: any) {
+          const caiu = isAuthRetryableFetchError(err) || err?.message === 'timeout' || !navigator.onLine;
+          if (!comConferenciaLocal || !caiu) throw err; // senha errada de verdade (ou versão web): mostra o erro
+        }
+      }
+
+      // 2) Sem internet: confere a senha neste computador, contra a impressão guardada no último login bom.
+      if (!entrou) {
+        const r = await conferirCredencial(email, password);
+        if (!r.ok) throw { local: r };
+        const guardada = await lerSessaoGuardada();
+        aceitarSessaoLocal((guardada && guardada.user?.id === r.userId ? guardada : sessaoLocalMinima(email, r.userId)) as any);
+      }
+      desbloquear();
 
       if (rememberMe) {
           await (window as any).electron?.storage?.setItem('saved_email', email);
@@ -80,10 +124,7 @@ const LoginPage: React.FC = () => {
 
       navigate(from, { replace: true });
     } catch (error: any) {
-      // Primeiro acesso sem internet: não existe como conferir a senha sem o servidor. Explica o que fazer.
-      setError(isAuthRetryableFetchError(error) || !navigator.onLine
-        ? 'Sem internet. Para ativar este computador, conecte-o à internet uma vez e entre. Depois disso ele abre e vende mesmo sem internet.'
-        : (error.error_description || error.message || 'Falha ao autenticar.'));
+      setError(textoDoErro(error));
     } finally {
       setLoading(false);
     }

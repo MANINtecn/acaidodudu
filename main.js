@@ -13,6 +13,7 @@ import electronUpdater from "electron-updater";
 import { createClient } from "@supabase/supabase-js";
 import axios from "axios";
 import { createPrintWorker } from "./print-worker.js";
+import { criarCredenciais } from "./credencial-local.js";
 const { autoUpdater } = electronUpdater;
 
 let store;
@@ -179,6 +180,27 @@ ipcMain.handle("balcao-espaco-livre", () => {
 });
 
 ipcMain.handle("balcao-log", (event, msg) => { logToFile(`[Balcao] ${msg}`); return true; });
+
+// --- LOGIN OFFLINE (28/10/2026) ---------------------------------------------
+// O programa sempre pede e-mail e senha. Com internet, quem confere e o Supabase; depois de um login
+// bom, o computador guarda so uma "impressao" da senha (scrypt com sal, arquivo criptografado com o
+// safeStorage). Sem internet, a tela de login confere contra essa impressao. Ver credencial-local.js.
+let _credenciais = null;
+function credenciais() {
+  if (!_credenciais) {
+    _credenciais = criarCredenciais({ dir: path.join(app.getPath("userData"), "balcao"), safeStorage: electron.safeStorage, log: (m) => logToFile(m) });
+  }
+  return _credenciais;
+}
+ipcMain.handle("credencial-salvar", (event, email, senha, userId) => {
+  try { return credenciais().salvar(email, senha, userId); } catch (e) { logToFile(`[Credencial] erro ao salvar: ${e.message}`); return { ok: false, motivo: "erro" }; }
+});
+ipcMain.handle("credencial-conferir", (event, email, senha) => {
+  try { return credenciais().conferir(email, senha); } catch (e) { logToFile(`[Credencial] erro ao conferir: ${e.message}`); return { ok: false, motivo: "erro" }; }
+});
+ipcMain.handle("credencial-existe", (event, email) => {
+  try { return credenciais().existe(email); } catch (e) { return false; }
+});
 
 // --- COPIA LOCAL DA LOJA / CARDAPIO / CONFIGURACOES (28/10/2026) -----------
 // Gravada a cada carga boa e lida quando a internet falha (o app precisa abrir e vender sem

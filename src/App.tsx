@@ -35,7 +35,7 @@ const AvisoDeAcesso: React.FC<{ titulo: string; texto: string }> = ({ titulo, te
 type EstadoAcesso = 'checando' | 'ok' | 'negado' | 'bloqueada';
 
 const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { session, loading } = useAuth();
+  const { session, loading, desbloqueado } = useAuth();
   const { currentStore, loading: storeLoading } = useStore();
   const location = useLocation();
   const { storeSlug } = useParams();
@@ -64,7 +64,8 @@ const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     return <div className="flex items-center justify-center h-screen bg-background"><div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin"></div></div>;
   }
 
-  if (!session) {
+  // No app de PC o login é pedido toda vez que o programa abre (desbloqueado), com ou sem internet.
+  if (!session || !desbloqueado) {
     if (storeSlug) {
       return <Navigate to={`/${storeSlug}/login`} state={{ from: location }} replace />;
     }
@@ -241,7 +242,7 @@ const veioDeRecuperacao = typeof window !== 'undefined' && /type=recovery/.test(
 
 const RootRoute: React.FC = () => {
   const { currentStore, loading: storeLoading } = useStore();
-  const { session, loading: authLoading } = useAuth();
+  const { session, loading: authLoading, desbloqueado } = useAuth();
   const isElectron = /Electron/i.test(navigator.userAgent);
 
   if (veioDeRecuperacao) return <Navigate to={{ pathname: '/redefinir_senha', hash: window.location.hash }} replace />;
@@ -250,7 +251,7 @@ const RootRoute: React.FC = () => {
 
   // If in Electron, check if user is already authenticated
   if (isElectron) {
-    if (session) {
+    if (session && desbloqueado) {
       return <Navigate to="/acaidodudu/admin" replace />;
     }
     return <Navigate to="/acaidodudu/login" replace />;

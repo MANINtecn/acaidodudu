@@ -88,7 +88,8 @@ import {
 import { iniciarSincronizador, dispararEnvio } from '../offline/sincronizadorBalcao';
 import { AvisoConexaoBalcao } from '../components/AvisoConexaoBalcao';
 import { gravarCopia, lerCopia, definirCopiaEmUso } from '../services/cacheLocal';
-import { supabase as clienteSupabase, dispararEmissaoNotaFiscal } from '../services/supabaseService';
+import { useAuth } from '../auth/AuthContext';
+import { supabase as clienteSupabase, dispararEmissaoNotaFiscal, lerSessaoGuardada } from '../services/supabaseService';
 import { ensureScaleAutoConnect, stopScaleAutoConnect } from '../services/scaleService';
 import type { Category, MenuItem, Order, Settings as SettingsType, Promotion, Addon, OrderStatus } from '../types';
 import { useNavigate } from 'react-router-dom';
@@ -124,6 +125,9 @@ import { CouriersTab } from '../components/CouriersTab';
 
 const AdminPage = () => {
     const navigate = useNavigate();
+    const { session: sessaoLogada, bloquear } = useAuth();
+    const sessaoLogadaRef = useRef<any>(null);
+    sessaoLogadaRef.current = sessaoLogada;
     const { currentStore, loading: storeLoading } = useStore();
 
     // Notification State
@@ -226,6 +230,12 @@ const AdminPage = () => {
                 supabase: clienteSupabase,
                 storeId: currentStore.id,
                 versaoApp,
+                // Só envia se a sessão do Supabase guardada é da pessoa logada (entrar sem internet não cria sessão).
+                podeEnviar: async () => {
+                    const guardada = await lerSessaoGuardada();
+                    const quem = sessaoLogadaRef.current;
+                    return !!guardada && (!quem || guardada.user?.id === quem.user?.id);
+                },
                 emitirNota: (pedido: any, storeId: string) => dispararEmissaoNotaFiscal(pedido, storeId),
             });
         })();
@@ -1171,7 +1181,13 @@ const AdminPage = () => {
     };
 
     const handleLogout = async () => {
-        await supabase.auth.signOut();
+        if ((window as any).electron) {
+            // App de PC: só volta para a tela de login. Apagar a sessão aqui impediria as vendas guardadas de subirem
+            // e, sem internet, impediria entrar de novo com a mesma sessão.
+            bloquear();
+        } else {
+            await supabase.auth.signOut();
+        }
         navigate(`/${currentStore?.slug}/login`);
     };
 
