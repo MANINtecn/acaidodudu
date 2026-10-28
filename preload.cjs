@@ -44,6 +44,12 @@ contextBridge.exposeInMainWorld("electron", {
     log: (msg) => ipcRenderer.invoke("balcao-log", msg),
   },
 
+  // Copia local da loja, cardapio e configuracoes (para abrir sem internet; ver main.js)
+  cacheLocal: {
+    ler: (nome) => ipcRenderer.invoke("cache-local-ler", nome),
+    gravar: (nome, texto) => ipcRenderer.invoke("cache-local-gravar", nome, texto),
+  },
+
   // Storage API for Persistence
   storage: {
     getItem: (key) => ipcRenderer.invoke("storage-get", key),

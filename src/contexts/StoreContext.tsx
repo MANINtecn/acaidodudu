@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { fetchStoreBySlug } from '../services/supabaseService';
 import { Store } from '../types';
 import { definirNomeDaLoja, MARCA } from '../services/marcaService';
+import { gravarCopia, lerCopia } from '../services/cacheLocal';
 
 interface StoreContextType {
     currentStore: Store | null;
@@ -98,7 +99,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         try {
             // console.log("StoreContext: Fetching store by slug:", slug);
 
-            const store = await fetchStoreBySlug(slug);
+            // Sem limite, uma internet que "pendura" deixaria a tela esperando para sempre.
+            const store = await Promise.race([
+                fetchStoreBySlug(slug),
+                new Promise<never>((_, rej) => setTimeout(() => rej(new Error('sem resposta em 8 s')), 8000)),
+            ]);
 
             if (!store) {
                 console.error("Store not found for slug:", slug);
@@ -108,10 +113,19 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
                 // console.log("StoreContext: Store found:", store.name);
                 setCurrentStore(store);
                 definirNomeDaLoja(store.name);
+                gravarCopia(`loja_${slug}`, store);
             }
         } catch (err) {
-            console.error("Unexpected error:", err);
-            setError("Erro ao carregar loja");
+            // Sem internet: abre com a cópia da loja gravada no último acesso bom.
+            const copia = await lerCopia<Store>(`loja_${slug}`);
+            if (copia) {
+                console.warn("StoreContext: sem internet, usando a cópia da loja de", new Date(copia.em).toLocaleString('pt-BR'));
+                setCurrentStore({ ...copia.valor, deCopiaLocal: true });
+                definirNomeDaLoja(copia.valor.name);
+            } else {
+                console.error("Unexpected error:", err);
+                setError("Erro ao carregar loja");
+            }
         } finally {
             setLoading(false);
         }

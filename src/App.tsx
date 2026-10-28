@@ -53,7 +53,8 @@ const AuthGuard: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       if (!vivo) return;
       if (admin === true) return setEstado('ok');
       if (dono === false) return setEstado('negado');
-      const vencida = currentStore.subscription_end_date && new Date(currentStore.subscription_end_date).getTime() < Date.now();
+      // Dado de cópia local (sem internet) pode estar velho: a data de vencimento só vale com dado fresco.
+      const vencida = !currentStore.deCopiaLocal && currentStore.subscription_end_date && new Date(currentStore.subscription_end_date).getTime() < Date.now();
       setEstado(currentStore.is_active === false || vencida ? 'bloqueada' : 'ok');
     })();
     return () => { vivo = false; };

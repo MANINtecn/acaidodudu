@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { Category, MenuItem, Addon, Order, Settings, Store, Customer, CashSession, CashTransaction, Promotion, LoyaltyRewardItem, FiscalConfig, NotaFiscal } from '../types';
 import { enviarImagem, enviarImagemComprimida, imagensR2Ativas, ErroDeCompressao, type TipoImagem } from './imagemService';
+import { configurarRadar, redeResponde } from './radarDeRede';
 
 // Firebase removido em 28/09/2026: nunca esteve configurado neste projeto
 // (todas as chaves em .env.local vazias) -- uploadMenuImage/uploadStoreLogo
@@ -88,6 +89,38 @@ export const supabase = createClient(supabaseUrlForClient, supabaseKeyForClient,
     detectSessionInUrl: false
   }
 });
+
+/**
+ * A sessão que o Supabase guardou no disco (token de acesso + token de renovação), ou null.
+ * Serve ao login offline: com o token de acesso vencido e sem internet, o cliente do Supabase
+ * devolve "sem sessão" (não consegue renovar), mas a sessão continua guardada e é ela que o app aceita.
+ */
+export const lerSessaoGuardada = async (): Promise<any | null> => {
+    try {
+        const chave = (supabase.auth as any).storageKey;
+        const bruto = await electronStorage.getItem(chave);
+        if (!bruto) return null;
+        const o = typeof bruto === 'string' ? JSON.parse(bruto) : bruto;
+        return o?.access_token && o?.refresh_token && o?.user ? o : null;
+    } catch (_) { return null; }
+};
+
+configurarRadar(supabaseUrlForClient, supabaseKeyForClient);
+
+// Sem internet e com o token vencido, o Supabase passa ~25 s tentando renovar, e cada pedido ao banco espera
+// nessa fila (o app parecia travado). Antes de renovar, um teste rápido (radarDeRede): se o sistema não
+// responde, devolve a sessão guardada e o pedido falha na hora, em vez de esperar. Com internet nada muda.
+{
+    const getSessionDoSupabase = supabase.auth.getSession.bind(supabase.auth);
+    (supabase.auth as any).getSession = async () => {
+        const guardada = await lerSessaoGuardada();
+        const vencida = !!guardada && typeof guardada.expires_at === 'number' && guardada.expires_at * 1000 < Date.now() + 30_000;
+        if (guardada && vencida && !(await redeResponde())) {
+            return { data: { session: { ...guardada, __offline: true } }, error: null };
+        }
+        return getSessionDoSupabase();
+    };
+}
 
 export const ORDER_COLUMNS = 'id, timestamp, daily_order_number, customer_name, phone, address, reference_point, order_type, payment_method, status, change_for, items, total, store_id, printed, observation, table_number, comanda_number, discount, tax, rating, feedback, delivery_fee, combo_price, origin, is_loyalty_eligible, loyalty_redeemed_at, status_history, courier_id, courier_name';
 
@@ -2197,7 +2230,8 @@ export const fetchStoreBySlug = async (slug: string): Promise<Store | null> => {
 
     if (error) {
         console.error("[supabaseService] Error fetching store by slug:", error);
-        return null;
+        // Falha (sem internet, servidor fora) NÃO é "loja não existe": quem chama usa a cópia local.
+        throw error;
     }
     
     // console.log("[supabaseService] Supabase raw data:", data);

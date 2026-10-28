@@ -4,6 +4,7 @@ import { MARCA } from '../services/marcaService';
 import { supabase } from '../services/supabaseService';
 import { useStore } from '../contexts/StoreContext';
 import { useAuth } from '../auth/AuthContext';
+import { isAuthRetryableFetchError } from '@supabase/supabase-js';
 import logoImg from '../../public/icon.png';
 import bgHero from '../../public/acai_boat_hero.jpg';
 import { Lock, Mail, ArrowLeft, LogIn } from 'lucide-react';
@@ -16,6 +17,7 @@ const LoginPage: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [semInternet, setSemInternet] = useState(() => typeof navigator !== 'undefined' && navigator.onLine === false);
   const navigate = useNavigate();
   const location = useLocation();
   const { storeSlug } = useParams();
@@ -26,6 +28,14 @@ const LoginPage: React.FC = () => {
   const defaultRedirect = `/${targetSlug}/admin`;
   const rawFrom = (location.state as any)?.from?.pathname;
   const from = (rawFrom && rawFrom !== '/' && !rawFrom.endsWith('/login')) ? rawFrom : defaultRedirect;
+
+  useEffect(() => {
+    const cai = () => setSemInternet(true);
+    const volta = () => { setSemInternet(false); setError(null); };
+    window.addEventListener('offline', cai);
+    window.addEventListener('online', volta);
+    return () => { window.removeEventListener('offline', cai); window.removeEventListener('online', volta); };
+  }, []);
 
   // Auto-redirect if user already has an active session
   useEffect(() => {
@@ -38,11 +48,12 @@ const LoginPage: React.FC = () => {
     const checkSavedCredentials = async () => {
       try {
         const savedEmail = await (window as any).electron?.storage?.getItem('saved_email');
-        const savedPassword = await (window as any).electron?.storage?.getItem('saved_password');
         const remember = await (window as any).electron?.storage?.getItem('remember_me');
+        // A senha NÃO é mais guardada (ficava em texto puro no disco). Quem já tinha salvo tem apagado agora:
+        // o token da sessão basta para o PC entrar sozinho.
+        await (window as any).electron?.storage?.removeItem('saved_password');
 
         if (savedEmail) setEmail(savedEmail);
-        if (savedPassword) setPassword(savedPassword);
         if (remember !== undefined) setRememberMe(remember === 'true');
       } catch (e) {
         console.warn("Error loading saved credentials:", e);
@@ -61,17 +72,18 @@ const LoginPage: React.FC = () => {
 
       if (rememberMe) {
           await (window as any).electron?.storage?.setItem('saved_email', email);
-          await (window as any).electron?.storage?.setItem('saved_password', password);
           await (window as any).electron?.storage?.setItem('remember_me', 'true');
       } else {
           await (window as any).electron?.storage?.removeItem('saved_email');
-          await (window as any).electron?.storage?.removeItem('saved_password');
           await (window as any).electron?.storage?.setItem('remember_me', 'false');
       }
 
       navigate(from, { replace: true });
     } catch (error: any) {
-      setError(error.error_description || error.message || 'Falha ao autenticar.');
+      // Primeiro acesso sem internet: não existe como conferir a senha sem o servidor. Explica o que fazer.
+      setError(isAuthRetryableFetchError(error) || !navigator.onLine
+        ? 'Sem internet. Para ativar este computador, conecte-o à internet uma vez e entre. Depois disso ele abre e vende mesmo sem internet.'
+        : (error.error_description || error.message || 'Falha ao autenticar.'));
     } finally {
       setLoading(false);
     }
@@ -116,6 +128,13 @@ const LoginPage: React.FC = () => {
             {currentStore?.name || MARCA.produto} • Sistema PDV
           </p>
         </div>
+
+        {semInternet && (
+          <div className="w-full mb-5 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-100 px-4 py-3 text-sm">
+            <p className="font-bold">Este computador está sem internet.</p>
+            <p className="mt-1 text-amber-100/90">Na primeira vez é preciso entrar com internet. Depois disso o programa abre e vende sem internet. Quando a internet voltar, esta tela libera sozinha.</p>
+          </div>
+        )}
 
         <form onSubmit={handleLogin} className="w-full space-y-5">
           <div>
@@ -167,7 +186,7 @@ const LoginPage: React.FC = () => {
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="w-4 h-4 text-purple-600 focus:ring-purple-500 border-gray-700 rounded bg-gray-900 accent-purple-600"
               />
-              Lembrar meu usuário e senha
+              Lembrar meu usuário
             </label>
           </div>
 

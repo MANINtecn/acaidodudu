@@ -68,6 +68,8 @@ function erroTemporario(e: any): boolean {
     if (!e) return true;
     const status = Number(e.status || e.statusCode || 0);
     if (status === 408 || status === 429 || status >= 500) return true;
+    // Token vencido (a internet voltou antes de o app renovar o login): tentar de novo resolve, não é recusa.
+    if (status === 401 || /jwt expired/i.test(String(e.message || '')) || String(e.code || '') === 'PGRST301') return true;
     // Erro do banco (código do Postgres/PostgREST): tentar de novo não resolve -- EXCETO conexão,
     // conflito de transação, sobrecarga e tempo esgotado (classes 08, 40, 53, 57).
     // (O erro do PostgREST não traz status HTTP: tratar "sem status" como rede segurava a fila
@@ -77,6 +79,9 @@ function erroTemporario(e: any): boolean {
     // Sem código: rede caiu, tempo esgotado, fetch falhou.
     return true;
 }
+
+/** Só para os testes. */
+export const __erroTemporarioParaTeste = (e: any) => erroTemporario(e);
 
 const faltaColunaPagamentos = (e: any) => /pagamentos/i.test(String(e?.message || '')) && /(column|coluna|schema cache)/i.test(String(e?.message || ''));
 

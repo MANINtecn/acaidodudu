@@ -17,6 +17,8 @@ export interface Store {
   categoria?: string;
   cidade?: string;
   aparecer_no_shopping?: boolean;
+  /** Vem da cópia local (sem internet): vencimento e plano podem estar desatualizados. */
+  deCopiaLocal?: boolean;
   plan_value?: number;
   is_active?: boolean;
   owner_email?: string;

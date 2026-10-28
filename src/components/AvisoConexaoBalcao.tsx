@@ -4,6 +4,7 @@ import { offlineDisponivel, vendasNaFila, identificadorMaquina } from '../offlin
 import { estadoDaConexao, tentarAgora } from '../offline/sincronizadorBalcao';
 import { diagnosticarRede, type EstadoConexao, type MotivoConexao } from '../offline/estadoConexao';
 import { nomeDaLoja } from '../services/marcaService';
+import { copiaEmUsoDesde } from '../services/cacheLocal';
 
 const brl = (v: number) => `R$ ${v.toFixed(2).replace('.', ',')}`;
 const hm = (ms: number | null) => (ms ? new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '-');
@@ -123,6 +124,11 @@ export const AvisoConexaoBalcao: React.FC = () => {
                     <p className="mt-3 rounded-lg bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300 px-3 py-2 text-xs font-medium">
                         Você pode continuar vendendo normalmente. Cada venda fica salva neste computador e sobe sozinha quando a internet voltar. Mantenha o computador ligado e este programa aberto.
                     </p>
+                    {copiaEmUsoDesde() !== null && (
+                        <p className="mt-2 text-xs text-gray-600 dark:text-gray-300">
+                            Cardápio e configurações: cópia salva em {new Date(copiaEmUsoDesde()!).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}. Preço mudado em outro aparelho chega quando a internet voltar.
+                        </p>
+                    )}
                     <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
                         <dt className="text-gray-500">Sem conexão desde</dt><dd className="font-semibold">{estado.desde ? `${hm(estado.desde)} (${duracao(estado.duracaoMs)})` : '-'}</dd>
                         <dt className="text-gray-500">Última tentativa</dt><dd className="font-semibold">{hms(estado.ultimaTentativaEm)}</dd>

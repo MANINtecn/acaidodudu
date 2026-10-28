@@ -180,6 +180,47 @@ ipcMain.handle("balcao-espaco-livre", () => {
 
 ipcMain.handle("balcao-log", (event, msg) => { logToFile(`[Balcao] ${msg}`); return true; });
 
+// --- COPIA LOCAL DA LOJA / CARDAPIO / CONFIGURACOES (28/10/2026) -----------
+// Gravada a cada carga boa e lida quando a internet falha (o app precisa abrir e vender sem
+// internet). Fica em arquivo em userData, fora do cache do Chromium, como o livro do Balcao.
+// Mesma gravacao atomica: .tmp com fsync, .bak da versao anterior, depois rename.
+function cacheLocalDir() {
+  const dir = path.join(balcaoDir(), "cache");
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+const nomeDeCopia = (nome) => String(nome).replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
+
+ipcMain.handle("cache-local-ler", (event, nome) => {
+  const base = path.join(cacheLocalDir(), nomeDeCopia(nome));
+  for (const arq of [base + ".json", base + ".bak.json"]) {
+    try {
+      if (!fs.existsSync(arq)) continue;
+      const texto = fs.readFileSync(arq, "utf8");
+      JSON.parse(texto); // so devolve se estiver integro
+      return texto;
+    } catch (e) {
+      logToFile(`[Cache] falha ao ler ${arq}: ${e.message}`);
+    }
+  }
+  return null;
+});
+
+ipcMain.handle("cache-local-gravar", (event, nome, texto) => {
+  try {
+    const base = path.join(cacheLocalDir(), nomeDeCopia(nome));
+    const tmp = base + ".tmp";
+    const fd = fs.openSync(tmp, "w");
+    try { fs.writeSync(fd, texto); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    if (fs.existsSync(base + ".json")) fs.copyFileSync(base + ".json", base + ".bak.json");
+    fs.renameSync(tmp, base + ".json");
+    return { ok: true };
+  } catch (e) {
+    logToFile(`[Cache] FALHA AO GRAVAR ${nome}: ${e.message}`);
+    return { ok: false, erro: e.message };
+  }
+});
+
 // FOCO ROUBADO POR alert()/confirm() (05/10/2026): no Windows, depois que uma
 // caixa nativa fecha, a janela continua "ativa" mas o teclado nao volta para
 // a pagina -- campos param de aceitar clique/digitacao ate minimizar e

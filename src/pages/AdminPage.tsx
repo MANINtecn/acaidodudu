@@ -87,6 +87,7 @@ import {
 } from '../offline/armazemBalcao';
 import { iniciarSincronizador, dispararEnvio } from '../offline/sincronizadorBalcao';
 import { AvisoConexaoBalcao } from '../components/AvisoConexaoBalcao';
+import { gravarCopia, lerCopia, definirCopiaEmUso } from '../services/cacheLocal';
 import { supabase as clienteSupabase, dispararEmissaoNotaFiscal } from '../services/supabaseService';
 import { ensureScaleAutoConnect, stopScaleAutoConnect } from '../services/scaleService';
 import type { Category, MenuItem, Order, Settings as SettingsType, Promotion, Addon, OrderStatus } from '../types';
@@ -662,6 +663,8 @@ const AdminPage = () => {
     // entao essa carga nao pode ser descartada por um refresh de pedidos qualquer.
     const ordersCallIdRef = useRef(0);
     const ultimaCargaCompletaRef = useRef(0);
+    // Já carregou cardápio e configurações com a nuvem (ou da cópia)? Falha depois disso não troca a tela por cópia velha.
+    const cargaInicialFeitaRef = useRef(false);
 
     /**
      * Recarrega SO os pedidos ativos (~0,2 s). E o que envio de comanda, checkout, cancelar etc. usam:
@@ -687,11 +690,15 @@ const AdminPage = () => {
         const chamadaPedidosId = ++ordersCallIdRef.current;
         try {
             if (!silent) setLoading(true);
-            const [ordersData, menuData, settingsData, promotionsData] = await Promise.all([
-                fetchActiveOrders(currentStore.id),
-                fetchMenuForAdmin(currentStore.id),
-                fetchSettings(currentStore.id),
-                fetchAllPromotions(currentStore.id)
+            const [ordersData, menuData, settingsData, promotionsData] = await Promise.race([
+                Promise.all([
+                    fetchActiveOrders(currentStore.id),
+                    fetchMenuForAdmin(currentStore.id),
+                    fetchSettings(currentStore.id),
+                    fetchAllPromotions(currentStore.id)
+                ]),
+                // Internet que pendura não pode prender a tela: depois de 8 s cai na cópia local.
+                new Promise<never>((_, rej) => setTimeout(() => rej(new Error('sem resposta em 8 s')), 8000)),
             ]);
 
             // Pedidos: so aplica se nenhuma recarga de pedidos mais nova chegou antes.
@@ -705,8 +712,26 @@ const AdminPage = () => {
             setAddons(menuData.addons || []);
             setSettings(settingsData);
             setPromotions(promotionsData);
+            // Carga boa: grava a cópia para abrir sem internet.
+            cargaInicialFeitaRef.current = true;
+            definirCopiaEmUso(null);
+            gravarCopia(`admin_${currentStore.id}`, { menu: menuData, settings: settingsData, promotions: promotionsData });
         } catch (error) {
             console.error("Error loading admin data:", error);
+            // Sem internet na ABERTURA: usa a cópia da última carga boa (cardápio, adicionais, configurações).
+            if (!cargaInicialFeitaRef.current) {
+                const copia = await lerCopia<any>(`admin_${currentStore.id}`);
+                if (copia?.valor?.menu && copia.valor.settings) {
+                    cargaInicialFeitaRef.current = true;
+                    definirCopiaEmUso(copia.em);
+                    setCategories(copia.valor.menu.categories);
+                    setMenuItems(copia.valor.menu.menuItems);
+                    setAddons(copia.valor.menu.addons || []);
+                    setSettings(copia.valor.settings);
+                    setPromotions(copia.valor.promotions || []);
+                    console.warn("AdminPage: sem internet, usando a cópia de", new Date(copia.em).toLocaleString('pt-BR'));
+                }
+            }
         } finally {
             if (!silent) setLoading(false);
         }
