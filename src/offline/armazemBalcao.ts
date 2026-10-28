@@ -73,7 +73,9 @@ interface Estado {
     problemas: Venda[];
 }
 
-const DIAS_GUARDANDO_ENVIADAS = 3;
+/** Quanto tempo o PC guarda as vendas JÁ enviadas (o Histórico lado a lado usa isso quando a nuvem não responde).
+ *  Era 3 dias; com 100+ vendas por dia não dava para reconstruir um dia sem internet. 30 dias pesam < 2 MB. */
+export const DIAS_GUARDANDO_ENVIADAS = 30;
 
 const novoId = (): string => {
     try { return (crypto as any).randomUUID(); } catch (_) { /* cai no fallback */ }
@@ -382,6 +384,9 @@ export async function fecharComandaPorSaldoLocal(n: number, force: boolean) {
 export const vendasNaFila = (): Venda[] => clone(estado.fila);
 export const vendasEnviadasRecentes = (): Venda[] => clone(estado.enviadas);
 export const vendasComProblema = (): Venda[] => clone(estado.problemas);
+
+/** Tudo que este PC vendeu e ainda guarda: a fila, as já enviadas (30 dias) e as recusadas pelo banco. */
+export const livroDoPc = () => ({ fila: clone(estado.fila), enviadas: clone(estado.enviadas), problemas: clone(estado.problemas) });
 
 export async function marcarVendaEnviada(id: string, numero?: number): Promise<void> {
     const i = estado.fila.findIndex(v => v.id === id);

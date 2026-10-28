@@ -298,6 +298,8 @@ export interface Order {
   pagamentos?: { forma: string; valor: number }[];
   /** Venda fechada neste PC que ainda não subiu para o banco (só no Histórico). */
   pendenteEnvio?: boolean;
+  /** Veio do livro do PC porque a nuvem não respondeu (já tinha sido enviada antes). Só no Histórico. */
+  viaLivroDoPc?: boolean;
 }
 
 export interface OrderStatusHistoryItem {

@@ -83,9 +83,10 @@ import { printOrder } from '../services/printerService';
 import { definirContextoBalcao, usandoComandaLocal } from '../services/comandaBackend';
 import {
     carregarArmazem, assinarArmazem, offlineDisponivel, pedidosAbertosLocais, pedidosAbertosDaComanda,
-    criarPedidoLocal, atualizarPedidoLocal, fecharComandaLocal, erroDeDisco, vendasNaFila,
+    criarPedidoLocal, atualizarPedidoLocal, fecharComandaLocal, erroDeDisco,
 } from '../offline/armazemBalcao';
 import { iniciarSincronizador, dispararEnvio } from '../offline/sincronizadorBalcao';
+import { AvisoConexaoBalcao } from '../components/AvisoConexaoBalcao';
 import { supabase as clienteSupabase, dispararEmissaoNotaFiscal } from '../services/supabaseService';
 import { ensureScaleAutoConnect, stopScaleAutoConnect } from '../services/scaleService';
 import type { Category, MenuItem, Order, Settings as SettingsType, Promotion, Addon, OrderStatus } from '../types';
@@ -2578,16 +2579,8 @@ const AdminPage = () => {
                     ⚠️ O computador NÃO conseguiu gravar as comandas no disco ({erroDeDisco()}). Libere espaço no disco e chame o suporte.
                 </div>
             )}
-            {offlineDisponivel() && !erroDeDisco() && (() => {
-                const presas = vendasNaFila().filter(v => v.tentativas >= 3);
-                if (presas.length === 0) return null;
-                const valor = presas.reduce((s, v) => s + v.total, 0);
-                return (
-                    <div className="fixed bottom-4 left-4 z-[70] max-w-sm bg-amber-500 text-slate-950 px-4 py-2.5 rounded-xl shadow-xl font-bold text-xs">
-                        📶 {presas.length} venda(s) (R$ {valor.toFixed(2)}) esperando internet para subir. Estão salvas neste computador e sobem sozinhas.
-                    </div>
-                );
-            })()}
+            {/* Aviso de conexão (pulsa, não bloqueia): amarelo = instável, vermelho = venda só neste computador */}
+            {offlineDisponivel() && !erroDeDisco() && <AvisoConexaoBalcao />}
 
             <AvailabilityReminderModal
                 isOpen={showAvailabilityReminder}

@@ -19,6 +19,7 @@ import {
     vendasNaFila, marcarVendaEnviada, registrarFalhaEnvio, marcarNotaDisparada, identificadorMaquina,
     vendasEnviadasRecentes, logBalcao, type Venda,
 } from './armazemBalcao';
+import { registrarSucesso, registrarFalha, lerEstadoConexao, diagnosticarRede, definirMotivo, type EstadoConexao } from './estadoConexao';
 
 /** Cliente mínimo do supabase-js que o sincronizador usa (facilita o teste com banco falso). */
 export interface ClienteBanco {
@@ -133,6 +134,7 @@ async function enviarUma(v: Venda): Promise<'ok' | 'temporario' | 'permanente'> 
         if (c?.error) throw c.error;
         if (!c?.data) throw new Error('banco nao confirmou a venda');
         const jaTinhaNota = v.notaDisparada;
+        registrarSucesso();
         await marcarVendaEnviada(v.id, c.data.daily_order_number || undefined);
         if (!jaTinhaNota && opcoes!.emitirNota) {
             await marcarNotaDisparada(v.id); // marca ANTES: nunca emite duas vezes
@@ -141,6 +143,8 @@ async function enviarUma(v: Venda): Promise<'ok' | 'temporario' | 'permanente'> 
         return 'ok';
     } catch (e: any) {
         const temporario = erroTemporario(e);
+        // Recusa do banco: o banco respondeu, então a internet está de pé. Só erro de rede conta como queda.
+        if (temporario) registrarFalha(e); else registrarSucesso();
         await registrarFalhaEnvio(v.id, String(e?.message || e), !temporario);
         return temporario ? 'temporario' : 'permanente';
     }
@@ -193,7 +197,7 @@ async function sinalDeVida() {
     const storeId = fila[0]?.storeId || enviadas[enviadas.length - 1]?.storeId || (opcoes as any).storeId;
     if (!storeId) return;
     try {
-        await comTempoLimite<any>(opcoes.supabase.from('pdv_heartbeat').upsert({
+        const r = await comTempoLimite<any>(opcoes.supabase.from('pdv_heartbeat').upsert({
             store_id: storeId,
             maquina: identificadorMaquina(),
             versao: opcoes.versaoApp || null,
@@ -202,14 +206,17 @@ async function sinalDeVida() {
             valor_na_fila: Number(fila.reduce((s, v) => s + v.total, 0).toFixed(2)),
             ultima_venda_enviada_em: ultima || null,
         }, { onConflict: 'store_id,maquina' }), 10000);
-    } catch (_) { /* sinal de vida nunca atrapalha venda */ }
+        if (r?.error && erroTemporario(r.error)) registrarFalha(r.error); else registrarSucesso();
+    } catch (e) { registrarFalha(e); /* sinal de vida nunca atrapalha venda */ }
 }
 
 export function iniciarSincronizador(o: Opcoes & { storeId?: string }): () => void {
     opcoes = o;
     const intervalo = o.intervaloMs ?? 20000;
-    const aoVoltarInternet = () => dispararEnvio();
+    const aoVoltarInternet = () => { dispararEnvio(); sinalDeVida(); };
+    const aoCairInternet = () => { registrarFalha('o Windows avisou que a rede caiu'); definirMotivo('sem-rede'); };
     window.addEventListener('online', aoVoltarInternet);
+    window.addEventListener('offline', aoCairInternet);
     timer = setInterval(() => processarFila().catch(() => {}), intervalo);
     timerVida = setInterval(() => sinalDeVida(), 60000);
     dispararEnvio();
@@ -217,6 +224,7 @@ export function iniciarSincronizador(o: Opcoes & { storeId?: string }): () => vo
     logBalcao('sincronizador iniciado');
     return () => {
         window.removeEventListener('online', aoVoltarInternet);
+        window.removeEventListener('offline', aoCairInternet);
         clearInterval(timer); clearInterval(timerVida);
         opcoes = null;
     };
@@ -225,4 +233,15 @@ export function iniciarSincronizador(o: Opcoes & { storeId?: string }): () => vo
 /** Só para os testes. */
 export function __reiniciarSincronizadorParaTeste() {
     rodando = false; pedidoDeNovo = false; proximaTentativaEm = 0; falhasSeguidas = 0; semColunaPagamentosAte = 0;
+}
+
+/** Estado da conexão para a tela (aviso pulsante e faixa do Histórico). */
+export const estadoDaConexao = (): EstadoConexao => lerEstadoConexao(vendasNaFila());
+
+/** Botão Tentar agora: tenta enviar a fila, testa a conexão e descobre o motivo se continuar falhando. */
+export async function tentarAgora(): Promise<void> {
+    proximaTentativaEm = 0;
+    await processarFila().catch(() => {});
+    await sinalDeVida();
+    if (estadoDaConexao().desde !== null) await diagnosticarRede();
 }

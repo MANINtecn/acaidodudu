@@ -1,9 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Calendar, Search, Trash2, Trophy, Gift, DollarSign, ShoppingBag, TrendingUp, X, Smartphone, UtensilsCrossed, Bike, Store } from 'lucide-react';
 import { Order, Settings, Category } from '../types';
 import { fetchSalesByDateRange, deleteOrdersByDateRange, fetchEligibleCustomersForRaffle, fetchPublicSettings, fetchMenuForAdmin } from '../services/supabaseService';
 import { classificarTipoPedido } from '../services/estacaoService';
-import { offlineDisponivel, carregarArmazem, vendasNaFila, vendaComoPedido } from '../offline/armazemBalcao';
+import { offlineDisponivel, carregarArmazem, modoOfflineAtivo, livroDoPc, DIAS_GUARDANDO_ENVIADAS } from '../offline/armazemBalcao';
+import { compararPorDia, montarListaUnificada, resumirNuvem, lerCacheNuvem, gravarCacheNuvem, type LivroDoPc } from '../offline/historicoDuasCamadas';
+import { estadoDaConexao } from '../offline/sincronizadorBalcao';
+import { HistoricoLadoALado } from './HistoricoLadoALado';
+
+/** A nuvem às vezes não responde nem erra (internet caindo): sem limite a tela ficaria girando para sempre. */
+const comTempoLimite = <T,>(p: Promise<T>, ms: number): Promise<T> =>
+    Promise.race([p, new Promise<T>((_, rej) => setTimeout(() => rej(new Error(`sem resposta em ${ms / 1000}s`)), ms))]);
+const armazemDoNavegador = () => { try { return window.localStorage; } catch (_) { return null; } };
 
 interface SalesHistoryProps {
     storeId: string;
@@ -18,6 +26,13 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
     });
     const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
     const [orders, setOrders] = useState<Order[]>([]);
+    // Histórico lado a lado (28/10/2026): o livro do PC e a resposta da nuvem, cada um no seu estado.
+    const [livroPc, setLivroPc] = useState<LivroDoPc | null>(null);
+    const [banco, setBanco] = useState<Order[] | null>(null);
+    const [periodo, setPeriodo] = useState({ inicio: '', fim: '' });
+    const [consultandoNuvem, setConsultandoNuvem] = useState(false);
+    const [, setTick] = useState(0);
+    const buscaId = useRef(0);
     const [loading, setLoading] = useState(false);
     const [settings, setSettings] = useState<Partial<Settings>>({});
 
@@ -35,6 +50,12 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
         loadSettings();
         handleSearch();
         loadCategories();
+    }, []);
+
+    // A faixa de estado (sincronizado, enviando, sem conexão) acompanha a conexão sem precisar pesquisar de novo.
+    useEffect(() => {
+        const t = setInterval(() => setTick(x => x + 1), 5000);
+        return () => clearInterval(t);
     }, []);
 
     const loadCategories = async () => {
@@ -56,28 +77,41 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
     };
 
     const handleSearch = async () => {
+        const inicio = startDate;
+        const fim = endDate;
+        const meu = ++buscaId.current;
         setLoading(true);
         try {
-            const data = await fetchSalesByDateRange(storeId, startDate, endDate);
-            // Balcão V2 offline (15/10/2026): venda fechada neste PC que ainda não subiu (sem internet)
-            // ENTRA na soma, marcada -- o Marlon fecha o mês por aqui e não pode ver total menor.
-            let pendentes: Order[] = [];
+            // 1) O lado do computador não depende de internet: aparece na hora, enquanto a nuvem responde.
+            let livro: LivroDoPc | null = null;
             if (offlineDisponivel()) {
                 await carregarArmazem();
-                const ini = new Date(startDate + 'T00:00:00').getTime();
-                const fim = new Date(endDate + 'T23:59:59.999').getTime();
-                const jaNoBanco = new Set((data || []).map(o => o.id));
-                pendentes = vendasNaFila().map(vendaComoPedido).filter(o => {
-                    const t = new Date(o.timestamp || 0).getTime();
-                    return t >= ini && t <= fim && !jaNoBanco.has(o.id);
-                });
+                livro = livroDoPc();
             }
-            setOrders([...pendentes, ...(data || [])]);
-        } catch (error) {
-            console.error("Error fetching sales:", error);
-            alert("Erro ao buscar vendas.");
+            if (meu !== buscaId.current) return;
+            setPeriodo({ inicio, fim });
+            setLivroPc(livro);
+            if (livro) {
+                setBanco(null);
+                setOrders(montarListaUnificada({ banco: null, livro, inicio, fim }));
+                setConsultandoNuvem(true);
+                setLoading(false);
+            }
+
+            // 2) A nuvem (cofre final). Sem resposta, o histórico continua com o que está neste computador.
+            let data: Order[] | null = null;
+            try {
+                data = (await comTempoLimite(fetchSalesByDateRange(storeId, inicio, fim), 20000)) || [];
+                gravarCacheNuvem(storeId, resumirNuvem(data, Date.now()), inicio, fim, Date.now(), armazemDoNavegador());
+            } catch (error) {
+                console.error("Error fetching sales:", error);
+                if (!livro) alert("Erro ao buscar vendas.");
+            }
+            if (meu !== buscaId.current) return;
+            setBanco(data);
+            setOrders(montarListaUnificada({ banco: data, livro, inicio, fim }));
         } finally {
-            setLoading(false);
+            if (meu === buscaId.current) { setConsultandoNuvem(false); setLoading(false); }
         }
     };
 
@@ -125,6 +159,13 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
             }
         }, 100);
     };
+
+    // Lado a lado: só aparece em computador com o livro do Balcão (modo offline ligado ou com vendas guardadas).
+    const comp = useMemo(() => livroPc ? compararPorDia({
+        livro: livroPc, banco, cache: lerCacheNuvem(storeId, armazemDoNavegador()),
+        inicio: periodo.inicio, fim: periodo.fim, agora: Date.now(), diasGuardando: DIAS_GUARDANDO_ENVIADAS,
+    }) : null, [livroPc, banco, periodo, storeId]);
+    const mostrarLadoALado = !!comp && !!livroPc && (modoOfflineAtivo() || livroPc.fila.length + livroPc.enviadas.length + livroPc.problemas.length > 0);
 
     // Calculations
     const totalSales = orders.reduce((acc, o) => acc + o.total, 0);
@@ -372,6 +413,10 @@ const SalesHistory: React.FC<SalesHistoryProps> = ({ storeId, onClose }) => {
                 </div>
             ) : (
                 <div className="space-y-12">
+                    {mostrarLadoALado && comp && (
+                        <HistoricoLadoALado comp={comp} conexao={estadoDaConexao()} consultandoNuvem={consultandoNuvem} />
+                    )}
+
                     {/* Summary Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
