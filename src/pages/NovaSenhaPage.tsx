@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../services/supabaseService';
 import { useAuth } from '../auth/AuthContext';
@@ -15,6 +15,16 @@ const NovaSenhaPage: React.FC = () => {
     const [erro, setErro] = useState<string | null>(null);
     const [pronto, setPronto] = useState(false);
     const [ocupado, setOcupado] = useState(false);
+
+    // O Supabase devolve o motivo no # quando o link não vale (ex.: otp_expired).
+    const motivoDoLink = useMemo(() => {
+        const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        const codigo = hash.get('error_code');
+        if (!codigo) return null;
+        return codigo === 'otp_expired'
+            ? 'O link expirou ou foi aberto antes por um leitor automático do e-mail (comum no Gmail e Outlook). Peça um novo e abra logo.'
+            : (hash.get('error_description') || 'Link inválido.').replace(/\+/g, ' ');
+    }, []);
 
     const salvar = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -39,7 +49,7 @@ const NovaSenhaPage: React.FC = () => {
                     <p className="text-gray-400">Carregando...</p>
                 ) : !session ? (
                     <>
-                        <p className="text-gray-300">Este link venceu ou já foi usado. Peça um novo link de redefinição.</p>
+                        <p className="text-gray-300">{motivoDoLink || 'Este link venceu ou já foi usado. Peça um novo link de redefinição.'}</p>
                         <Link to="/super-admin" className="block text-center text-blue-400 hover:underline">Voltar ao login</Link>
                     </>
                 ) : pronto ? (

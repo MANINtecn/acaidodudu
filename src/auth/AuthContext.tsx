@@ -27,10 +27,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setLoading(false);
         return;
     }
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // O cliente do Supabase foi criado com detectSessionInUrl desligado (Electron usa # para rotas).
+    // Os links de e-mail (redefinir senha, confirmar cadastro) trazem a sessão no #access_token,
+    // então é aqui que ela é lida. Sem isso o link sempre parecia "vencido".
+    const iniciar = async () => {
+      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+      const access = hash.get('access_token');
+      const refresh = hash.get('refresh_token');
+      if (access && refresh) {
+        await supabase.auth.setSession({ access_token: access, refresh_token: refresh }).catch(() => {});
+        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      const { data: { session } } = await supabase.auth.getSession();
       setSession(session);
       setLoading(false);
-    });
+    };
+    iniciar();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
