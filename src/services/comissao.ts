@@ -77,6 +77,47 @@ export function calcularPedido(args: {
     return { total, baseComissao, comissao, taxaGateway, repasseLojista, repasseMotoboy, margemPlataforma, debitoGerado: 0, custoDoLojistaPct: total > 0 ? r2((custoLojista / total) * 100) : 0 };
 }
 
+// ---------------- Simulador de volume (quanto a plataforma ganha por mês) ----------------
+export interface SimulacaoPorEntrega {
+    comissaoPorPedido: number;
+    comissaoMensal: number;
+    /** O que o lojista paga de comissão, em % do ticket (sem contar a taxa do pagamento online). */
+    custoDoLojistaPct: number;
+    lojistaRecebePorPedido: number;
+    lojistaRecebeMes: number;
+}
+
+/**
+ * Comissão de um volume: ticket médio dos PRODUTOS e quantidade de pedidos por mês.
+ * A forma de pagamento não entra: com a taxa do pagamento online repassada ao lojista, a plataforma
+ * recebe a comissão inteira no Pix, no cartão ou em dinheiro (que vira débito e depois é cobrado).
+ */
+export function simularVolume(args: { ticket: number; pedidosPorMes: number; pct: number; fixa: number }): SimulacaoPorEntrega {
+    const ticket = Math.max(0, Number(args.ticket) || 0);
+    const pedidos = Math.max(0, Math.floor(Number(args.pedidosPorMes) || 0));
+    const comissao = r2((ticket * (Number(args.pct) || 0)) / 100 + (ticket > 0 ? Math.max(0, Number(args.fixa) || 0) : 0));
+    return {
+        comissaoPorPedido: comissao,
+        comissaoMensal: r2(comissao * pedidos),
+        custoDoLojistaPct: ticket > 0 ? r2((comissao / ticket) * 100) : 0,
+        lojistaRecebePorPedido: r2(ticket - comissao),
+        lojistaRecebeMes: r2((ticket - comissao) * pedidos),
+    };
+}
+
+/** Receita do mês quando parte dos pedidos é entregue pelo app e o resto pelo lojista. */
+export function receitaComMistura(propria: SimulacaoPorEntrega, app: SimulacaoPorEntrega, pedidosPorMes: number, pctPeloApp: number): { pedidosApp: number; pedidosProprios: number; comissaoMensal: number } {
+    const total = Math.max(0, Math.floor(Number(pedidosPorMes) || 0));
+    const pedidosApp = Math.round((total * Math.min(100, Math.max(0, Number(pctPeloApp) || 0))) / 100);
+    const pedidosProprios = total - pedidosApp;
+    return { pedidosApp, pedidosProprios, comissaoMensal: r2(propria.comissaoPorPedido * pedidosProprios + app.comissaoPorPedido * pedidosApp) };
+}
+
+/** Quanto o gateway cobra por pedido nesse ticket em cada meio (a plataforma só sente isso se NÃO repassar a taxa ao lojista). */
+export function taxasPorMeio(ticket: number, taxas: TaxasGateway = TAXAS_ASAAS_PADRAO): { pix: number; credito: number; debito: number } {
+    return { pix: taxaDoGateway(ticket, 'pix', taxas), credito: taxaDoGateway(ticket, 'credito', taxas), debito: taxaDoGateway(ticket, 'debito', taxas) };
+}
+
 // ---------------- Saúde das lojas (sinal de vida dos computadores) ----------------
 export type NivelDeContato = 'ok' | 'atencao' | 'critico';
 

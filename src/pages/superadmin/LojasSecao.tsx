@@ -4,11 +4,11 @@ import { tipoDaLoja, ROTULO_DO_TIPO, type TipoDeLoja } from '../../services/recu
 import type { Store } from '../../types';
 import { usePlataforma } from './dados';
 import { CamposFinanceiros } from './CamposFinanceiros';
+import { Janela, BotaoCancelar, BotaoPrincipal } from './Janela';
 import { FIN_PADRAO, VALOR_PADRAO, CATEGORIAS_LOJA, SLUGS_RESERVADOS, limparSlug, brl, pct, type FormFinanceiro } from './util';
 
 const PlusIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>;
 const EditIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>;
-const XIcon = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>;
 
 const campoBase = 'w-full bg-gray-700 border-gray-600 rounded-lg p-2 text-white focus:ring-2 focus:ring-blue-500';
 
@@ -216,9 +216,11 @@ export const LojasSecao: React.FC = () => {
 
             {/* Loja criada: o que falta fazer */}
             {criada && (
-                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50">
-                    <div className="bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md border border-gray-700 space-y-3">
-                        <h2 className="text-2xl font-bold text-white">Loja criada</h2>
+                <Janela titulo="Loja criada" onFechar={() => setCriada(null)} rodape={<>
+                    <BotaoCancelar rotulo="Copiar link da loja" onClick={() => { navigator.clipboard?.writeText(linkDaLoja(criada.slug)).catch(() => {}); }} />
+                    <BotaoPrincipal rotulo="Ok" onClick={() => setCriada(null)} />
+                </>}>
+                    <div className="space-y-3">
                         <p className="text-gray-300"><b>{criada.nome}</b></p>
                         <p className="text-sm text-gray-400">Link da loja (cardápio): <span className="text-blue-400 break-all">{linkDaLoja(criada.slug)}</span></p>
                         <p className="text-sm text-gray-400">Painel do dono: <span className="text-blue-400 break-all">{linkDaLoja(criada.slug)}/admin</span></p>
@@ -227,20 +229,17 @@ export const LojasSecao: React.FC = () => {
                         ) : (
                             <p className="text-sm text-yellow-300">Falta o login: crie o usuário <b>{criada.email}</b> no Supabase (Authentication, Users, Add user, com "Auto Confirm User"). Ele é ligado a esta loja sozinho.</p>
                         )}
-                        <button onClick={() => navigator.clipboard?.writeText(linkDaLoja(criada.slug)).catch(() => {})} className="w-full bg-gray-700 hover:bg-gray-600 text-white font-bold py-2 rounded-lg">Copiar link da loja</button>
-                        <button onClick={() => setCriada(null)} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded-lg">Ok</button>
                     </div>
-                </div>
+                </Janela>
             )}
 
-            {/* Create Modal */}
+            {/* Nova loja: duas colunas no computador */}
             {showCreateModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 overflow-y-auto">
-                    <div className="bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md border border-gray-700 my-8">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-2xl font-bold text-white">Nova Loja</h2>
-                            <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-white"><XIcon /></button>
-                        </div>
+                <Janela titulo="Nova Loja" larga onFechar={() => setShowCreateModal(false)} rodape={<>
+                    <BotaoCancelar onClick={() => setShowCreateModal(false)} />
+                    <BotaoPrincipal rotulo="Criar loja" onClick={handleCreateStore} />
+                </>}>
+                    <div className="grid gap-6 md:grid-cols-2">
                         <div className="space-y-4">
                             {seletorDeTipo(newStore.tipo, t => setNewStore({ ...newStore, tipo: t, plan_value: t === 'comissao' ? 0 : VALOR_PADRAO[t] }))}
                             <div>
@@ -269,13 +268,15 @@ export const LojasSecao: React.FC = () => {
                                     <input type="text" value={newStore.cidade} onChange={e => setNewStore({ ...newStore, cidade: e.target.value })} className={campoBase} placeholder="Palmas" />
                                 </div>
                             </div>
+                        </div>
+                        <div className="space-y-4">
                             {newStore.tipo === 'comissao' ? (
-                                <div className="rounded-lg border border-gray-700 p-3">
+                                <div className="rounded-lg border border-gray-700 p-4">
                                     <p className="text-sm font-bold text-orange-300 mb-3">Condições de comissão (começam nos padrões)</p>
                                     <CamposFinanceiros v={newStore.fin} onChange={fin => setNewStore({ ...newStore, fin })} />
                                 </div>
                             ) : (
-                                <div>
+                                <div className="rounded-lg border border-gray-700 p-4">
                                     <label className="block text-sm font-medium text-gray-400 mb-1">Valor da mensalidade (R$)</label>
                                     <input type="number" value={newStore.plan_value} onChange={e => setNewStore({ ...newStore, plan_value: parseFloat(e.target.value) || 0 })} className={campoBase} />
                                     <p className="text-xs text-gray-500 mt-1">Começa ativa, com 30 dias de teste.</p>
@@ -285,20 +286,18 @@ export const LojasSecao: React.FC = () => {
                                 <input type="checkbox" checked={newStore.aparecer_no_shopping} onChange={e => setNewStore({ ...newStore, aparecer_no_shopping: e.target.checked })} className="h-4 w-4" />
                                 Aparecer no shopping (marque quando o cardápio estiver pronto)
                             </label>
-                            <button onClick={handleCreateStore} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-4 transition">Criar Loja</button>
                         </div>
                     </div>
-                </div>
+                </Janela>
             )}
 
-            {/* Edit Modal */}
+            {/* Editar loja: duas colunas no computador */}
             {editingStore && (
-                <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center p-4 z-50 overflow-y-auto">
-                    <div className="bg-gray-800 rounded-xl shadow-2xl p-6 w-full max-w-md border border-gray-700 my-8">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-2xl font-bold text-white">Editar: {editingStore.name}</h2>
-                            <button onClick={() => setEditingStore(null)} className="text-gray-400 hover:text-white"><XIcon /></button>
-                        </div>
+                <Janela titulo={`Editar: ${editingStore.name}`} larga onFechar={() => setEditingStore(null)} rodape={<>
+                    <BotaoCancelar onClick={() => setEditingStore(null)} />
+                    <BotaoPrincipal rotulo="Salvar alterações" onClick={handleUpdateStore} />
+                </>}>
+                    <div className="grid gap-6 md:grid-cols-2">
                         <div className="space-y-4">
                             {seletorDeTipo(editForm.tipo, t => setEditForm({ ...editForm, tipo: t, plan_value: t === 'comissao' ? 0 : (editForm.plan_value || VALOR_PADRAO[t]) }))}
                             {editForm.tipo !== tipoDaLoja(editingStore) && (
@@ -317,27 +316,6 @@ export const LojasSecao: React.FC = () => {
                                     <input type="text" value={editForm.cidade} onChange={e => setEditForm({ ...editForm, cidade: e.target.value })} className={campoBase} />
                                 </div>
                             </div>
-                            {editForm.tipo === 'comissao' ? (
-                                <div className="rounded-lg border border-gray-700 p-3 space-y-3">
-                                    <p className="text-sm font-bold text-orange-300">Condições de comissão</p>
-                                    <CamposFinanceiros v={editForm.fin} onChange={fin => setEditForm({ ...editForm, fin })} comDebito />
-                                    <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
-                                        <input type="checkbox" checked={editForm.aceita_dinheiro} onChange={e => setEditForm({ ...editForm, aceita_dinheiro: e.target.checked })} className="h-4 w-4" />
-                                        Aceitar pagamento em dinheiro (desmarque para bloquear a opção Dinheiro no checkout)
-                                    </label>
-                                </div>
-                            ) : (
-                                <>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-400 mb-1">Valor da mensalidade (R$)</label>
-                                        <input type="number" value={editForm.plan_value} onChange={e => setEditForm({ ...editForm, plan_value: parseFloat(e.target.value) || 0 })} className={campoBase} />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-medium text-gray-400 mb-1">Data de Vencimento</label>
-                                        <input type="date" value={editForm.subscription_end_date} onChange={e => setEditForm({ ...editForm, subscription_end_date: e.target.value })} className={campoBase} />
-                                    </div>
-                                </>
-                            )}
                             <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
                                 <input type="checkbox" checked={editForm.aparecer_no_shopping} onChange={e => setEditForm({ ...editForm, aparecer_no_shopping: e.target.checked })} className="h-4 w-4" />
                                 Aparecer no shopping (Pede Aqui)
@@ -346,10 +324,32 @@ export const LojasSecao: React.FC = () => {
                                 <input type="checkbox" id="isActive" checked={editForm.is_active} onChange={e => setEditForm({ ...editForm, is_active: e.target.checked })} className="h-5 w-5 rounded text-blue-500 bg-gray-600 border-gray-500 focus:ring-blue-500" />
                                 <label htmlFor="isActive" className="text-white font-medium cursor-pointer">Loja Ativa</label>
                             </div>
-                            <button onClick={handleUpdateStore} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg mt-2 transition">Salvar Alterações</button>
+                        </div>
+                        <div className="space-y-4">
+                            {editForm.tipo === 'comissao' ? (
+                                <div className="rounded-lg border border-gray-700 p-4 space-y-3">
+                                    <p className="text-sm font-bold text-orange-300">Condições de comissão</p>
+                                    <CamposFinanceiros v={editForm.fin} onChange={fin => setEditForm({ ...editForm, fin })} comDebito />
+                                    <label className="flex items-center gap-2 text-sm text-gray-300 cursor-pointer">
+                                        <input type="checkbox" checked={editForm.aceita_dinheiro} onChange={e => setEditForm({ ...editForm, aceita_dinheiro: e.target.checked })} className="h-4 w-4" />
+                                        Aceitar pagamento em dinheiro (desmarque para bloquear a opção Dinheiro no checkout)
+                                    </label>
+                                </div>
+                            ) : (
+                                <div className="rounded-lg border border-gray-700 p-4 space-y-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-400 mb-1">Valor da mensalidade (R$)</label>
+                                        <input type="number" value={editForm.plan_value} onChange={e => setEditForm({ ...editForm, plan_value: parseFloat(e.target.value) || 0 })} className={campoBase} />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-400 mb-1">Data de Vencimento</label>
+                                        <input type="date" value={editForm.subscription_end_date} onChange={e => setEditForm({ ...editForm, subscription_end_date: e.target.value })} className={campoBase} />
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
-                </div>
+                </Janela>
             )}
         </div>
     );
