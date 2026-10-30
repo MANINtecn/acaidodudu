@@ -193,7 +193,7 @@ const App: React.FC = () => {
                   If accessed via path (e.g. domain.com/acaidodudu), we render CustomerPage at '/:storeSlug'.
                 */}
                 <Route path="/" element={<RootRoute />} />
-                <Route path="/super-admin" element={<SuperAdminPage />} />
+                <Route path="/super-admin/*" element={<SuperAdminPage />} />
                 <Route path="/cadastro" element={<CadastroLojistaPage />} />
                 <Route path="/shopping" element={<ShoppingHomePage />} />
                 <Route path="/redefinir_senha" element={<NovaSenhaPage />} />

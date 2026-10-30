@@ -43,6 +43,17 @@ export function tipoDaLoja(loja: LojaMinima): TipoDeLoja {
 
 export const temRecurso = (loja: LojaMinima, recurso: Recurso): boolean => POR_TIPO[tipoDaLoja(loja)].has(recurso);
 
+/** Todos os recursos, na ordem em que aparecem na tabela de planos do Super Admin. */
+export const TODOS_OS_RECURSOS: Recurso[] = [...PDV_AVANCADO];
+
+/** Nome de cada recurso para mostrar ao Ikarus. */
+export const ROTULO_DO_RECURSO: Record<Recurso, string> = {
+    pedidos: 'Pedidos', avaliacoes: 'Avaliações', cardapio: 'Cardápio', promocoes: 'Promoções', historico: 'Histórico',
+    motoboys: 'Motoboys', taxas_entrega: 'Taxas de entrega', configuracoes: 'Configurações',
+    balcao: 'Balcão (PDV)', caixa: 'Caixa', cozinha: 'Cozinha', comandos: 'Comandos', fidelidade: 'Fidelidade',
+    sorteio: 'Sorteio', propagandas: 'Propagandas', robo_whatsapp: 'Robô de WhatsApp', nota_fiscal: 'Nota fiscal',
+};
+
 export const ROTULO_DO_TIPO: Record<TipoDeLoja, string> = {
     comissao: 'Comissão',
     pdv_basico: 'PDV Básico',

@@ -2250,6 +2250,42 @@ export const fetchMeuFinanceiro = async (storeId: string): Promise<LojaFinanceir
     return (data as LojaFinanceiro) || null;
 };
 
+// --- Central de gestão (Super Admin): leituras da plataforma inteira. O banco só entrega ao administrador. ---
+export interface PedidoDaPlataforma {
+    id: string; store_id: string; timestamp: string; status: string; total: number; payment_method: string | null;
+    origin: string | null; order_type: string | null; customer_name: string | null; daily_order_number: number | null;
+    cancel_reason: string | null; delivery_fee: number | null;
+}
+
+/** Pedidos de todas as lojas desde uma data (mais recentes primeiro). `cortado` avisa se bateu o limite. */
+export const fetchPedidosDaPlataforma = async (desdeISO: string, limite = 1500): Promise<{ pedidos: PedidoDaPlataforma[]; cortado: boolean }> => {
+    const colunas = 'id,store_id,timestamp,status,total,payment_method,origin,order_type,customer_name,daily_order_number,delivery_fee';
+    let r: any = await supabase.from('orders').select(colunas + ',cancel_reason').gte('timestamp', desdeISO).order('timestamp', { ascending: false }).limit(limite);
+    if (r.error) r = await supabase.from('orders').select(colunas).gte('timestamp', desdeISO).order('timestamp', { ascending: false }).limit(limite); // antes do SQL 4
+    if (r.error) throw r.error;
+    const pedidos = (r.data || []) as PedidoDaPlataforma[];
+    return { pedidos, cortado: pedidos.length >= limite };
+};
+
+export interface SinalDeVidaDaLoja {
+    store_id: string; maquina: string; versao: string | null; ultimo_contato: string;
+    vendas_na_fila: number; valor_na_fila: number; ultima_venda_enviada_em: string | null;
+}
+export const fetchSinaisDeVida = async (): Promise<SinalDeVidaDaLoja[]> => {
+    const { data, error } = await supabase.from('pdv_heartbeat').select('*');
+    if (error) { console.warn('[saude] não foi possível ler pdv_heartbeat:', error.message); return []; }
+    return (data || []) as SinalDeVidaDaLoja[];
+};
+
+/** Quantos itens de cardápio cada loja tem (para saber se a loja está pronta para aparecer no shopping). */
+export const fetchContagemDeCardapio = async (): Promise<Record<string, number>> => {
+    const { data, error } = await supabase.from('menu_items').select('store_id').limit(20000);
+    if (error) return {};
+    const c: Record<string, number> = {};
+    for (const r of (data || []) as { store_id: string }[]) c[r.store_id] = (c[r.store_id] || 0) + 1;
+    return c;
+};
+
 /** Só o administrador da plataforma grava (o banco recusa o resto). */
 export const salvarFinanceiro = async (storeId: string, dados: Partial<CondicoesFinanceiras>) => {
     const { error } = await supabase.from('loja_financeiro').upsert({ store_id: storeId, ...dados, atualizado_em: new Date().toISOString() }, { onConflict: 'store_id' });
