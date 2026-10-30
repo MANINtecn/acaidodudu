@@ -87,6 +87,9 @@ import {
 } from '../offline/armazemBalcao';
 import { iniciarSincronizador, dispararEnvio } from '../offline/sincronizadorBalcao';
 import { AvisoConexaoBalcao } from '../components/AvisoConexaoBalcao';
+import { abaLiberada, temRecurso, tipoDaLoja } from '../services/recursos';
+import { PedidosCelular } from '../components/PedidosCelular';
+import { registrarMotivoCancelamento } from '../services/supabaseService';
 import { supabase as clienteSupabase, dispararEmissaoNotaFiscal } from '../services/supabaseService';
 import { ensureScaleAutoConnect, stopScaleAutoConnect } from '../services/scaleService';
 import type { Category, MenuItem, Order, Settings as SettingsType, Promotion, Addon, OrderStatus } from '../types';
@@ -680,6 +683,11 @@ const AdminPage = () => {
             console.error('Error refreshing orders:', error);
         }
     };
+
+    // Aba que o modelo/plano da loja não libera (atalho F4/F6, ou o Ikarus mudou o modelo): volta para Pedidos.
+    useEffect(() => {
+        if (currentStore && !abaLiberada(currentStore, activeTab)) setActiveTab('orders');
+    }, [currentStore?.modelo, currentStore?.plan, activeTab]);
 
     const loadData = async (silent = false) => {
         if (!currentStore) return;
@@ -1402,6 +1410,21 @@ const AdminPage = () => {
         }
     };
 
+    // Loja de comissão: pedidos numa lista pensada para o celular (sem PC, sem impressora).
+    const usarPedidosCelular = tipoDaLoja(currentStore) === 'comissao';
+
+    /** Cancelamento com motivo obrigatório (tela do celular). O cliente é avisado como no cancelamento normal. */
+    const handleCancelarComMotivo = async (pedido: Order, motivo: string) => {
+        try {
+            await updateOrderStatus(pedido.id!, 'Cancelado');
+            await registrarMotivoCancelamento(pedido.id!, motivo);
+            await recarregarSoPedidos();
+        } catch (error) {
+            console.error("Error cancelling order:", error);
+            alert("Erro ao cancelar o pedido");
+        }
+    };
+
     const handleDeleteOrder = async (orderId: string) => {
         const confirmed = window.confirm("🛑 AVISO PROFISSIONAL: A exclusão de um pedido é IRREVERSÍVEL e removerá todos os registros financeiros associados.\n\nTem certeza que deseja EXCLUIR permanentemente este pedido?");
         if (!confirmed) return;
@@ -1798,62 +1821,98 @@ const AdminPage = () => {
 
                 <nav className="p-4 space-y-2 flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-gray-700" onClick={() => setIsSidebarOpen(false)}>
                     {/* ... Navigation Buttons ... */}
-                    <button onClick={() => setActiveTab('counter')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'counter' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    {abaLiberada(currentStore, 'counter') && (
+                        <button onClick={() => setActiveTab('counter')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'counter' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <Monitor size={20} /> Balcao
                     </button>
-                    <button onClick={() => setActiveTab('orders')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'orders' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'orders') && (
+                        <button onClick={() => setActiveTab('orders')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'orders' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <ShoppingBag size={20} /> Pedidos
                     </button>
-                    <button onClick={() => setActiveTab('reviews')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'reviews' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'reviews') && (
+                        <button onClick={() => setActiveTab('reviews')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'reviews' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <MessageSquare size={20} /> Avaliações
                     </button>
-                    <button onClick={() => setActiveTab('whatsapp-bot')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'whatsapp-bot' ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'whatsapp-bot') && (
+                        <button onClick={() => setActiveTab('whatsapp-bot')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'whatsapp-bot' ? 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 dark:text-orange-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <MessageSquare size={20} /> WhatsApp AI
                     </button>
-                    <button onClick={() => setActiveTab('menu')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'menu' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'menu') && (
+                        <button onClick={() => setActiveTab('menu')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'menu' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <UtensilsCrossed size={20} /> Cardápio
                     </button>
+                    )}
 
 
-                    <button onClick={() => setActiveTab('promotions')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'promotions' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    {abaLiberada(currentStore, 'promotions') && (
+                        <button onClick={() => setActiveTab('promotions')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'promotions' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <Percent size={20} /> Promoções
                     </button>
-                    <button onClick={() => setActiveTab('cash')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'cash' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'cash') && (
+                        <button onClick={() => setActiveTab('cash')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'cash' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <DollarSign size={20} /> Caixa
                     </button>
-                    <button onClick={() => setActiveTab('history')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'history' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'history') && (
+                        <button onClick={() => setActiveTab('history')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'history' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <History size={20} /> Histórico
                     </button>
-                    <button onClick={() => setActiveTab('couriers')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'couriers' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'couriers') && (
+                        <button onClick={() => setActiveTab('couriers')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'couriers' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <Bike size={20} /> Motoboys
                     </button>
-                    <button onClick={() => setActiveTab('kitchen')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'kitchen' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'kitchen') && (
+                        <button onClick={() => setActiveTab('kitchen')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'kitchen' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <UtensilsCrossed size={20} /> Cozinha
                     </button>
-                    <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'settings' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'settings') && (
+                        <button onClick={() => setActiveTab('settings')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'settings' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <Settings size={20} /> Configurações
                     </button>
-                    <button onClick={() => setActiveTab('raffle')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'raffle' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'raffle') && (
+                        <button onClick={() => setActiveTab('raffle')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'raffle' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <Gift size={20} /> Sorteio
                     </button>
-                    <button onClick={() => setActiveTab('ads')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'ads' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'ads') && (
+                        <button onClick={() => setActiveTab('ads')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'ads' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <ImageIcon size={20} /> Propagandas
                     </button>
-                    <button onClick={() => setActiveTab('delivery-zones')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'delivery-zones' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'delivery-zones') && (
+                        <button onClick={() => setActiveTab('delivery-zones')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'delivery-zones' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <MapPin size={20} /> Taxas de Entrega
                     </button>
-                    <button onClick={() => setActiveTab('fidelidade')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'fidelidade' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'fidelidade') && (
+                        <button onClick={() => setActiveTab('fidelidade')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'fidelidade' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <Gift size={20} /> Fidelidade
                     </button>
-                    <button onClick={() => setActiveTab('fiscal')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'fiscal' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'fiscal') && (
+                        <button onClick={() => setActiveTab('fiscal')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'fiscal' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <FileTextIcon size={20} /> Nota Fiscal
                     </button>
-                    <button onClick={() => setActiveTab('comandos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'comandos' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                    )}
+                    {abaLiberada(currentStore, 'comandos') && (
+                        <button onClick={() => setActiveTab('comandos')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${activeTab === 'comandos' ? 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         <Keyboard size={20} /> Comandos <span className="ml-auto text-[10px] font-mono opacity-50">F6</span>
                     </button>
-                    <button onClick={() => navigate(`/${currentStore.slug}/entregador`)} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    )}
+                    {temRecurso(currentStore, 'motoboys') && (
+                        <button onClick={() => navigate(`/${currentStore.slug}/entregador`)} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700">
                         <Bike size={20} /> Área do Entregador
                     </button>
+                    )}
                 </nav>
                 {/* Bottom Utility Bar - Gear Popover */}
                 <div className="w-full p-3 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shrink-0 relative">
@@ -1968,7 +2027,15 @@ const AdminPage = () => {
                     />
                 )}
 
-                {(activeTab === 'orders' || activeTab === 'kitchen') && (
+                {activeTab === 'orders' && usarPedidosCelular && (
+                    <PedidosCelular
+                        pedidos={filteredOrders}
+                        onAvancar={(o, novo) => handleStatusChange(o.id!, novo)}
+                        onCancelar={handleCancelarComMotivo}
+                    />
+                )}
+
+                {((activeTab === 'orders' && !usarPedidosCelular) || activeTab === 'kitchen') && (
                     <div className="flex flex-col lg:flex-row gap-6 flex-1 overflow-hidden pb-4 min-h-0 relative">
                         {activeTab === 'kitchen' && (
                             <button 

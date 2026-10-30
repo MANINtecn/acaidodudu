@@ -94,7 +94,7 @@ const CadastroLojistaPage: React.FC = () => {
             <div className="w-full max-w-md bg-white dark:bg-gray-800 border border-orange-100 dark:border-gray-700 rounded-2xl shadow-lg p-8 space-y-5">
                 <div>
                     <h1 className="text-2xl font-black text-gray-900 dark:text-white">Cadastre sua loja</h1>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">7 dias grátis para testar. Sem cartão.</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Sem mensalidade: você só paga uma comissão sobre os pedidos feitos pelo Pede Aqui.</p>
                 </div>
 
                 {loading || verificando ? (

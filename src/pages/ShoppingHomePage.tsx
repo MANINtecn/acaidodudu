@@ -244,7 +244,7 @@ const ShoppingHomePage: React.FC = () => {
                 <section className="mt-10 rounded-3xl p-6 sm:p-8 bg-gradient-to-br from-[var(--pa-primary)] to-[var(--pa-primary-2)] text-[var(--pa-on-primary)]">
                     <p className="text-xs font-bold uppercase tracking-widest opacity-80">Para lojistas</p>
                     <h2 className="mt-1 text-2xl sm:text-3xl font-black leading-tight">Tem uma lanchonete ou delivery?</h2>
-                    <p className="mt-2 max-w-xl opacity-90">Receba pedidos pelo celular, controle o balcão e apareça aqui para os clientes da sua cidade. 7 dias grátis para testar.</p>
+                    <p className="mt-2 max-w-xl opacity-90">Receba pedidos pelo celular e apareça aqui para os clientes da sua cidade. Sem mensalidade: você só paga uma comissão quando vender.</p>
                     <Link to="/cadastro" className="mt-5 inline-flex items-center gap-2 rounded-full bg-[var(--pa-surface)] text-[var(--pa-text)] px-5 py-2.5 font-bold">Cadastrar minha loja <ArrowRight size={18} /></Link>
                 </section>
             </main>

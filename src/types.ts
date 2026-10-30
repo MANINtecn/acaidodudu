@@ -13,7 +13,12 @@ export interface Store {
   };
   // SaaS Fields
   subscription_end_date?: string;
-  plan?: 'basico' | 'avancado';
+  /** Modelo de venda: 'comissao' (Pede Aqui, sem mensalidade) ou 'pdv' (mensalidade, Básico ou Avançado). Loja antiga sem o campo = PDV completo. */
+  modelo?: 'comissao' | 'pdv';
+  /** Só no modelo PDV. Loja de comissão não tem plano. */
+  plan?: 'basico' | 'avancado' | null;
+  /** Falso quando o débito do dinheiro passou do limite: o checkout esconde a opção Dinheiro. */
+  aceita_dinheiro?: boolean;
   categoria?: string;
   cidade?: string;
   aparecer_no_shopping?: boolean;
@@ -549,3 +554,23 @@ export interface DeliveryZone {
   fee: number;
   is_active: boolean;
 }
+
+/** Condições financeiras de uma loja de comissão (tabela privada loja_financeiro: só o dono e o administrador leem). */
+export interface LojaFinanceiro {
+  store_id: string;
+  /** Comissão (%) quando o lojista entrega o pedido. */
+  comissao_pct_propria: number;
+  /** Comissão (%) quando a entrega é feita pelo app (motoboy da plataforma). */
+  comissao_pct_app: number;
+  /** Parte fixa da comissão por pedido (R$), para o pedido pequeno não sumir no custo do pagamento. */
+  comissao_fixa: number;
+  /** Repassa ao lojista o custo do pagamento online (a taxa do gateway) de forma explícita. */
+  repassa_taxa_pagamento: boolean;
+  /** Teto do débito de comissão acumulado em pedidos pagos em dinheiro. */
+  limite_debito: number;
+  /** Débito atual (R$) de comissão de pedidos em dinheiro. Mantido pelo servidor. */
+  debito_dinheiro: number;
+}
+
+/** Padrões da plataforma, copiados para cada loja nova (tabela plataforma_config, uma linha). */
+export type PadroesPlataforma = Omit<LojaFinanceiro, 'store_id' | 'debito_dinheiro'>;

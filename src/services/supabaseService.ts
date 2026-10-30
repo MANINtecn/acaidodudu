@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { Category, MenuItem, Addon, Order, Settings, Store, Customer, CashSession, CashTransaction, Promotion, LoyaltyRewardItem, FiscalConfig, NotaFiscal } from '../types';
+import { Category, MenuItem, Addon, Order, Settings, Store, Customer, CashSession, CashTransaction, Promotion, LoyaltyRewardItem, FiscalConfig, NotaFiscal, LojaFinanceiro, PadroesPlataforma } from '../types';
 import { enviarImagem, enviarImagemComprimida, imagensR2Ativas, ErroDeCompressao, type TipoImagem } from './imagemService';
 
 // Firebase removido em 28/09/2026: nunca esteve configurado neste projeto
@@ -437,6 +437,12 @@ export const fetchOrderHistory = async (storeId: string) => {
         .order('timestamp', { ascending: false });
     if (error) throw error;
     return (data || []).map(mapOrderFromDB);
+};
+
+/** Guarda o motivo do cancelamento (a plataforma audita cancelamento: comissão não pode ser burlada cancelando pedido). */
+export const registrarMotivoCancelamento = async (orderId: string, motivo: string) => {
+    const { error } = await supabase.from('orders').update({ cancel_reason: motivo }).eq('id', orderId);
+    if (error) console.warn('[cancelamento] motivo não gravado (a coluna orders.cancel_reason existe? SQL 4):', error.message);
 };
 
 export const updateOrderStatus = async (orderId: string, status: Order['status']) => {
@@ -2214,6 +2220,55 @@ export const createStore = async (store: Omit<Store, 'id' | 'created_at'>) => {
     return data;
 };
 
+// --- Condições financeiras das lojas de comissão (tabelas privadas loja_financeiro e plataforma_config) ---
+export type CondicoesFinanceiras = Omit<LojaFinanceiro, 'store_id'>;
+
+/** Cria a loja e, se for de comissão, as condições financeiras dela. Se a segunda parte falhar, desfaz a primeira. */
+export const criarLojaCompleta = async (store: Omit<Store, 'id' | 'created_at'>, financeiro?: Partial<CondicoesFinanceiras>) => {
+    const loja = await createStore(store);
+    if (financeiro) {
+        const { error } = await supabase.from('loja_financeiro').insert({ store_id: loja.id, ...financeiro });
+        if (error) {
+            await supabase.from('stores').delete().eq('id', loja.id);
+            throw error;
+        }
+    }
+    return loja as Store;
+};
+
+/** Condições financeiras de todas as lojas (só o administrador da plataforma vê todas). Tabela ausente: lista vazia. */
+export const fetchFinanceiroDeTodas = async (): Promise<LojaFinanceiro[]> => {
+    const { data, error } = await supabase.from('loja_financeiro').select('*');
+    if (error) { console.warn('[financeiro] não foi possível ler loja_financeiro:', error.message); return []; }
+    return (data || []) as LojaFinanceiro[];
+};
+
+/** Condições da própria loja (o dono lê as dele, para saber quanto paga de comissão). */
+export const fetchMeuFinanceiro = async (storeId: string): Promise<LojaFinanceiro | null> => {
+    const { data, error } = await supabase.from('loja_financeiro').select('*').eq('store_id', storeId).maybeSingle();
+    if (error) return null;
+    return (data as LojaFinanceiro) || null;
+};
+
+/** Só o administrador da plataforma grava (o banco recusa o resto). */
+export const salvarFinanceiro = async (storeId: string, dados: Partial<CondicoesFinanceiras>) => {
+    const { error } = await supabase.from('loja_financeiro').upsert({ store_id: storeId, ...dados, atualizado_em: new Date().toISOString() }, { onConflict: 'store_id' });
+    if (error) throw error;
+};
+
+/** Padrões copiados para cada loja de comissão nova. `null` = tabela ainda não existe (SQL 4 não rodado). */
+export const fetchPadroesPlataforma = async (): Promise<PadroesPlataforma | null> => {
+    const { data, error } = await supabase.from('plataforma_config').select('*').eq('id', 1).maybeSingle();
+    if (error || !data) return null;
+    const { comissao_pct_propria, comissao_pct_app, comissao_fixa, repassa_taxa_pagamento, limite_debito } = data as any;
+    return { comissao_pct_propria, comissao_pct_app, comissao_fixa, repassa_taxa_pagamento, limite_debito };
+};
+
+export const salvarPadroesPlataforma = async (p: PadroesPlataforma) => {
+    const { error } = await supabase.from('plataforma_config').upsert({ id: 1, ...p, atualizado_em: new Date().toISOString() }, { onConflict: 'id' });
+    if (error) throw error;
+};
+
 /** Você é administrador da plataforma? `null` = não deu para perguntar (rede). */
 export const isPlatformAdmin = async (): Promise<boolean | null> => {
     const { data, error } = await supabase.rpc('is_platform_admin');
@@ -2464,17 +2519,21 @@ export const updateStoreSubscription = async (storeId: string, updates: any) => 
     return data;
 };
 export const getGlobalStats = async () => {
+    // select('*') para funcionar também antes do SQL dos modelos (coluna modelo ainda inexistente).
     const { data: stores, error } = await supabase
         .from('stores')
-        .select('id, is_active, plan_value');
+        .select('*');
 
     if (error) throw error;
 
-    const totalStores = stores?.length || 0;
-    const activeStores = stores?.filter(s => s.is_active).length || 0;
-    const mrr = stores?.reduce((acc, s) => acc + (s.plan_value || 0), 0) || 0;
+    const lista = (stores || []) as Store[];
+    const totalStores = lista.length;
+    const activeStores = lista.filter(s => s.is_active).length;
+    const lojasDeComissao = lista.filter(s => s.modelo === 'comissao').length;
+    // Receita mensal recorrente: só as lojas de PDV pagam mensalidade (comissão não tem).
+    const mrr = lista.filter(s => s.modelo !== 'comissao' && s.is_active).reduce((acc, s) => acc + (s.plan_value || 0), 0);
 
-    return { totalStores, activeStores, mrr };
+    return { totalStores, activeStores, lojasDeComissao, mrr };
 };
 
 export const fetchSalesByDateRange = async (storeId: string, startDate: string, endDate: string) => {

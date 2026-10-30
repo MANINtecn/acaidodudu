@@ -841,6 +841,7 @@ const SideCart: React.FC<{
     orderDiscount = 0, setOrderDiscount, pendingReward, dynamicDeliveryFee,
     deliveryZones = [], selectedZoneId = '', setSelectedZoneId = () => {}
 }) => {
+        const { currentStore } = useStore();
         const [isSubmitting, setIsSubmitting] = useState(false);
         const [showSuccess, setShowSuccess] = useState(false);
         const [lastOrderId, setLastOrderId] = useState<string | undefined>(undefined);
@@ -1208,7 +1209,7 @@ const SideCart: React.FC<{
                                     >
                                         <option value="">-- Escolha a forma de pagamento --</option>
                                         <option value="Cartão">Cartão</option>
-                                        <option value="Dinheiro">Dinheiro</option>
+                                        {currentStore?.aceita_dinheiro !== false && <option value="Dinheiro">Dinheiro</option>}
                                         <option value="PIX">PIX</option>
                                     </select>
                                     {!paymentMethod && (
