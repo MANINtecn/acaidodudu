@@ -1149,12 +1149,25 @@ export const createOrder = async (order: any) => {
         }];
     }
 
-    const { data, error } = await supabase
-        .from('orders')
-        .insert(dbOrder)
-        .select(ORDER_COLUMNS)
-        .single();
-    if (error) throw error;
+    // Pedido do site/app: o servidor confere loja, preco, frete e total (SQL 5). Se a funcao ainda nao
+    // existir no banco, segue o caminho antigo para o site nao parar.
+    let data: any;
+    const doSite = dbOrder.origin === 'WEB' || dbOrder.origin === 'APP';
+    if (doSite) {
+        const r = await supabase.rpc('criar_pedido_publico', { p: dbOrder });
+        if (!r.error) data = r.data;
+        else if (r.error.code === 'PGRST202' || r.error.code === '42883') data = null;
+        else throw new Error(r.error.message || 'Não foi possível criar o pedido.');
+    }
+    if (!data) {
+        const { data: linha, error } = await supabase
+            .from('orders')
+            .insert(dbOrder)
+            .select(ORDER_COLUMNS)
+            .single();
+        if (error) throw error;
+        data = linha;
+    }
 
     const frontendOrder = mapOrderFromDB(data);
 
