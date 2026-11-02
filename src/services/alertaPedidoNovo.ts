@@ -1,16 +1,18 @@
 import { useEffect, useRef } from 'react';
-import { tocarSirene, VOLUME_PADRAO } from './sireneService';
+import { tocarSirene } from './sireneService';
 
 /**
  * Alerta de pedido novo para o celular do lojista (02/11/2026).
- * Enquanto houver pedido esperando aceite ("Novo"):
- *  - repete a sirene a cada 15 s (um toque só se perde se o lojista está longe do celular);
+ * Enquanto houver pedido novo ainda não visto (status "Novo"):
+ *  - repete a campainha a cada 8 s, alto, até o lojista confirmar que viu o pedido (os pedidos entram já aceitos:
+ *    não há aceitar ou recusar, só "recebi");
  *  - pisca o título da aba e vibra;
  *  - mostra uma notificação do sistema por pedido novo (se o lojista permitiu).
  * E, com o alerta ligado, pede ao celular para não apagar a tela (Wake Lock) enquanto o painel está aberto.
  * Não cobre o celular bloqueado ou o app fechado: isso exige notificação push de servidor.
  */
-const INTERVALO_REPETICAO_MS = 15000;
+const INTERVALO_REPETICAO_MS = 8000;
+const VOLUME_DO_ALERTA = 8; // bem chato de proposito: pedido novo nao pode passar batido
 
 type WakeLockSentinelLike = { release: () => Promise<void> };
 
@@ -56,7 +58,7 @@ export function usarAlertaDePedidoNovo(opcoes: { ligado: boolean; novos: { id?: 
             return;
         }
         const tocar = () => {
-            tocarSirene('sino', VOLUME_PADRAO);
+            tocarSirene('campainha', VOLUME_DO_ALERTA);
             try { navigator.vibrate?.([300, 150, 300]); } catch { /* sem vibracao */ }
         };
         let aceso = false;
@@ -80,7 +82,7 @@ export function usarAlertaDePedidoNovo(opcoes: { ligado: boolean; novos: { id?: 
             if (!chave || jaNotificados.current.has(chave)) continue;
             jaNotificados.current.add(chave);
             try {
-                const n = new Notification('Novo pedido!', { body: p.numero ? `Pedido #${p.numero} aguardando aceite` : 'Pedido aguardando aceite', tag: `pedido-${chave}`, requireInteraction: true });
+                const n = new Notification('Novo pedido!', { body: p.numero ? `Pedido #${p.numero} chegou` : 'Chegou um pedido', tag: `pedido-${chave}`, requireInteraction: true });
                 n.onclick = () => { window.focus(); n.close(); };
             } catch { /* alguns navegadores moveis so aceitam notificacao pelo service worker */ }
         }

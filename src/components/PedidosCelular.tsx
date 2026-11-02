@@ -33,7 +33,7 @@ const PRIORIDADE: Record<string, number> = { 'Novo': 0, 'Em Produção': 1, 'A C
 /** Próximo passo do pedido e o rótulo do botão grande. */
 export function proximoPasso(o: Order): { status: Status; rotulo: string } | null {
     switch (o.status) {
-        case 'Novo': return { status: 'Em Produção', rotulo: 'Aceitar e produzir' };
+        case 'Novo': return { status: 'Em Produção', rotulo: 'Recebi, em preparo' };
         case 'Em Produção': return ehEntrega(o)
             ? { status: 'A Caminho', rotulo: 'Saiu para entrega' }
             : { status: 'Entregue', rotulo: 'Entregue ao cliente' };
@@ -72,7 +72,7 @@ export const PedidosCelular: React.FC<Props> = ({ pedidos, onAvancar, onCancelar
         (PRIORIDADE[a.status] ?? 9) - (PRIORIDADE[b.status] ?? 9) ||
         new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()), [pedidos]);
 
-    // Enquanto houver pedido esperando aceite: sirene repetida, titulo piscando, notificacao e tela acesa.
+    // Enquanto houver pedido novo nao visto: campainha repetida, titulo piscando, notificacao e tela acesa.
     usarAlertaDePedidoNovo({
         ligado: somTestado,
         novos: useMemo(() => pedidos.filter(p => p.status === 'Novo').map(p => ({ id: p.id, numero: p.dailyOrderNumber })), [pedidos]),
@@ -101,7 +101,7 @@ export const PedidosCelular: React.FC<Props> = ({ pedidos, onAvancar, onCancelar
                         <Volume2 size={16} /> {somTestado ? 'Alerta ligado' : 'Ligar o alerta'}
                     </button>
                 </div>
-                {!somTestado && <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">Toque em Ligar o alerta uma vez. Sem isso o celular não toca quando chegar pedido. Com ele ligado, o som se repete até você aceitar o pedido e a tela não apaga enquanto este painel estiver aberto.</p>}
+                {!somTestado && <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">Toque em Ligar o alerta uma vez. Sem isso o celular não toca quando chegar pedido. Com ele ligado, a campainha toca alto e se repete até você tocar em Recebi, em preparo, e a tela não apaga enquanto este painel estiver aberto.</p>}
                 {!instalado && !dicaFechada && (
                     <div className="mt-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 px-3 py-2 text-xs text-sky-900 dark:text-sky-200 flex items-start gap-2">
                         <span className="flex-1">Para o aviso chegar com o celular bloqueado, adicione este aplicativo à tela inicial (menu do navegador, Adicionar à tela inicial).</span>
