@@ -4,7 +4,11 @@ import legacy from '@vitejs/plugin-legacy'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig(({ mode }) => ({
-  base: './',
+  // Site (Vercel): caminhos absolutos. Com './' o navegador resolvia ./assets/x.js a partir da URL atual
+  // (em /super-admin/lojas virava /super-admin/assets/x.js, que o rewrite devolve como HTML) e a pagina
+  // ficava em branco ao atualizar ou voltar. O .exe continua com './' porque o script electron:build
+  // passa --base=./ explicitamente (file://).
+  base: '/',
   plugins: [
     react(),
     // LEGACY SO NO SITE, NUNCA NO ELECTRON.
