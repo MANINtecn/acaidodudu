@@ -13,7 +13,7 @@ import {
 import { 
     rateOrder, fetchPublicSettings, fetchActivePromotions, createOrder, triggerWebhook,
     fetchMenuForCustomer, fetchCustomerByPhone, fetchLastOrderByPhone, fetchCustomerLoyaltyHistory,
-    concluirResgateDoPedido, verificarResgatePendente, resgateEfetivo, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones, canonicalPhone
+    concluirResgateDoPedido, verificarResgatePendente, resgateEfetivo, upsertCustomer, fetchDynamicDeliveryFee, fetchDeliveryZones, zonaDoEndereco, canonicalPhone
 } from '../services/supabaseService';
 import {
     ShoppingCart as LucideShoppingCart, X as LucideX,
@@ -2727,9 +2727,17 @@ const CustomerPage: React.FC = () => {
             const discountValue = orderType === 'Retirada' ? subtotal * ((settings?.appDiscountPercentage || 0) / 100) : 0;
             
             let finalDeliveryFee = 0;
+            let enderecoFinal = `${address}, ${houseNumber}`;
             if (lastOrder.orderType === 'Entrega' || orderType === 'Entrega') {
-                const fetchedFee = await fetchDynamicDeliveryFee(address);
-                finalDeliveryFee = fetchedFee !== null ? fetchedFee : (dynamicDeliveryFee ?? settings?.deliveryFee ?? 0);
+                // Loja com bairros cadastrados: a taxa vem do bairro do endereco (igual ao pedido normal).
+                const zonaDoPedido = zonaDoEndereco(await fetchDeliveryZones(currentStore.id), address);
+                if (zonaDoPedido) {
+                    finalDeliveryFee = Number(zonaDoPedido.fee) || 0;
+                    enderecoFinal = `${enderecoFinal} - Bairro: ${zonaDoPedido.neighborhood_name}`;
+                } else {
+                    const fetchedFee = await fetchDynamicDeliveryFee(address);
+                    finalDeliveryFee = fetchedFee !== null ? fetchedFee : (dynamicDeliveryFee ?? settings?.deliveryFee ?? 0);
+                }
             }
 
             const total = subtotal - discountValue + finalDeliveryFee - effectiveDiscount;
@@ -2757,7 +2765,7 @@ const CustomerPage: React.FC = () => {
                 dailyOrderNumber: 0,
                 customerName: recognizedCustomer.name,
                 phone: finalPhone,
-                address: `${address}, ${houseNumber}`,
+                address: enderecoFinal,
                 referencePoint,
                 orderType: lastOrder.orderType || orderType,
                 paymentMethod: finalPaymentMethod,

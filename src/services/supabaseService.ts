@@ -3066,6 +3066,14 @@ export const deleteTvAd = async (id: string) => {
 };
 
 
+/** Bairro (zona de entrega) que aparece no endereco; se dois nomes casam, vale o mais longo (VALE DO OURO ROCA antes de VALE DO OURO). */
+export const zonaDoEndereco = (zonas: any[], endereco: string): any | null => {
+    const sem = (t: string) => (t || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const alvo = sem(endereco);
+    const achadas = (zonas || []).filter(z => z.is_active !== false && z.neighborhood_name && alvo.includes(sem(z.neighborhood_name)));
+    achadas.sort((x, y) => String(y.neighborhood_name).length - String(x.neighborhood_name).length);
+    return achadas[0] || null;
+};
 export const fetchDeliveryZones = async (storeId: string): Promise<any[]> => {
     try {
         const { data, error } = await supabase.from('delivery_zones').select('*').eq('store_id', storeId).order('neighborhood_name');
