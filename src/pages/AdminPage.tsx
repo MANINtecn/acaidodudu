@@ -695,24 +695,32 @@ const AdminPage = () => {
         const chamadaPedidosId = ++ordersCallIdRef.current;
         try {
             if (!silent) setLoading(true);
-            const [ordersData, menuData, settingsData, promotionsData] = await Promise.all([
+            // Cada parte carrega separada: uma que falha (loja nova sem linha de configuracoes, por exemplo)
+            // nao pode esconder o cardapio e as categorias.
+            const [pedidosR, menuR, settingsR, promocoesR] = await Promise.allSettled([
                 fetchActiveOrders(currentStore.id),
                 fetchMenuForAdmin(currentStore.id),
                 fetchSettings(currentStore.id),
                 fetchAllPromotions(currentStore.id)
             ]);
+            const falhou = (r: PromiseSettledResult<any>, nome: string) => {
+                if (r.status === 'rejected') console.error(`Error loading admin data (${nome}):`, r.reason);
+            };
+            falhou(pedidosR, 'pedidos'); falhou(menuR, 'cardapio'); falhou(settingsR, 'configuracoes'); falhou(promocoesR, 'promocoes');
 
             // Pedidos: so aplica se nenhuma recarga de pedidos mais nova chegou antes.
-            if (chamadaPedidosId === ordersCallIdRef.current) setOrders(ordersData);
+            if (pedidosR.status === 'fulfilled' && chamadaPedidosId === ordersCallIdRef.current) setOrders(pedidosR.value);
             // Cardapio/configuracoes: so descarta se OUTRA carga completa mais nova existe.
             if (chamadaId !== loadDataCallIdRef.current) return;
             ultimaCargaCompletaRef.current = Date.now();
 
-            setCategories(menuData.categories);
-            setMenuItems(menuData.menuItems);
-            setAddons(menuData.addons || []);
-            setSettings(settingsData);
-            setPromotions(promotionsData);
+            if (menuR.status === 'fulfilled') {
+                setCategories(menuR.value.categories);
+                setMenuItems(menuR.value.menuItems);
+                setAddons(menuR.value.addons || []);
+            }
+            if (settingsR.status === 'fulfilled') setSettings(settingsR.value);
+            if (promocoesR.status === 'fulfilled') setPromotions(promocoesR.value);
         } catch (error) {
             console.error("Error loading admin data:", error);
         } finally {
