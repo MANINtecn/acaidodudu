@@ -415,6 +415,12 @@ export const mapOrderFromDB = (dbOrder: any): Order => {
 
 // --- Order Management ---
 export const fetchActiveOrders = async (storeId: string) => {
+    const garcom = dosGarcom(storeId);
+    if (garcom) {
+        const r = await supabase.rpc('garcom_pedidos_ativos', { p_store: storeId, p_token: garcom.token });
+        if (r.error) throw r.error;
+        return ((r.data as any[]) || []).map(mapOrderFromDB);
+    }
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_COLUMNS)
@@ -1098,6 +1104,18 @@ export const concluirResgateDoPedido = async (params: {
     }
 };
 
+// Sessao do garcom (PIN da loja validado no servidor). Enquanto a tela do garcom esta aberta, as funcoes de
+// pedido abaixo passam pelas funcoes do servidor em vez de ler/gravar a tabela direto.
+let sessaoGarcom: { storeId: string; token: string } | null = null;
+export const definirSessaoGarcom = (s: { storeId: string; token: string } | null) => { sessaoGarcom = s; };
+export const garcomLogin = async (storeId: string, pin: string): Promise<string> => {
+    const { data, error } = await supabase.rpc('garcom_login', { p_store: storeId, p_pin: pin });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.erro || 'PIN Incorreto');
+    return data.token as string;
+};
+const dosGarcom = (storeId?: string) => (sessaoGarcom && (!storeId || storeId === sessaoGarcom.storeId)) ? sessaoGarcom : null;
+
 export const createOrder = async (order: any) => {
     const dbOrder = mapOrderToDB(order);
     
@@ -1113,7 +1131,13 @@ export const createOrder = async (order: any) => {
     // existir no banco, segue o caminho antigo para o site nao parar.
     let data: any;
     const doSite = dbOrder.origin === 'WEB' || dbOrder.origin === 'APP';
-    if (doSite) {
+    const garcom = !doSite ? dosGarcom(dbOrder.store_id) : null;
+    if (garcom) {
+        const { id: _semId, store_id: _semLoja, ...corpo } = dbOrder;
+        const r = await supabase.rpc('garcom_gravar_pedido', { p_store: garcom.storeId, p_token: garcom.token, p_id: null, p: corpo });
+        if (r.error) throw new Error(r.error.message);
+        data = r.data;
+    } else if (doSite) {
         const r = await supabase.rpc('criar_pedido_publico', { p: dbOrder });
         if (!r.error) data = r.data;
         else if (r.error.code === 'PGRST202' || r.error.code === '42883') data = null;
@@ -1245,6 +1269,13 @@ export const emitirNotaFiscalAgora = async (
 
 export const updateOrder = async (orderId: string, updates: any) => {
     const dbUpdates = mapOrderToDB(updates);
+    const garcom = dosGarcom(updates?.store_id);
+    if (garcom) {
+        const { id: _i, store_id: _s, ...corpo } = dbUpdates;
+        const r = await supabase.rpc('garcom_gravar_pedido', { p_store: garcom.storeId, p_token: garcom.token, p_id: orderId, p: corpo });
+        if (r.error) throw new Error(r.error.message);
+        return r.data ? [mapOrderFromDB(r.data)] : [];
+    }
     const { data, error } = await supabase
         .from('orders')
         .update(dbUpdates)
@@ -1610,8 +1641,9 @@ export const fetchSettings = async (storeId: string): Promise<Settings> => {
     const result = mapSettingsDBToApp(settingsData, storeData);
     // O codigo de cadastro de entregador fica numa tabela so do dono (a settings e de leitura publica).
     try {
-        const { data: equipe } = await supabase.from('loja_equipe').select('courier_access_code').eq('store_id', storeId).maybeSingle();
+        const { data: equipe } = await supabase.from('loja_equipe').select('courier_access_code, garcom_pin').eq('store_id', storeId).maybeSingle();
         (result as any).courier_access_code = equipe?.courier_access_code || undefined;
+        (result as any).garcom_pin = equipe?.garcom_pin || undefined;
     } catch { /* sem a tabela ainda: segue sem o codigo */ }
     return result;
 };
@@ -1661,8 +1693,11 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
         await supabase.from('stores').update({ logo_url: settings.logoUrl }).eq('id', storeId);
     }
 
-    if (settings.courier_access_code !== undefined) {
-        const { error: erroEquipe } = await supabase.from('loja_equipe').upsert({ store_id: storeId, courier_access_code: settings.courier_access_code || null }, { onConflict: 'store_id' });
+    if (settings.courier_access_code !== undefined || (settings as any).garcom_pin !== undefined) {
+        const linhaEquipe: any = { store_id: storeId };
+        if (settings.courier_access_code !== undefined) linhaEquipe.courier_access_code = settings.courier_access_code || null;
+        if ((settings as any).garcom_pin !== undefined) linhaEquipe.garcom_pin = (settings as any).garcom_pin || null;
+        const { error: erroEquipe } = await supabase.from('loja_equipe').upsert(linhaEquipe, { onConflict: 'store_id' });
         if (erroEquipe) throw erroEquipe;
     }
 
@@ -2355,6 +2390,12 @@ export const fetchOpenOrderForTable = async (storeId: string, tableNumber: numbe
 
 // --- NEW: Fetch ALL open orders for a table ---
 export const fetchAllOpenOrdersForTable = async (storeId: string, tableNumber: number): Promise<Order[]> => {
+    const garcom = dosGarcom(storeId);
+    if (garcom) {
+        const r = await supabase.rpc('garcom_pedidos_mesa', { p_store: storeId, p_token: garcom.token, p_mesa: tableNumber });
+        if (r.error) throw r.error;
+        return ((r.data as any[]) || []).map(mapOrderFromDB);
+    }
     const { data, error } = await supabase
         .from('orders')
         .select(ORDER_COLUMNS)
@@ -2370,6 +2411,12 @@ export const fetchAllOpenOrdersForTable = async (storeId: string, tableNumber: n
 
 // --- NEW: Batch update status for all table orders ---
 export const batchUpdateTableOrders = async (storeId: string, tableNumber: number, updates: Partial<any>) => {
+    const garcom = dosGarcom(storeId);
+    if (garcom) {
+        const r = await supabase.rpc('garcom_fechar_mesa', { p_store: storeId, p_token: garcom.token, p_mesa: tableNumber, p_pagamento: (updates as any).payment_method, p_troco: (updates as any).change_for ?? null });
+        if (r.error) throw new Error(r.error.message);
+        return r.data;
+    }
     const dbUpdates = mapOrderToDB(updates);
     const { data, error } = await supabase
         .from('orders')

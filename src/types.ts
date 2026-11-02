@@ -516,6 +516,8 @@ export interface Settings {
   courierPrinter?: string;
   courierPrinterPaperWidth?: '58mm' | '80mm';
   courier_access_code?: string;
+  /** PIN de acesso do garcom (guardado numa tabela so do dono). */
+  garcom_pin?: string;
   defaultDDD?: string;
   bolaoStartTime?: string;
   bolaoEndTime?: string;

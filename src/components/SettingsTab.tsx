@@ -1180,6 +1180,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({ settings, categories, 
                             />
                         </div>
                         <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">PIN do Garçom (plano com PDV)</label>
+                            <input
+                                type="text"
+                                name="garcom_pin"
+                                value={(formData as any).garcom_pin || ''}
+                                onChange={handleChange}
+                                placeholder="Deixe vazio para desativar o acesso do garçom"
+                                maxLength={20}
+                                className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-orange-500 text-gray-900 dark:text-gray-100 bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600"
+                            />
+                            <p className="text-xs text-gray-500 mt-1">Trocar o PIN desconecta os garçons que estão logados.</p>
+                        </div>
+                        <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Desconto App (%)</label>
                             <input
                                 type="number"

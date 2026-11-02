@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../contexts/StoreContext';
-import { fetchMenuForCustomer, createOrder, fetchAllOpenOrdersForTable, batchUpdateTableOrders, updateOrder, fetchActiveOrders, fetchSettings, supabase } from '../services/supabaseService';
+import { garcomLogin, definirSessaoGarcom, fetchMenuForCustomer, createOrder, fetchAllOpenOrdersForTable, batchUpdateTableOrders, updateOrder, fetchActiveOrders, fetchSettings, supabase } from '../services/supabaseService';
 import { Category, MenuItem, CartItem, Order, PaymentMethod, Settings, Addon } from '../types';
 import { Search, Plus, Minus, X, ChevronRight, Bike, User, LogOut, Sun, Moon, DollarSign } from 'lucide-react';
 import { normalizeString } from '../utils/searchUtils';
@@ -41,7 +41,6 @@ export default function WaiterPage() {
     const [occupiedTables, setOccupiedTables] = useState<number[]>([]);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [pin, setPin] = useState('');
-    const WAITER_PIN = 'papa012026';
 
     // Order State
     const [tableNumber, setTableNumber] = useState<string>('');
@@ -78,11 +77,16 @@ export default function WaiterPage() {
 
     // Initial Load
     useEffect(() => {
-        const savedAuth = localStorage.getItem('waiter_auth');
-        if (savedAuth === 'true') {
-            setIsAuthenticated(true);
-        }
-    }, []);
+        // Sessao guardada: id da loja + token do servidor (o PIN em si nunca fica no aparelho)
+        try {
+            const salva = JSON.parse(localStorage.getItem('waiter_session') || 'null');
+            if (salva?.token && currentStore && salva.storeId === currentStore.id) {
+                definirSessaoGarcom({ storeId: salva.storeId, token: salva.token });
+                setIsAuthenticated(true);
+            }
+        } catch { /* sessao invalida: pede o PIN */ }
+        return () => definirSessaoGarcom(null);
+    }, [currentStore?.id]);
 
     useEffect(() => {
         if (isAuthenticated && !storeLoading && currentStore) {
@@ -396,18 +400,23 @@ export default function WaiterPage() {
         }
     };
 
-    const handleLogin = (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (pin === WAITER_PIN) {
+        if (!currentStore) return;
+        try {
+            const token = await garcomLogin(currentStore.id, pin);
+            definirSessaoGarcom({ storeId: currentStore.id, token });
+            localStorage.setItem('waiter_session', JSON.stringify({ storeId: currentStore.id, token }));
             setIsAuthenticated(true);
-            localStorage.setItem('waiter_auth', 'true');
-        } else {
-            showNotify('PIN Incorreto', 'error');
+        } catch (err: any) {
+            showNotify(err?.message || 'PIN Incorreto', 'error');
         }
     };
 
     const handleLogout = () => {
         setIsAuthenticated(false);
+        definirSessaoGarcom(null);
+        localStorage.removeItem('waiter_session');
         localStorage.removeItem('waiter_auth');
     };
 
