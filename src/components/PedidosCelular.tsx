@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Phone, MessageCircle, Clock, Volume2, X } from 'lucide-react';
 import type { Order } from '../types';
 import { testarSirene, VOLUME_PADRAO } from '../services/sireneService';
+import { usarAlertaDePedidoNovo, pedirPermissaoDeNotificacao } from '../services/alertaPedidoNovo';
 
 /**
  * Pedidos para o celular (30/10/2026), pensada para a loja de comissão: sem PC, sem impressora.
@@ -71,6 +72,12 @@ export const PedidosCelular: React.FC<Props> = ({ pedidos, onAvancar, onCancelar
         (PRIORIDADE[a.status] ?? 9) - (PRIORIDADE[b.status] ?? 9) ||
         new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime()), [pedidos]);
 
+    // Enquanto houver pedido esperando aceite: sirene repetida, titulo piscando, notificacao e tela acesa.
+    usarAlertaDePedidoNovo({
+        ligado: somTestado,
+        novos: useMemo(() => pedidos.filter(p => p.status === 'Novo').map(p => ({ id: p.id, numero: p.dailyOrderNumber })), [pedidos]),
+    });
+
     const instalado = typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || (window.navigator as any).standalone === true);
 
     const confirmarCancelamento = () => {
@@ -88,13 +95,13 @@ export const PedidosCelular: React.FC<Props> = ({ pedidos, onAvancar, onCancelar
                         Pedidos <span className="ml-1 inline-flex items-center justify-center min-w-[1.75rem] h-7 px-2 rounded-full bg-red-600 text-white text-sm">{lista.length}</span>
                     </h2>
                     <button
-                        onClick={() => { testarSirene('sino', VOLUME_PADRAO); setSomTestado(true); }}
+                        onClick={() => { testarSirene('sino', VOLUME_PADRAO); setSomTestado(true); void pedirPermissaoDeNotificacao(); }}
                         className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold ${somTestado ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-500 text-slate-950'}`}
                     >
-                        <Volume2 size={16} /> {somTestado ? 'Som ativado' : 'Ativar o som'}
+                        <Volume2 size={16} /> {somTestado ? 'Alerta ligado' : 'Ligar o alerta'}
                     </button>
                 </div>
-                {!somTestado && <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">Toque em Ativar o som uma vez. Sem isso o celular não toca quando chegar pedido.</p>}
+                {!somTestado && <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">Toque em Ligar o alerta uma vez. Sem isso o celular não toca quando chegar pedido. Com ele ligado, o som se repete até você aceitar o pedido e a tela não apaga enquanto este painel estiver aberto.</p>}
                 {!instalado && !dicaFechada && (
                     <div className="mt-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 px-3 py-2 text-xs text-sky-900 dark:text-sky-200 flex items-start gap-2">
                         <span className="flex-1">Para o aviso chegar com o celular bloqueado, adicione este aplicativo à tela inicial (menu do navegador, Adicionar à tela inicial).</span>
