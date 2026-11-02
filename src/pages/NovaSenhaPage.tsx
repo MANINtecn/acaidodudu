@@ -56,7 +56,7 @@ const NovaSenhaPage: React.FC = () => {
                 ) : !session || !chegouPeloLink ? (
                     <>
                         <p className="text-gray-300">{motivoDoLink || (session && !chegouPeloLink && !pronto ? 'Esta tela só abre pelo link enviado ao seu e-mail. Para trocar a senha, use Esqueci minha senha na tela de login.' : 'Este link venceu ou já foi usado. Peça um novo link de redefinição.')}</p>
-                        <Link to="/super-admin" className="block text-center text-blue-400 hover:underline">Voltar ao login</Link>
+                        <Link to="/" className="block text-center text-blue-400 hover:underline">Voltar ao início</Link>
                     </>
                 ) : pronto ? (
                     <p className="text-green-400">Senha alterada. Redirecionando...</p>

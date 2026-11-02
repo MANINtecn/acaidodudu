@@ -16,6 +16,7 @@ const LoginPage: React.FC = () => {
   const [rememberMe, setRememberMe] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [aviso, setAviso] = useState<string | null>(null);
   const navigate = useNavigate();
   const location = useLocation();
   const { storeSlug } = useParams();
@@ -77,8 +78,26 @@ const LoginPage: React.FC = () => {
     }
   };
 
+  const esqueciASenha = async () => {
+    setError(null);
+    setAviso(null);
+    if (!email.trim()) { setError('Digite seu e-mail acima e clique de novo em "Esqueci minha senha".'); return; }
+    setLoading(true);
+    try {
+      // no .exe a origem e file://; o link do e-mail abre no site
+      const origem = window.location.protocol.startsWith('http') ? window.location.origin : 'https://pedeaki.tecx.pro';
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${origem}/redefinir_senha` });
+      if (error) throw error;
+      setAviso('Se este e-mail tiver conta, enviamos um link para criar a nova senha. Veja também o spam.');
+    } catch (err: any) {
+      setError(err?.message || 'Não foi possível enviar o e-mail agora. Tente de novo em alguns minutos.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div 
+    <div
       className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-cover bg-center"
       style={{ backgroundImage: `url(${bgHero})` }}
     >
@@ -177,9 +196,15 @@ const LoginPage: React.FC = () => {
             </div>
           )}
 
-          <button 
-            type="submit" 
-            disabled={loading} 
+          {aviso && (
+            <div className="p-3 bg-green-900/30 border border-green-500/40 rounded-xl text-green-400 text-xs font-medium text-center">
+              {aviso}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loading}
             className="w-full py-3.5 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 active:scale-98 font-bold text-white rounded-xl shadow-lg shadow-purple-900/50 flex items-center justify-center gap-2 transition-all disabled:opacity-50 text-sm tracking-wider uppercase"
           >
             {loading ? (
@@ -192,6 +217,14 @@ const LoginPage: React.FC = () => {
                 Entrar no Sistema <LogIn className="w-4 h-4" />
               </>
             )}
+          </button>
+          <button
+            type="button"
+            onClick={esqueciASenha}
+            disabled={loading}
+            className="w-full text-xs font-semibold text-purple-300 hover:text-white transition-colors disabled:opacity-50"
+          >
+            Esqueci minha senha
           </button>
         </form>
 
