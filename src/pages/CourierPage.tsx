@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useCourier } from '../contexts/CourierContext';
 import { useStore } from '../contexts/StoreContext';
-import { fetchReadyOrdersForCourier, fetchCourierActiveDeliveries, assignOrderToCourier, updateOrderDeliveryStatus } from '../services/supabaseService';
+import { entregadorPedidosProntos, entregadorEntregasAtivas, entregadorPegar, entregadorStatus, entregadorHistoricoDoDia, entregadorTotal } from '../services/supabaseService';
 import { Order } from '../types';
 import { Bike, MapPin, Package, ArrowRight, RefreshCw, Phone, Home, CheckCheck, User, LogOut, Calendar, Search, Sun, Moon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -56,8 +56,8 @@ const CourierPage: React.FC = () => {
             // For simplicity, let's load basic data here.
             
             const [ready, mine] = await Promise.all([
-                fetchReadyOrdersForCourier(currentStore.id),
-                fetchCourierActiveDeliveries(courier.id)
+                entregadorPedidosProntos({ id: courier.id, token: courier.token || '' }),
+                entregadorEntregasAtivas({ id: courier.id, token: courier.token || '' })
             ]);
             setReadyOrders(ready);
             setMyDeliveries(mine);
@@ -74,15 +74,15 @@ const CourierPage: React.FC = () => {
             if (activeTab === 'profile' && courier) {
                 setIsSearchingHistory(true);
                 try {
-                     const { fetchCourierHistoryByDate, fetchCourierTotalDeliveries } = await import('../services/supabaseService');
-                     
+                     const sessao = { id: courier.id, token: courier.token || '' };
+
                      // Fetch total count (career)
-                     const total = await fetchCourierTotalDeliveries(courier.id);
+                     const total = await entregadorTotal(sessao);
                      setTotalDeliveriesCount(total);
 
                      // Fetch history for selected date
                      const dateObj = new Date(historyDate + 'T12:00:00'); // Ensure mid-day to avoid timezone shifting on simple date strings
-                     const history = await fetchCourierHistoryByDate(courier.id, dateObj);
+                     const history = await entregadorHistoricoDoDia(sessao, dateObj);
                      setHistoryOrders(history);
                 } catch (e) {
                     console.error("Error loading history", e);
@@ -130,15 +130,15 @@ const CourierPage: React.FC = () => {
 
         try {
             if (modalAction === 'take') {
-                await assignOrderToCourier(selectedOrderId, courier.id, courier.name);
+                await entregadorPegar({ id: courier.id, token: courier.token || '' }, selectedOrderId);
                 setActiveTab('mine');
             } else {
-                await updateOrderDeliveryStatus(selectedOrderId, targetStatus);
+                await entregadorStatus({ id: courier.id, token: courier.token || '' }, selectedOrderId, targetStatus);
             }
             loadData();
         } catch (error) {
             console.error(error);
-            alert('Erro ao processar ação.');
+            alert((error as any)?.message || 'Erro ao processar ação.');
         } finally {
             setSelectedOrderId(null);
         }

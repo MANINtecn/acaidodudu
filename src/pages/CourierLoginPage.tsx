@@ -21,11 +21,15 @@ const CourierLoginPage: React.FC = () => {
         setError('');
         setLoading(true);
 
-        const success = await login(phone, password);
-        if (success) {
-            navigate(`/${currentStore?.slug || 'acaidodudu'}/entregador/dashboard`);
-        } else {
-            setError('Credenciais inválidas. Verifique telefone e senha.');
+        try {
+            const success = await login(phone, password);
+            if (success) {
+                navigate(`/${currentStore?.slug || 'acaidodudu'}/entregador/dashboard`);
+            } else {
+                setError('Credenciais inválidas. Verifique telefone e senha.');
+            }
+        } catch (err: any) {
+            setError(err?.message || 'Credenciais inválidas. Verifique telefone e senha.');
         }
         setLoading(false);
     };

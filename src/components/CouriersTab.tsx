@@ -52,7 +52,9 @@ export const CouriersTab: React.FC<CouriersTabProps> = () => {
         setIsSubmitting(true);
         try {
             if (editingCourier) {
-                await updateCourier(editingCourier.id, formData);
+                // senha em branco = manter a atual (ela fica guardada em hash, nao da para mostrar)
+                const { password, ...semSenha } = formData;
+                await updateCourier(editingCourier.id, password ? formData : semSenha);
                 alert('Entregador atualizado com sucesso!');
             } else {
                 await registerCourier(formData.name, formData.phone, formData.password, currentStore.id);
@@ -82,7 +84,7 @@ export const CouriersTab: React.FC<CouriersTabProps> = () => {
     const openModal = (courier?: Courier) => {
         if (courier) {
             setEditingCourier(courier);
-            setFormData({ name: courier.name, phone: courier.phone, password: courier.password || '' });
+            setFormData({ name: courier.name, phone: courier.phone, password: '' });
         } else {
             setEditingCourier(null);
             setFormData({ name: '', phone: '', password: '' });
@@ -324,10 +326,10 @@ export const CouriersTab: React.FC<CouriersTabProps> = () => {
                                 />
                             </div>
                             <div>
-                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Senha de Acesso</label>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Senha de Acesso{editingCourier ? ' (deixe em branco para manter)' : ''}</label>
                                 <input 
                                     type="text" 
-                                    required 
+                                    required={!editingCourier}
                                     className="w-full bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-800 rounded-xl p-3 outline-none focus:border-primary text-gray-900 dark:text-white"
                                     value={formData.password}
                                     onChange={e => setFormData({...formData, password: e.target.value})}

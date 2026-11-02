@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Courier } from '../types';
-import { verifyCourierLogin } from '../services/supabaseService';
+import { entregadorLogin } from '../services/supabaseService';
 import { useStore } from './StoreContext';
 
 interface CourierContextData {
@@ -31,7 +31,7 @@ export const CourierProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     // Different store? Logout.
                     logout();
                 } else {
-                    setCourier(parsed);
+                    if (parsed.token) setCourier(parsed); else logout(); // sessao antiga (sem token): entra de novo
                 }
             } catch (e) {
                 console.error("Invalid courier session", e);
@@ -45,15 +45,16 @@ export const CourierProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (!currentStore) return false;
         
         try {
-            const data = await verifyCourierLogin(phone, password, currentStore.id);
+            const data = await entregadorLogin(phone, password, currentStore.id);
             if (data) {
-                const courierData: Courier = data;
+                const courierData: Courier = { ...data.courier, token: data.token };
                 setCourier(courierData);
                 localStorage.setItem('acaidodudu_courier_session', JSON.stringify(courierData));
                 return true;
             }
         } catch (error) {
             console.error(error);
+            throw error;
         }
         return false;
     };

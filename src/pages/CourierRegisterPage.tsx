@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { registerCourier, fetchPublicSettings } from '../services/supabaseService';
+import { entregadorCadastrar } from '../services/supabaseService';
 import { useStore } from '../contexts/StoreContext';
 import { UserPlus, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 
@@ -13,19 +13,10 @@ const CourierRegisterPage: React.FC = () => {
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [storeCode, setStoreCode] = useState(''); // User input
-    const [requiredCode, setRequiredCode] = useState<string | null>(null); // From settings
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
     const [loading, setLoading] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-
-    React.useEffect(() => {
-        if (currentStore?.id) {
-            fetchPublicSettings(currentStore.id).then(settings => {
-                setRequiredCode(settings.courier_access_code || null);
-            });
-        }
-    }, [currentStore]);
 
     const handleRegister = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -41,18 +32,12 @@ const CourierRegisterPage: React.FC = () => {
             return;
         }
 
-        // Security Check
-        if (requiredCode && storeCode !== requiredCode) {
-            setError('Código da Loja incorreto. Peça ao gerente.');
-            return;
-        }
-
         if (!currentStore) return;
 
         setLoading(true);
 
         try {
-            await registerCourier(name, phone, password, currentStore.id);
+            await entregadorCadastrar(name, phone, password, currentStore.id, storeCode);
             setSuccess(true);
             setTimeout(() => {
                 navigate(`/${currentStore.slug}/entregador/login`);

@@ -318,6 +318,8 @@ export interface Courier {
   name: string;
   phone: string;
   password?: string;
+  /** So na sessao do entregador logado: entregue pelo servidor no login. */
+  token?: string;
   is_active: boolean;
   created_at?: string;
 }

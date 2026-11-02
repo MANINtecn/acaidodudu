@@ -910,7 +910,9 @@ const sincronizarSaldo = async (phone: string, storeId: string): Promise<void> =
 
 /** Saldo de pontos do cliente nesta loja (soma do extrato, nunca negativo). 0 se nunca teve registro. */
 export const fetchCustomerPointsBalance = async (phone: string, storeId: string): Promise<number> => {
-    return Math.max(0, await somarExtrato(phone, storeId));
+    const { data, error } = await supabase.rpc('pontos_saldo', { p_store: storeId, p_phone: phone });
+    if (error) throw error;
+    return Math.max(0, Number(data) || 0);
 };
 
 /**
@@ -921,31 +923,13 @@ export const fetchCustomerPointsBalance = async (phone: string, storeId: string)
  */
 export const creditarPontosDoPedido = async (
     orderId: string,
-    phone: string,
-    storeId: string,
-    valorPago: number
+    _phone: string,
+    _storeId: string,
+    _valorPago: number
 ): Promise<void> => {
-    const pontos = calcularPontosGanhos(valorPago);
-    if (pontos <= 0) return;
-
-    const { canon } = chavesDeTelefone(phone);
-
-    const { error: ledgerError } = await supabase
-        .from('loyalty_points_ledger')
-        .insert({
-            store_id: storeId,
-            phone: canon,
-            tipo: 'ganho',
-            points: pontos,
-            order_id: orderId,
-        });
-
-    if (ledgerError) {
-        if (ledgerError.code === '23505') return; // ja creditado antes, ok
-        throw ledgerError;
-    }
-
-    await sincronizarSaldo(phone, storeId);
+    // Os pontos saem do total gravado no pedido, calculados no servidor.
+    const { error } = await supabase.rpc('creditar_pontos_pedido', { p_order: orderId });
+    if (error) throw error;
 };
 
 /**
@@ -1011,36 +995,12 @@ export const resgatarPontos = async (
     phone: string,
     storeId: string,
     rewardItemId: string,
-    pointsCost: number,
+    _pointsCost: number,
     orderId?: string
 ): Promise<void> => {
-    const atual = Math.max(0, await somarExtrato(phone, storeId));
-    if (atual < pointsCost) {
-        throw new Error(`Saldo insuficiente: tem ${atual} pontos, precisa de ${pointsCost}.`);
-    }
-
-    const { canon } = chavesDeTelefone(phone);
-    const { data: linha, error: ledgerError } = await supabase
-        .from('loyalty_points_ledger')
-        .insert({
-            store_id: storeId,
-            phone: canon,
-            tipo: 'resgate',
-            points: -pointsCost,
-            reward_item_id: rewardItemId,
-            order_id: orderId ?? null,
-        })
-        .select('id')
-        .single();
-    if (ledgerError) throw ledgerError;
-
-    const depois = await somarExtrato(phone, storeId);
-    if (depois < 0) {
-        await supabase.from('loyalty_points_ledger').delete().eq('id', (linha as any).id);
-        throw new Error('Saldo insuficiente: outro resgate foi feito ao mesmo tempo.');
-    }
-
-    await sincronizarSaldo(phone, storeId);
+    // Custo e saldo sao conferidos no servidor.
+    const { error } = await supabase.rpc('resgatar_pontos_cliente', { p_store: storeId, p_phone: phone, p_reward: rewardItemId, p_order: orderId ?? null });
+    if (error) throw new Error(error.message || 'Nao foi possivel resgatar os pontos.');
 };
 
 /**
@@ -1304,12 +1264,7 @@ export const deleteOrder = async (orderId: string) => {
 };
 
 export const rateOrder = async (orderId: string, rating: number, feedback?: string) => {
-    const { data, error } = await supabase
-        .from('orders')
-        .update({ rating, feedback })
-        .eq('id', orderId)
-        .select()
-        .single();
+    const { data, error } = await supabase.rpc('avaliar_pedido', { p_id: orderId, p_rating: rating, p_feedback: feedback ?? null });
     if (error) throw error;
     return data;
 };
@@ -1333,18 +1288,12 @@ export const fetchCustomerByPhone = async (phone: string, storeId: string, defau
     const local8 = canon.slice(2);
     const comNove = `${ddd}9${local8}`; // formato antigo, possivel em cadastros anteriores
 
-    const { data, error } = await supabase
-        .from('customers')
-        .select('*')
-        .in('phone', [canon, comNove])
-        .eq('store_id', storeId)
-        .order('created_at', { ascending: false });
-
+    const { data, error } = await supabase.rpc('cliente_por_telefone', { p_store: storeId, p_phones: [canon, comNove] });
     if (error) {
         console.error('Error fetching customer:', error);
         return null;
     }
-    return (data && data.length > 0) ? data[0] : null;
+    return (data as Customer) || null;
 };
 
 export const searchCustomers = async (query: string, storeId: string): Promise<Customer[]> => {
@@ -1380,16 +1329,8 @@ export const fetchLastOrderByPhone = async (phone: string, storeId: string): Pro
     if (sanitizedPhone.startsWith('55') && sanitizedPhone.length > 11) {
         sanitizedPhone = sanitizedPhone.substring(2);
     }
-    const { data, error } = await supabase
-        .from('orders')
-        .select(ORDER_COLUMNS)
-        .ilike('phone', `%${sanitizedPhone}`)
-        .eq('store_id', storeId)
-        .order('timestamp', { ascending: false })
-        .limit(1)
-        .single();
-
-    if (error && error.code !== 'PGRST116') {
+    const { data, error } = await supabase.rpc('ultimo_pedido_por_telefone', { p_store: storeId, p_sufixo: sanitizedPhone });
+    if (error) {
         console.error('Error fetching last order:', error);
         return null;
     }
@@ -1667,10 +1608,11 @@ export const fetchSettings = async (storeId: string): Promise<Settings> => {
         .single();
 
     const result = mapSettingsDBToApp(settingsData, storeData);
-    // console.log('[fetchSettings] Result:', { 
-    //     preferredPrinter: result.preferredPrinter, 
-    //     printerPaperWidth: result.printerPaperWidth 
-    // });
+    // O codigo de cadastro de entregador fica numa tabela so do dono (a settings e de leitura publica).
+    try {
+        const { data: equipe } = await supabase.from('loja_equipe').select('courier_access_code').eq('store_id', storeId).maybeSingle();
+        (result as any).courier_access_code = equipe?.courier_access_code || undefined;
+    } catch { /* sem a tabela ainda: segue sem o codigo */ }
     return result;
 };
 
@@ -1717,6 +1659,11 @@ export const zerarNumeracaoPedidos = async (storeId: string): Promise<void> => {
 export const updateSettings = async (storeId: string, settings: Partial<Omit<Settings, 'id'>>) => {
     if (settings.logoUrl !== undefined) {
         await supabase.from('stores').update({ logo_url: settings.logoUrl }).eq('id', storeId);
+    }
+
+    if (settings.courier_access_code !== undefined) {
+        const { error: erroEquipe } = await supabase.from('loja_equipe').upsert({ store_id: storeId, courier_access_code: settings.courier_access_code || null }, { onConflict: 'store_id' });
+        if (erroEquipe) throw erroEquipe;
     }
 
     const dbSettings: any = {};
@@ -1795,9 +1742,6 @@ export const updateSettings = async (storeId: string, settings: Partial<Omit<Set
     }
     if (settings.isBotEnabled !== undefined) {
         dbSettings.is_bot_enabled = settings.isBotEnabled;
-    }
-    if (settings.courier_access_code !== undefined) {
-        dbSettings.courier_access_code = settings.courier_access_code;
     }
 
     // Raffle
@@ -2689,11 +2633,7 @@ export const upsertCustomer = async (customerData: Partial<Customer>, defaultDDD
         return null;
     }
 
-    const { data, error } = await supabase
-        .from('customers')
-        .upsert(payload, { onConflict: 'phone, store_id' })
-        .select()
-        .single();
+    const { data, error } = await supabase.rpc('salvar_cliente', { p: payload });
 
     if (error) {
         console.error('Error upserting customer:', error);
@@ -2706,62 +2646,18 @@ export const upsertCustomer = async (customerData: Partial<Customer>, defaultDDD
 
 export const fetchCustomerLoyaltyHistory = async (phone: string, storeId: string) => {
     const sanitizedPhone = phone.replace(/\D/g, ''); // Ensure numbers only
-    const { data, error } = await supabase
-        .from('orders')
-        .select(ORDER_COLUMNS)
-        .eq('store_id', storeId)
-        .ilike('phone', `%${sanitizedPhone}`)
-        .in('is_loyalty_eligible', [true, 'true'])
-        .in('origin', ['WEB', 'APP']) // Only count orders from the App (or old app)
-        .neq('status', 'Cancelado') 
-        .is('loyalty_redeemed_at', null) // Only unredeemed orders
-
-        .order('timestamp', { ascending: true }); // Oldest first (FIFO for redemption)
-
+    const { data, error } = await supabase.rpc('selos_do_cliente', { p_store: storeId, p_sufixo: sanitizedPhone });
     if (error) throw error;
-    return (data || []).map((dbOrder: any) => mapOrderFromDB(dbOrder));
+    return ((data as any[]) || []).map((dbOrder: any) => mapOrderFromDB(dbOrder));
 };
 
 export const redeemLoyaltyReward = async (phone: string, storeId: string) => {
     const sanitizedPhone = phone.replace(/\D/g, '');
-
-    // 1. Fetch oldest 10 unredeemed eligible orders
-    const { data: eligibleOrders, error: fetchError } = await supabase
-        .from('orders')
-        .select('id')
-        .eq('store_id', storeId)
-        .ilike('phone', `%${sanitizedPhone}`)
-        .in('is_loyalty_eligible', [true, 'true'])
-        .eq('status', 'Entregue')
-        .is('loyalty_redeemed_at', null)
-        .order('timestamp', { ascending: true })
-        .limit(10);
-
-    if (fetchError) throw fetchError;
-
-    if (!eligibleOrders || eligibleOrders.length < 10) {
-        throw new Error("Saldo insuficiente de selos para resgate (mínimo 10).");
+    const { error } = await supabase.rpc('resgatar_selos', { p_store: storeId, p_sufixo: sanitizedPhone });
+    if (error) {
+        console.error('Error redeeming loyalty orders:', error);
+        throw new Error(error.message || 'Falha ao registrar resgate de fidelidade. Tente novamente.');
     }
-
-    const orderIdsToRedeem = eligibleOrders.map(o => o.id);
-
-    // 2. Mark them as redeemed
-    const { error: updateError, count } = await supabase
-        .from('orders')
-        .update({ loyalty_redeemed_at: new Date().toISOString() })
-        .in('id', orderIdsToRedeem)
-        .select('*');
-
-    if (updateError) {
-        console.error("Error redeeming loyalty orders:", updateError);
-        throw new Error("Falha ao registrar resgate de fidelidade. Tente novamente.");
-    }
-
-    if (count !== orderIdsToRedeem.length) {
-        console.warn(`Loyalty redemption partial mismatch. Expected ${orderIdsToRedeem.length}, updated ${count}`);
-        // We technically suceeded partially, but this is rare.
-    }
-
     return true;
 };
 
@@ -2779,6 +2675,55 @@ export const verifyCourierLogin = async (phone: string, password: string, storeI
         .single();
     
     if (error) return null;
+    return data;
+};
+
+// Sessao do entregador: id + token que o servidor entrega no login (a senha nunca fica guardada no aparelho).
+export type SessaoEntregador = { id: string; token: string };
+
+export const entregadorLogin = async (phone: string, password: string, storeId: string): Promise<{ courier: any; token: string } | null> => {
+    const { data, error } = await supabase.rpc('entregador_login', { p_store: storeId, p_phone: phone, p_senha: password });
+    if (error) throw error;
+    if (!data?.ok) { if (data?.erro) throw new Error(data.erro); return null; }
+    return { courier: data.courier, token: data.token };
+};
+
+export const entregadorCadastrar = async (name: string, phone: string, password: string, storeId: string, codigo: string) => {
+    const { data, error } = await supabase.rpc('entregador_cadastrar', { p_store: storeId, p_name: name, p_phone: phone, p_senha: password, p_codigo: codigo });
+    if (error) throw error;
+    if (!data?.ok) throw new Error(data?.erro || 'Nao foi possivel criar a conta.');
+};
+
+export const entregadorPedidosProntos = async (s: SessaoEntregador): Promise<Order[]> => {
+    const { data, error } = await supabase.rpc('entregador_pedidos_prontos', { p_courier: s.id, p_token: s.token });
+    if (error) throw error;
+    return ((data as any[]) || []).map(mapOrderFromDB);
+};
+export const entregadorEntregasAtivas = async (s: SessaoEntregador): Promise<Order[]> => {
+    const { data, error } = await supabase.rpc('entregador_entregas_ativas', { p_courier: s.id, p_token: s.token });
+    if (error) throw error;
+    return ((data as any[]) || []).map(mapOrderFromDB);
+};
+export const entregadorHistoricoDoDia = async (s: SessaoEntregador, date: Date): Promise<Order[]> => {
+    const ini = new Date(date); ini.setHours(0, 0, 0, 0);
+    const fim = new Date(date); fim.setHours(23, 59, 59, 999);
+    const { data, error } = await supabase.rpc('entregador_historico', { p_courier: s.id, p_token: s.token, p_ini: ini.toISOString(), p_fim: fim.toISOString() });
+    if (error) throw error;
+    return ((data as any[]) || []).map(mapOrderFromDB);
+};
+export const entregadorTotal = async (s: SessaoEntregador): Promise<number> => {
+    const { data, error } = await supabase.rpc('entregador_total', { p_courier: s.id, p_token: s.token });
+    if (error) throw error;
+    return Number(data) || 0;
+};
+export const entregadorPegar = async (s: SessaoEntregador, orderId: string) => {
+    const { data, error } = await supabase.rpc('entregador_pegar', { p_courier: s.id, p_token: s.token, p_order: orderId });
+    if (error) throw new Error(error.message);
+    return data;
+};
+export const entregadorStatus = async (s: SessaoEntregador, orderId: string, status: string) => {
+    const { data, error } = await supabase.rpc('entregador_status', { p_courier: s.id, p_token: s.token, p_order: orderId, p_status: status });
+    if (error) throw new Error(error.message);
     return data;
 };
 
