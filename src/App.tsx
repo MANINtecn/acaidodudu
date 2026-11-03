@@ -17,6 +17,8 @@ const SuperAdminPage = lazy(() => import('./pages/SuperAdminPage'));
 const CadastroLojistaPage = lazy(() => import('./pages/CadastroLojistaPage'));
 const ShoppingHomePage = lazy(() => import('./pages/ShoppingHomePage'));
 const NovaSenhaPage = lazy(() => import('./pages/NovaSenhaPage'));
+const TermosPage = lazy(() => import('./pages/TermosPage'));
+const PrivacidadePage = lazy(() => import('./pages/PrivacidadePage'));
 const WaiterPage = lazy(() => import('./pages/WaiterPage'));
 const StaffSelectionPage = lazy(() => import('./pages/StaffSelectionPage'));
 const StaffPortalPage = lazy(() => import('./pages/StaffPortalPage'));
@@ -197,6 +199,8 @@ const App: React.FC = () => {
                 <Route path="/cadastro" element={<CadastroLojistaPage />} />
                 <Route path="/shopping" element={<ShoppingHomePage />} />
                 <Route path="/redefinir_senha" element={<NovaSenhaPage />} />
+                <Route path="/termos" element={<TermosPage />} />
+                <Route path="/privacidade" element={<PrivacidadePage />} />
 
                 {/* HIGH PRIORITY ROUTES - Independent of Store Context */}
                 <Route path="/portal-equipe" element={<StaffSelectionPage />} />

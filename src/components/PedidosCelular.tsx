@@ -3,6 +3,8 @@ import { Phone, MessageCircle, Clock, Volume2, X } from 'lucide-react';
 import type { Order } from '../types';
 import { testarSirene, VOLUME_PADRAO } from '../services/sireneService';
 import { usarAlertaDePedidoNovo, pedirPermissaoDeNotificacao } from '../services/alertaPedidoNovo';
+import { ativarPush, renovarPushSeJaAtivo } from '../services/pushLojista';
+import { useStore } from '../contexts/StoreContext';
 
 /**
  * Pedidos para o celular (30/10/2026), pensada para a loja de comissão: sem PC, sem impressora.
@@ -60,7 +62,17 @@ export const PedidosCelular: React.FC<Props> = ({ pedidos, onAvancar, onCancelar
     const [motivo, setMotivo] = useState(MOTIVOS[0]);
     const [detalhe, setDetalhe] = useState('');
     const [somTestado, setSomTestado] = useState(false);
+    const { currentStore } = useStore();
+    const [push, setPush] = useState<{ ligado: boolean; aviso?: string }>({ ligado: false });
     const [dicaFechada, setDicaFechada] = useState(() => { try { return localStorage.getItem('pedidos_dica_pwa') === '1'; } catch (_) { return false; } });
+
+    // Se o aviso com a tela bloqueada já estava ligado neste aparelho, renova o registro em silêncio.
+    useEffect(() => {
+        if (!currentStore?.id) return;
+        let vivo = true;
+        renovarPushSeJaAtivo(currentStore.id).then(ok => { if (vivo && ok) setPush({ ligado: true }); });
+        return () => { vivo = false; };
+    }, [currentStore?.id]);
 
     // Os minutos de espera de cada pedido andam sozinhos.
     useEffect(() => {
@@ -95,12 +107,18 @@ export const PedidosCelular: React.FC<Props> = ({ pedidos, onAvancar, onCancelar
                         Pedidos <span className="ml-1 inline-flex items-center justify-center min-w-[1.75rem] h-7 px-2 rounded-full bg-red-600 text-white text-sm">{lista.length}</span>
                     </h2>
                     <button
-                        onClick={() => { testarSirene('sino', VOLUME_PADRAO); setSomTestado(true); void pedirPermissaoDeNotificacao(); }}
+                        onClick={() => {
+                            testarSirene('sino', VOLUME_PADRAO); setSomTestado(true);
+                            if (currentStore?.id) void ativarPush(currentStore.id).then(r => setPush(r.ok ? { ligado: true } : { ligado: false, aviso: r.motivo }));
+                            else void pedirPermissaoDeNotificacao();
+                        }}
                         className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold ${somTestado ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-amber-500 text-slate-950'}`}
                     >
                         <Volume2 size={16} /> {somTestado ? 'Alerta ligado' : 'Ligar o alerta'}
                     </button>
                 </div>
+                {somTestado && push.ligado && <p className="mt-2 text-xs text-green-700 dark:text-green-300">Aviso com a tela bloqueada: ligado neste aparelho. Chegando pedido, o celular toca mesmo com o navegador fechado, e avisa de novo a cada minuto até você tocar em Recebi, em preparo.</p>}
+                {somTestado && !push.ligado && push.aviso && <p className="mt-2 text-xs text-amber-700 dark:text-amber-300">{push.aviso}</p>}
                 {!somTestado && <p className="mt-2 text-xs text-gray-600 dark:text-gray-400">Toque em Ligar o alerta uma vez. Sem isso o celular não toca quando chegar pedido. Com ele ligado, a campainha toca alto e se repete até você tocar em Recebi, em preparo, e a tela não apaga enquanto este painel estiver aberto.</p>}
                 {!instalado && !dicaFechada && (
                     <div className="mt-2 rounded-lg bg-sky-50 dark:bg-sky-900/20 border border-sky-200 dark:border-sky-800 px-3 py-2 text-xs text-sky-900 dark:text-sky-200 flex items-start gap-2">

@@ -39,8 +39,11 @@ export default defineConfig(({ mode }) => ({
       includeAssets: ['pwa-192x192.png', 'pwa-512x512.png', 'icon.png'],
       workbox: {
         cleanupOutdatedCaches: true,
+        // aviso de pedido novo com a tela bloqueada (Web Push): o tratador do 'push' fica em public/push-sw.js
+        importScripts: ['push-sw.js'],
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         navigateFallback: 'index.html',
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,

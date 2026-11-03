@@ -258,6 +258,8 @@ const ShoppingHomePage: React.FC = () => {
 
             <footer className="border-t border-[var(--pa-line)] py-6 text-center text-xs text-[var(--pa-muted)]">
                 {MARCA.produto} &middot; {MARCA.site} &middot; por {MARCA.suporte}
+                <span className="mx-1">&middot;</span><Link to="/termos" className="underline">Termos de Uso</Link>
+                <span className="mx-1">&middot;</span><Link to="/privacidade" className="underline">Privacidade</Link>
             </footer>
         </div>
     );

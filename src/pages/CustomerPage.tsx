@@ -4,6 +4,7 @@ import CustomerPageClassic from './CustomerPageClassic';
 import CustomerPageModern from './CustomerPageModern';
 import { fetchPublicSettings } from '../services/supabaseService';
 import { Settings } from '../types';
+import { AceiteDeTermos } from '../components/AceiteDeTermos';
 
 const CustomerPage: React.FC = () => {
     const { currentStore, loading } = useStore();
@@ -28,11 +29,14 @@ const CustomerPage: React.FC = () => {
         );
     }
 
+    // O Açaí do Dudu é uma loja antiga com marca própria: o aceite da plataforma vale para as lojas do Pede Aqui.
+    const aceite = currentStore && currentStore.slug !== 'acaidodudu' ? <AceiteDeTermos /> : null;
+
     if (settings?.storefrontTheme === 'modern') {
-        return <CustomerPageModern />;
+        return <>{aceite}<CustomerPageModern /></>;
     }
 
-    return <CustomerPageClassic />;
+    return <>{aceite}<CustomerPageClassic /></>;
 };
 
 export default CustomerPage;

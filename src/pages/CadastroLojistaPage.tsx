@@ -2,9 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase, fetchMinhaLoja, criarMinhaLoja } from '../services/supabaseService';
 import { useAuth } from '../auth/AuthContext';
+import { VERSAO_TERMOS } from '../legal/empresa';
 
 const CATEGORIAS = ['Lanchonete', 'Sorveteria / Açaí', 'Pizzaria', 'Restaurante', 'Padaria', 'Outros'];
-const SLUGS_RESERVADOS = ['admin', 'login', 'super-admin', 'staff', 'acesso', 'hub-equipe', 'portal-equipe', 'garcom', 'waiter', 'entregador', 'tv', 'cadastro', 'shopping', 'assets', 'public'];
+const SLUGS_RESERVADOS = ['admin', 'login', 'super-admin', 'staff', 'acesso', 'hub-equipe', 'portal-equipe', 'garcom', 'waiter', 'entregador', 'tv', 'cadastro', 'shopping', 'assets', 'public', 'termos', 'privacidade', 'api', 'redefinir_senha'];
 
 const limparSlug = (texto: string) =>
     texto.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -27,6 +28,7 @@ const CadastroLojistaPage: React.FC = () => {
     const [aviso, setAviso] = useState<string | null>(null);
     const [erro, setErro] = useState<string | null>(null);
     const [ocupado, setOcupado] = useState(false);
+    const [aceitou, setAceitou] = useState(false);
 
     const [nome, setNome] = useState('');
     const [slug, setSlug] = useState('');
@@ -55,8 +57,11 @@ const CadastroLojistaPage: React.FC = () => {
                 if (error) throw error;
             } else {
                 if (senha.length < 8) throw new Error('A senha precisa ter pelo menos 8 caracteres.');
+                if (!aceitou) throw new Error('Para criar a conta, aceite os Termos de Uso e a Política de Privacidade.');
                 const { data, error } = await supabase.auth.signUp({
-                    email, password: senha, options: { emailRedirectTo: `${window.location.origin}/cadastro` },
+                    email, password: senha,
+                    // o aceite fica registrado nos dados da conta: versão dos textos e hora
+                    options: { emailRedirectTo: `${window.location.origin}/cadastro`, data: { termos_versao: VERSAO_TERMOS, termos_aceitos_em: new Date().toISOString() } },
                 });
                 if (error) throw error;
                 // Com confirmação de e-mail ligada, não há sessão até o lojista clicar no link.
@@ -107,6 +112,12 @@ const CadastroLojistaPage: React.FC = () => {
                         </div>
                         <input type="email" required value={email} onChange={e => setEmail(e.target.value)} placeholder="Seu e-mail" className={campo} />
                         <input type="password" required value={senha} onChange={e => setSenha(e.target.value)} placeholder="Senha (mín. 8 caracteres)" className={campo} />
+                        {modo === 'criar' && (
+                            <label className="flex items-start gap-2 text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                                <input type="checkbox" checked={aceitou} onChange={e => setAceitou(e.target.checked)} className="mt-0.5 h-4 w-4 accent-orange-600" />
+                                <span>Li e aceito os <a href="/termos" target="_blank" rel="noopener noreferrer" className="font-bold underline">Termos de Uso</a> (inclusive a comissão sobre os produtos e a compensação do débito do dinheiro) e a <a href="/privacidade" target="_blank" rel="noopener noreferrer" className="font-bold underline">Política de Privacidade</a>.</span>
+                            </label>
+                        )}
                         {aviso && <p className="text-sm text-green-700 dark:text-green-400">{aviso}</p>}
                         {erro && <p className="text-sm text-red-600 dark:text-red-400">{erro}</p>}
                         <button disabled={ocupado} className={botao}>{ocupado ? 'Aguarde...' : modo === 'criar' ? 'Criar conta' : 'Entrar'}</button>
