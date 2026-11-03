@@ -41,10 +41,27 @@ export default defineConfig(({ mode }) => ({
         cleanupOutdatedCaches: true,
         // aviso de pedido novo com a tela bloqueada (Web Push): o tratador do 'push' fica em public/push-sw.js
         importScripts: ['push-sw.js'],
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // Pré-cache só do essencial (a casca do app). Antes ia tudo para o celular do cliente na primeira visita
+        // (7 MB: versão legada, painel do lojista, fotos), o que pesava na internet dele e na transferência da Vercel.
+        // O resto é guardado quando for usado (runtimeCaching abaixo).
+        globPatterns: ['**/*.{js,css,html}'],
+        globIgnores: ['**/*-legacy-*', '**/AdminPage-*', '**/SuperAdminPage-*', '**/CentralDeGestao-*'],
+        maximumFileSizeToCacheInBytes: 1_500_000,
         navigateFallback: 'index.html',
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
+          {
+            // código das telas (painel, super admin...) e navegadores antigos: guarda ao usar e atualiza em segundo plano
+            urlPattern: ({ url }: any) => url.pathname.startsWith('/assets/') && /\.(js|css)$/.test(url.pathname),
+            handler: 'StaleWhileRevalidate',
+            options: { cacheName: 'telas', expiration: { maxEntries: 80, maxAgeSeconds: 60 * 60 * 24 * 30 } }
+          },
+          {
+            // fotos e ícones: guarda por 30 dias
+            urlPattern: ({ request }: any) => request.destination === 'image',
+            handler: 'CacheFirst',
+            options: { cacheName: 'imagens', expiration: { maxEntries: 120, maxAgeSeconds: 60 * 60 * 24 * 30 }, cacheableResponse: { statuses: [0, 200] } }
+          },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: 'CacheFirst',
