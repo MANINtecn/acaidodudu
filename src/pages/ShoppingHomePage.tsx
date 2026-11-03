@@ -4,6 +4,7 @@ import { Search, Store as StoreIcon, MapPin, Sun, Moon, ArrowRight, X } from 'lu
 import { fetchLojasShopping, buscarProdutosShopping, type LojaShopping, type ProdutoBusca } from '../services/supabaseService';
 import { ImagemProduto } from '../components/ImagemProduto';
 import { MARCA } from '../services/marcaService';
+import { textoSobre, useMarca } from '../services/marcaPlataforma';
 
 type Tema = 'claro' | 'escuro';
 
@@ -45,6 +46,7 @@ const Logo: React.FC<{ loja: LojaShopping }> = ({ loja }) => {
 };
 
 const ShoppingHomePage: React.FC = () => {
+    const marca = useMarca();
     const [tema, setTema] = useState<Tema>(temaInicial);
     const [lojas, setLojas] = useState<LojaShopping[] | null>(null);
     const [erro, setErro] = useState(false);
@@ -105,13 +107,18 @@ const ShoppingHomePage: React.FC = () => {
     const produtosVisiveis = busca.trim().length >= 2 ? produtos : [];
 
     return (
-        <div style={PALETAS[tema]} className="min-h-screen bg-[var(--pa-bg)] text-[var(--pa-text)]">
+        <div
+            style={{ ...PALETAS[tema], ['--pa-primary' as any]: marca.cor_primaria, ['--pa-primary-2' as any]: marca.cor_secundaria, ['--pa-on-primary' as any]: textoSobre(marca.cor_primaria) }}
+            className="min-h-screen bg-[var(--pa-bg)] text-[var(--pa-text)]"
+        >
             {/* Topo */}
             <header className="sticky top-0 z-30 backdrop-blur bg-[var(--pa-bg)]/85 border-b border-[var(--pa-line)]">
                 <div className="mx-auto max-w-5xl px-4 h-14 flex items-center justify-between">
                     <Link to="/" className="flex items-center gap-2 font-black text-lg tracking-tight">
-                        <span className="h-8 w-8 rounded-xl bg-gradient-to-br from-[var(--pa-primary)] to-[var(--pa-primary-2)] text-[var(--pa-on-primary)] flex items-center justify-center"><StoreIcon size={18} /></span>
-                        {MARCA.produto}
+                        {marca.logo_url
+                            ? <img src={marca.logo_url} alt="" className="h-8 w-8 rounded-xl object-contain" />
+                            : <span className="h-8 w-8 rounded-xl bg-gradient-to-br from-[var(--pa-primary)] to-[var(--pa-primary-2)] text-[var(--pa-on-primary)] flex items-center justify-center"><StoreIcon size={18} /></span>}
+                        {marca.nome}
                     </Link>
                     <div className="flex items-center gap-2">
                         <button onClick={() => setTema(tema === 'claro' ? 'escuro' : 'claro')} aria-label="Alternar tema" className="h-9 w-9 rounded-full flex items-center justify-center hover:bg-[var(--pa-soft)]">

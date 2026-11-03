@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { fetchStoreBySlug } from '../services/supabaseService';
 import { Store } from '../types';
 import { definirNomeDaLoja, MARCA } from '../services/marcaService';
+import { aplicarIdentidade, carregarMarca, useMarca } from '../services/marcaPlataforma';
 
 interface StoreContextType {
     currentStore: Store | null;
@@ -24,6 +25,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const [currentStore, setCurrentStore] = useState<Store | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [slugDaRota, setSlugDaRota] = useState<string | null>(null);
 
     const location = useLocation();
 
@@ -78,7 +80,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         // We only do this if there is NO subdomain slug. If there IS a subdomain, we want to load the store context even on /admin.
         const reservedPaths = ['/admin', '/login', '/cadastro', '/shopping', '/redefinir_senha', '/super-admin', '/staff', '/acesso', '/hub-equipe', '/portal-equipe', '/garcom', '/entregador'];
         const isReserved = reservedPaths.some(p => location.pathname.toLowerCase().startsWith(p)) && !slug;
-        
+        // Em tela da plataforma (sem loja na rota) a identidade da aba é a do Pede Aqui, mesmo que uma loja tenha sido vista antes.
+        setSlugDaRota(isReserved || !slug ? null : slug);
+
         if (isReserved) {
             // console.log("StoreContext: Reserved path detected without subdomain, skipping store fetch.");
             setLoading(false);
@@ -121,25 +125,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         fetchStore();
     }, [location.pathname]);
 
+    // Marca da plataforma (logo e cores definidas no Super Admin): carrega uma vez e refaz a identidade quando mudar.
+    const marca = useMarca();
+    useEffect(() => { carregarMarca(); }, []);
+
+    // Ícone da aba, título, cor do navegador e manifesto do app instalado: loja atual ou, sem loja, a marca do Pede Aqui.
     useEffect(() => {
-        if (currentStore?.logo_url) {
-            let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
-            if (!link) {
-                link = document.createElement('link');
-                link.rel = 'icon';
-                document.head.appendChild(link);
-            }
-            link.href = currentStore.logo_url;
-        } else {
-            let link: HTMLLinkElement | null = document.querySelector("link[rel*='icon']");
-            if (link) {
-                link.href = '/icon.png';
-            }
-        }
-        if (currentStore?.name) {
-            document.title = currentStore.name.toUpperCase();
-        }
-    }, [currentStore]);
+        aplicarIdentidade(slugDaRota && currentStore && currentStore.slug === slugDaRota ? currentStore : null);
+    }, [currentStore, slugDaRota, marca]);
 
     return (
         <StoreContext.Provider value={{ currentStore, loading, error, refreshStore: fetchStore }}>

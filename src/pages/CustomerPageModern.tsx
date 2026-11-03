@@ -3094,11 +3094,16 @@ const CustomerPage: React.FC = () => {
 
                 {/* Hero Image */}
                 <div className="relative flex-1 min-h-[200px] max-h-[320px] w-full bg-black rounded-b-[40px] overflow-hidden shadow-[0_10px_50px_rgba(0,0,0,0.8)]">
-                    <img
-                        src={settings?.heroImageUrl || '/acai_boat_hero.jpg'}
-                        alt="Açaí Hero"
-                        className="w-full h-full object-cover opacity-100 brightness-110 saturate-110"
-                    />
+                    {(settings?.heroImageUrl || currentStore?.slug === 'acaidodudu') ? (
+                        <img
+                            src={settings?.heroImageUrl || '/acai_boat_hero.jpg'}
+                            alt="Capa"
+                            className="w-full h-full object-cover opacity-100 brightness-110 saturate-110"
+                        />
+                    ) : (
+                        // loja sem foto de capa: degradê neutro, nunca a foto do Açaí do Dudu
+                        <div className="w-full h-full bg-gradient-to-br from-orange-600 via-amber-500 to-yellow-400" />
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-[#0f0f11] via-[#0f0f11]/20 to-black/20"></div>
                     <div className="absolute inset-0 bg-gradient-to-b from-black/50 via-transparent to-transparent"></div>
                     

@@ -4,7 +4,7 @@ import { MARCA } from '../services/marcaService';
 import { supabase } from '../services/supabaseService';
 import { useStore } from '../contexts/StoreContext';
 import { useAuth } from '../auth/AuthContext';
-import logoImg from '../../public/icon.png';
+import { ICONE_PADRAO, useMarca } from '../services/marcaPlataforma';
 import bgHero from '../../public/acai_boat_hero.jpg';
 import { Lock, Mail, ArrowLeft, LogIn } from 'lucide-react';
 
@@ -21,7 +21,12 @@ const LoginPage: React.FC = () => {
   const location = useLocation();
   const { storeSlug } = useParams();
 
-  const storeLogo = currentStore?.logo_url || (currentStore as any)?.logoUrl || logoImg;
+  // loja sem logo mostra a marca do Pede Aqui, nunca a de outra loja
+  const marca = useMarca();
+  const logoDaPlataforma = marca.logo_url || ICONE_PADRAO;
+  const storeLogo = currentStore?.logo_url || (currentStore as any)?.logoUrl || logoDaPlataforma;
+  // a foto de fundo antiga e do Acai do Dudu; as demais lojas usam so o degrade
+  const fundo = currentStore?.slug === 'acaidodudu' ? `url(${bgHero})` : undefined;
 
   const targetSlug = storeSlug || 'acaidodudu';
   const defaultRedirect = `/${targetSlug}/admin`;
@@ -99,7 +104,7 @@ const LoginPage: React.FC = () => {
   return (
     <div
       className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden bg-cover bg-center"
-      style={{ backgroundImage: `url(${bgHero})` }}
+      style={{ backgroundImage: fundo, backgroundColor: '#12071f' }}
     >
       {/* Dark overlay with dynamic purple glow */}
       <div className="absolute inset-0 bg-gradient-to-br from-black/90 via-purple-950/80 to-black/95 backdrop-blur-sm"></div>
@@ -121,7 +126,7 @@ const LoginPage: React.FC = () => {
               className="w-full h-full object-cover rounded-full"
               onError={(e) => {
                 // Fallback to logoImg if store logo fails to load
-                (e.target as HTMLImageElement).src = logoImg;
+                (e.target as HTMLImageElement).src = logoDaPlataforma;
               }}
             />
           </div>
